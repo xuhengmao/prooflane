@@ -22,6 +22,7 @@ jobs:
       release_id: ${{ steps.release.outputs.release_id }}
       release_url: ${{ steps.release.outputs.release_url }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
+      apple_signing_enabled: ${{ steps.signing.outputs.apple_signing_enabled }}
       release_body: ${{ steps.release.outputs.release_body }}
     steps:
       - uses: actions/checkout@v4
@@ -30,13 +31,7 @@ jobs:
 
       - id: meta
         name: Resolve release channel
-        shell: bash
-        run: |
-          if [[ "${GITHUB_REF_NAME}" == *"-rc"* ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: node scripts/resolve-release-channel.mjs "$GITHUB_REF_NAME"
 
       - name: Check tag commit belongs to default branch
         shell: bash
@@ -66,8 +61,10 @@ jobs:
             exit 1
           fi
 
-      - name: Verify release signing secrets
+      - id: signing
+        name: Verify release signing secrets
         env:
+          RELEASE_PRERELEASE: ${{ steps.meta.outputs.prerelease }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -343,7 +340,7 @@ jobs:
           ls -la "$file"
 
       - name: Import Apple Developer ID certificate
-        if: contains(matrix.target, 'apple-darwin')
+        if: contains(matrix.target, 'apple-darwin') && needs.create-draft-release.outputs.apple_signing_enabled == 'true'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -418,7 +415,7 @@ jobs:
           security find-identity -v -p codesigning "$keychain_path"
 
       - name: Resolve Apple Developer ID identity
-        if: contains(matrix.target, 'apple-darwin')
+        if: contains(matrix.target, 'apple-darwin') && needs.create-draft-release.outputs.apple_signing_enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -877,7 +874,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository }}:latest
+            ${{ needs.create-draft-release.outputs.prerelease == 'false' && format('ghcr.io/{0}:latest', github.repository) || '' }}
 
   publish-release:
     needs:

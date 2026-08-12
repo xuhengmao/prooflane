@@ -4794,7 +4794,7 @@ dependencies = [
 
 [[package]]
 name = "prooflane"
-version = "0.24.0"
+version = "0.24.1-rc.1"
 dependencies = [
  "aes-gcm",
  "agent-client-protocol-schema",

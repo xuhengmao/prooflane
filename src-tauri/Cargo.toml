@@ -1,6 +1,6 @@
 [package]
 name = "prooflane"
-version = "0.24.0"
+version = "0.24.1-rc.1"
 description = "Evidence-driven AI engineering delivery workspace"
 authors = ["Prooflane contributors"]
 edition = "2021"
