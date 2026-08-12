@@ -86,7 +86,7 @@ pub fn create_credential_helper_script(
         let script_path = app_data_dir.join("git-credential-codeg.sh");
         let content = format!(
             r#"#!/bin/sh
-# Codeg credential helper — calls the app binary to look up credentials.
+# Prooflane credential helper — calls the app binary to look up credentials.
 # Only responds to "get" action; ignores "store" and "erase".
 [ "$1" != "get" ] && exit 0
 exec {binary} --credential-helper --data-dir {data_dir} < /dev/stdin

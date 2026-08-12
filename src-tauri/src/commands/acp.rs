@@ -222,7 +222,7 @@ pub(crate) fn resolve_system_agent_binary(cmd: &str) -> Option<PathBuf> {
 }
 
 /// Resolve the VENDOR CLI wrapped by an ACP adapter agent (`claude`, `codex`
-/// — see [`registry::acp_adapter_relation`]). codeg never launches this: it is
+/// — see [`registry::acp_adapter_relation`]). Prooflane never launches this: it is
 /// probed purely so preflight/diagnostics can say "we found your own CLI, but
 /// it doesn't speak ACP" instead of a bare "not installed".
 ///
@@ -779,7 +779,7 @@ struct AgentDiag {
 }
 
 /// The vendor CLI behind an adapter agent, probed so the report can say "we
-/// found your own `claude`, but codeg launches `claude-agent-acp`" instead of a
+/// found your own `claude`, but Prooflane launches `claude-agent-acp`" instead of a
 /// bare "not installed" the user reads as plain wrong.
 #[derive(Default, Clone)]
 struct AdapterProbe {
@@ -1218,13 +1218,13 @@ fn compute_verdict(inp: &DiagInputs) -> DiagnosticsVerdict {
                     diag_verdict(
                         DiagLevel::Info,
                         "adapter_missing_native_present",
-                        "Your own vendor CLI is installed, but codeg launches a separate ACP adapter, which is not.",
+                        "Your own vendor CLI is installed, but Prooflane launches a separate ACP adapter, which is not.",
                     )
                 } else {
                     diag_verdict(
                         DiagLevel::Info,
                         "adapter_missing",
-                        "codeg launches a separate ACP adapter for this agent, which is not installed.",
+                        "Prooflane launches a separate ACP adapter for this agent, which is not installed.",
                     )
                 };
             }
@@ -1411,7 +1411,7 @@ fn build_report(
                 },
                 DiagLevel::Info,
                 Some(
-                    "codeg never launches this — it launches the ACP adapter above, \
+                    "Prooflane never launches this — it launches the ACP adapter above, \
                      a separate package that shares the same config dir",
                 ),
             ));
@@ -1529,7 +1529,7 @@ fn render_plain_text(
         DiagLevel::Info => "--  ",
     };
     let mut out = String::new();
-    out.push_str("===== Codeg environment diagnostics =====\n");
+    out.push_str("===== Prooflane environment diagnostics =====\n");
     out.push_str(&format!("generated: {generated_at}\n"));
     if let Some(at) = agent_type {
         out.push_str(&format!("agent: {at:?}\n"));
@@ -1855,7 +1855,7 @@ mod diagnostics_tests {
         let inp = base_inputs();
         let r = build_report(&inp, "FIXED-TS".to_string(), None);
         assert_eq!(r.generated_at, "FIXED-TS");
-        assert!(r.plain_text.contains("Codeg environment diagnostics"));
+        assert!(r.plain_text.contains("Prooflane environment diagnostics"));
         assert!(r.plain_text.contains("verdict [ok]"));
         assert!(!r.sections.is_empty());
     }
@@ -2145,7 +2145,7 @@ fn annotate_npm_bootstrap_failure(package: &str, err: AcpError) -> AcpError {
     AcpError::Protocol(format!(
         "{message}\n\nThe bootstrap downloads its runtime from github.com with Node's own \
          fetch, which reads HTTP(S)_PROXY only on Node 24+. Behind a proxy on an older \
-         Node, upgrade Node or run the official installer — codeg picks up a `hermes` \
+         Node, upgrade Node or run the official installer — Prooflane picks up a `hermes` \
          on PATH."
     ))
 }
@@ -10513,7 +10513,7 @@ pub(crate) async fn acp_prepare_npx_agent_core(
                         "{} installed, but its runtime did not bootstrap (`{cmd} --version` \
                          does not answer). If your npm config sets ignore-scripts, allow \
                          scripts for this package and reinstall; otherwise retry, or use \
-                         the official installer and codeg will pick up the PATH `{cmd}`.",
+                         the official installer and Prooflane will pick up the PATH `{cmd}`.",
                         meta.name
                     )));
                 }

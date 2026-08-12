@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# Codeg Server installer
+# Prooflane server installer (installs codeg-server compatibility binaries)
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/xintaofei/codeg/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/xintaofei/codeg/main/install.sh | bash -s -- --version v0.5.0
+#   curl -fsSL https://raw.githubusercontent.com/xuhengmao/prooflane/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/xuhengmao/prooflane/main/install.sh | bash -s -- --version v0.5.0
 #
 
 set -euo pipefail
 
-REPO="xintaofei/codeg"
+REPO="xuhengmao/prooflane"
 INSTALL_DIR="${CODEG_INSTALL_DIR:-/usr/local/bin}"
 WEB_DIR="${CODEG_WEB_DIR:-/usr/local/share/codeg/web}"
 VERSION=""

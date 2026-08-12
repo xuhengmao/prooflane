@@ -271,7 +271,9 @@ export function PetWindow({ petId }: PetWindowProps) {
   // Keep the document title clean. macOS hides it via title_bar_style anyway,
   // but server-mode preview shows it.
   useEffect(() => {
-    document.title = pet ? `${pet.displayName} - codeg pet` : "codeg pet"
+    document.title = pet
+      ? `${pet.displayName} - Prooflane pet`
+      : "Prooflane pet"
   }, [pet])
 
   // Fully transparent body so the OS chrome is invisible. Done in JS to keep

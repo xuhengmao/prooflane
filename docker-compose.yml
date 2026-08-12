@@ -1,8 +1,8 @@
 services:
-  codeg:
+  prooflane:
     build: .
     # Or use a pre-built image:
-    # image: xintaofei/codeg:latest
+    # image: ghcr.io/xuhengmao/prooflane:latest
     ports:
       - "3080:3080"
     volumes:

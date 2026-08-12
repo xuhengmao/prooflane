@@ -1,7 +1,7 @@
 #
-# Codeg Server installer for Windows
+# Prooflane server installer for Windows (installs codeg-server compatibility binaries)
 # Usage:
-#   irm https://raw.githubusercontent.com/xintaofei/codeg/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/xuhengmao/prooflane/main/install.ps1 | iex
 #   .\install.ps1 -Version v0.5.0
 #
 
@@ -12,7 +12,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Repo = "xintaofei/codeg"
+$Repo = "xuhengmao/prooflane"
 $Artifact = "codeg-server-windows-x64"
 
 # Names of binaries this installer manages. codeg-server is the user-facing

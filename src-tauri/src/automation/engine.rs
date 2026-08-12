@@ -121,7 +121,7 @@ pub fn build_engine(
         Ownership::Exclusive(file) => file,
         Ownership::Taken => {
             tracing::info!(
-                "[automation] another codeg process owns the automation engine for {}; \
+                "[automation] another Prooflane process owns the automation engine for {}; \
                  this process will not drive automations",
                 data_dir.display()
             );

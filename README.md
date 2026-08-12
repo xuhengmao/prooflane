@@ -1,188 +1,118 @@
-# Codeg
+# Prooflane
 
-[![Release](https://img.shields.io/github/v/release/xintaofei/codeg)](https://github.com/xintaofei/codeg/releases)
-[![Docs](https://img.shields.io/badge/docs-docs.codeg.app-3451b2)](https://docs.codeg.app)
-[![License](https://img.shields.io/github/license/xintaofei/codeg)](./LICENSE)
-
-<p>
-  <strong>English</strong> |
-  <a href="./docs/readme/README.zh-CN.md">简体中文</a> |
-  <a href="./docs/readme/README.zh-TW.md">繁體中文</a> |
-  <a href="./docs/readme/README.ja.md">日本語</a> |
-  <a href="./docs/readme/README.ko.md">한국어</a> |
-  <a href="./docs/readme/README.es.md">Español</a> |
-  <a href="./docs/readme/README.de.md">Deutsch</a> |
-  <a href="./docs/readme/README.fr.md">Français</a> |
-  <a href="./docs/readme/README.pt.md">Português</a> |
-  <a href="./docs/readme/README.ar.md">العربية</a>
+<p align="center">
+  <img src="./public/icon-128x128.png" alt="Prooflane" width="112" height="112" />
 </p>
 
-Codeg (Code Generation) is a multi-agent coding workspace: run every AI coding agent in one place — and let them work together.
+<p align="center"><strong>VERIFY THE DELIVERY</strong></p>
 
-It aggregates your sessions from every supported agent CLI into one searchable workspace, lets a main agent delegate to sub-agents of other types within a single task, and runs as a desktop app, a standalone server, or a Docker container — with native iOS and Android clients for when you're away from your desk. Twelve agents come built in, and since 0.22 you can register any other ACP-compatible agent yourself.
+[![Release](https://img.shields.io/github/v/release/xuhengmao/prooflane)](https://github.com/xuhengmao/prooflane/releases)
+[![License](https://img.shields.io/github/license/xuhengmao/prooflane)](./LICENSE)
 
-![workspace](./docs/images/workspace-light.png#gh-light-mode-only)
-![workspace](./docs/images/workspace-dark.png#gh-dark-mode-only)
+Prooflane 是证据驱动的 AI 工程交付工作台。项目当前以
+[Codeg](https://github.com/xintaofei/codeg) `0.24.0` 为固定基线，在保留多智能体编码工作区能力的同时，逐步加入任务合同、验收标准、验证证据、质量门禁和可审计交付流程。
 
-## 📖 Documentation
+当前版本仍处于二次开发阶段，版本号沿用基线的 `0.24.0`。
 
-**Full documentation lives at [docs.codeg.app](https://docs.codeg.app)** — [Getting Started](https://docs.codeg.app/getting-started/) · [Guide](https://docs.codeg.app/guide/) · [Reference](https://docs.codeg.app/reference/)
+## 产品方向
 
-## 💖 Sponsors
+Prooflane 不把“智能体回复结束”当作“任务完成”。目标流程是：
 
-<table>
-  <tr>
-    <td align="center" width="220">
-      <a href="https://www.compshare.cn/?ytag=GPU_YY_git_codeg" target="_blank"><img src="./docs/images/compshare.png" alt="Compshare" width="160" /></a><br/>
-      <strong><a href="https://www.compshare.cn/?ytag=GPU_YY_git_codeg">Compshare (UCloud)</a></strong>
-    </td>
-    <td>Thanks to Compshare for sponsoring this project! Compshare is UCloud's AI cloud platform, offering cost-effective monthly and pay-as-you-go agent Plan subscriptions for Chinese models, starting at just ¥49/month. It also provides stable officially-proxied access to overseas models. Supports Claude Code, Codex, and API integrations. Enterprise-ready with high concurrency, 24/7 technical support, and self-service invoicing. Users who sign up via <a href="https://www.compshare.cn/?ytag=GPU_YY_git_codeg">this link</a> receive ¥5 in free platform credits!</td>
-  </tr>
-  <tr>
-    <td align="center" width="220">
-      <a href="https://sui-xiang.com/register?aff=JPFCRHHBE8HE" target="_blank"><img src="./docs/images/sui-xiang.jpg" alt="随想AI中转站" width="200" /></a><br/>
-      <strong><a href="https://sui-xiang.com/register?aff=JPFCRHHBE8HE">随想AI中转站</a></strong>
-    </td>
-    <td>Thanks to 随想AI中转站 for sponsoring this project! 随想AI中转站 is a reliable and efficient API relay provider, offering relay services for Claude, Codex, Gemini, and more. New accounts earn ¥0.5 in test credit with each daily check-in after <a href="https://sui-xiang.com/register?aff=JPFCRHHBE8HE">signing up</a>; top-ups are credited 1:1 — no subscription, pay as you go. Multi-route redundancy, cross-region disaster recovery, and automatic failover keep long-lived SSE connections uninterrupted.</td>
-  </tr>
-  <tr>
-    <td align="center" width="220">
-      <a href="https://hezu.ink/sign-up?aff=0wVz" target="_blank"><img src="./docs/images/hezu-ink.jpg" alt="合租巴士" width="200" /></a><br/>
-      <strong><a href="https://hezu.ink/sign-up?aff=0wVz">合租巴士</a></strong>
-    </td>
-    <td>Thanks to 合租巴士 for sponsoring this project! 合租巴士 is a reliable and efficient AI relay platform, offering highly stable relay for mainstream models such as Codex and Claude Code. Top-ups are credited at a transparent 1:1 ratio, with Codex rate subsidies as low as 0.08. <a href="https://hezu.ink/sign-up?aff=0wVz">Join the group via the official website to get $5 in trial credit</a>.</td>
-  </tr>
-  <tr>
-    <td align="center" width="220">
-      <a href="https://onehop.ai/platform/login?ref=CODEG&utm_source=github&utm_medium=readme_sponsor&utm_campaign=codeg&utm_content=sponsor_cta" target="_blank"><img src="./docs/images/onehop.jpg" alt="OneHop" width="120" /></a><br/>
-      <strong><a href="https://onehop.ai/platform/login?ref=CODEG&utm_source=github&utm_medium=readme_sponsor&utm_campaign=codeg&utm_content=sponsor_cta">OneHop</a></strong>
-    </td>
-    <td>Thanks to OneHop for sponsoring this project! OneHop gives Codeg users one OpenAI-compatible API key for hundreds of leading models, including GPT, Claude, Gemini, DeepSeek, Kimi, and Qwen. Switch models without managing multiple provider accounts or repeatedly changing your code, and pay only for what you use. <a href="https://onehop.ai/platform/login?ref=CODEG&utm_source=github&utm_medium=readme_sponsor&utm_campaign=codeg&utm_content=sponsor_cta">Sign up through Codeg</a> to receive $1 in credit, then join the OneHop community and participate in the welcome activity for an additional $5 — up to $6 in test credit in total.</td>
-  </tr>
-</table>
-
-> Want to become a Codeg sponsor? [Reach out to us by email.](mailto:itpkcn@gmail.com)
-
-## 🤖 Supported Agents
-
-Claude Code · Codex · Gemini · OpenClaw · OpenCode · Cline · Hermes · CodeBuddy · Kimi Code · Pi · Grok · Cursor
-
-Codeg installs, pins, and updates most of them for you. See [Supported Agents](https://docs.codeg.app/guide/supported-agents) for the full roster, each agent's runtime requirements, and where it keeps its sessions on disk.
-
-Not on the list? Add it yourself. Pick any agent from the public ACP registry or paste its distribution JSON, and Codeg installs it, checks it can launch, and treats it like a built-in — it shows up in the picker, takes `@` delegation and skills, and gets its conversations recorded and searchable even when the agent keeps no history of its own. → [Custom Agents](https://docs.codeg.app/guide/custom-agents)
-
-## 🤝 Multi-Agent Collaboration
-
-Multi-agent collaboration, reduced to a single keystroke: type `@`, pick an agent, hit send. Codeg handles the scheduling — it launches each mentioned agent as its own session, hands over the task, and streams the work back into the thread you're already in. Mention two and they run side by side: Claude Code drafting while Codex reviews. No context switching, no copy-pasting between terminals.
-
-And when an agent spawns sub-agents of its own — Claude Code's, for instance — their output streams inside the card as they work, instead of landing all at once when they finish.
-
-![Delegating a task to sub-agents from a single Codeg conversation](./docs/images/collaboration-light.gif#gh-light-mode-only)
-![Delegating a task to sub-agents from a single Codeg conversation](./docs/images/collaboration-dark.gif#gh-dark-mode-only)
-
-## 🪟 Split View
-
-One tab strip isn't always enough. Right-click a conversation tab to split the view **right** or **down**, as many times as you like: two panes side by side, a stack of three, a grid. Each group is a workspace of its own — its own tabs, its own header, its own new-conversation button — so Claude Code can refactor in one pane while Codex reviews a diff in the next.
-
-Drag a tab from one group into another and its session keeps streaming through the move; drag the divider between two groups to change how they share the space. Your layout is remembered per workspace, drafts included: reopen Codeg and the split comes back, with the text you never sent still in the box.
-
-![Splitting the conversation area into a grid of tab groups](./docs/images/split-light.gif#gh-light-mode-only)
-![Splitting the conversation area into a grid of tab groups](./docs/images/split-dark.gif#gh-dark-mode-only)
-
-## 📄 Office Documents
-
-Ask for a deck, a report, or a workbook and the agent builds a real `.pptx` / `.docx` / `.xlsx` — while the pane on the right renders it live. Every edit lands in the preview on its own: slides fill in, tables take shape, numbers land in cells. Don't like slide 4? Say so in the next message — the agent edits the same file in place and the preview catches up. No export step, no external Office app, no leaving Codeg.
-
-![An agent editing an Office document beside its live in-tab preview](./docs/images/office-light.png#gh-light-mode-only)
-![An agent editing an Office document beside its live in-tab preview](./docs/images/office-dark.png#gh-dark-mode-only)
-
-## 💻 Workspace
-
-One workspace, every agent. Whichever one is driving — Claude Code, Codex, Cursor — it works in the same editor, the same live diffs, the same git client, and what it produces is real files in your repo, changing while you watch.
-
-**Sessions.** Pull in the history you already have: past sessions from every installed agent, imported in one click and resumable where you left them. Once they're in, they stop being separate silos — `@`-mention an old session and the agent you're talking to can read it, even when a different agent wrote it, so today's Codex run picks up where last week's Claude Code session ended.
-
-**Files.** The agent's edits show up as diffs beside the conversation as they land. Open any file in a real editor with syntax highlighting, send a file — or just a selection — straight to the agent with `⌘L`, and preview Markdown, HTML, images, and Office documents in the same pane.
-
-**Git.** A full client, not a status readout: commit and push, browse history with per-commit push state, and branch, merge, rebase, stash, reset, or diff against another branch. Conflicts open a three-pane merge editor where you accept hunk by hunk or type the fix yourself. And worktrees make parallel work one action — a new branch, its own directory, and a fresh conversation rooted in it, so a fleet of agents build different features at once without touching each other's files.
-
-## 📱 iPhone, iPad & Android
-
-Step away from your desk, not your work. The native iOS and Android clients connect to the Codeg you already run — the **Web Service** of your desktop app, or your own `codeg-server` — and from there you start sessions, watch replies and tool calls stream in, answer permission prompts, and browse projects and branches. Nothing moves onto the phone: your files, agent CLIs, and conversations stay on the machine running Codeg, and the access token sits in iOS Keychain or Android Keystore. Both clients are open source ([iOS](https://github.com/xintaofei/codeg-ios), [Android](https://github.com/xintaofei/codeg-android)) and currently in testing; pairing takes three steps, covered in [Mobile apps](https://docs.codeg.app/getting-started/installation#mobile-apps).
-
-| iPhone & iPad | Android |
-| :---: | :---: |
-| <img src="./docs/images/mobile-ios.jpg" alt="Starting a session from the Codeg iOS client" width="248" /> | <img src="./docs/images/mobile-android.jpg" alt="An agent reply streaming into the Codeg Android client" width="248" /> |
-
-## ✨ Highlights
-
-- **[Conversation Aggregation](https://docs.codeg.app/guide/aggregation)** — import sessions from every supported agent into one unified, searchable workspace, and pick any of them up where you left off
-- **[Multi-Agent Collaboration](https://docs.codeg.app/guide/multi-agent)** — `@`-mention any agent to delegate: sub-agents of different types run as their own sessions, in parallel, inside a single task
-- **[Custom Agents](https://docs.codeg.app/guide/custom-agents)** — register any other ACP-compatible agent from the public registry or its distribution JSON; Codeg installs it, records its history, and treats it like a built-in
-- **[The Workspace](https://docs.codeg.app/guide/workspace)** — the full engineering loop next to the agent: file tree, editor and diff, git changes, commit, and an embedded terminal
-- **[Split View](https://docs.codeg.app/guide/workspace#split-the-conversation-view-into-groups)** — split the conversation area into as many tab groups as you like, drag tabs and dividers between them, and get the layout back — drafts included — on restart
-- **[Git & Worktrees](https://docs.codeg.app/guide/git)** — review and commit changes, manage Git remote accounts, and run work in parallel with built-in `git worktree` flows
-- **[Chat Channels](https://docs.codeg.app/guide/chat-channels)** — drive your agents from Telegram, Lark (Feishu), and iLink (Weixin): create tasks, approve permissions, and get live updates
-- **[Automations](https://docs.codeg.app/guide/automations)** — save a fully-configured composer as a reusable automation that runs headlessly, on a cron schedule or on demand
-- **[Office Documents](https://docs.codeg.app/guide/office)** — create, analyze, proofread, and edit `.docx` / `.xlsx` / `.pptx` through the bundled `officecli`, with live in-tab preview
-- **[Scientific Research](https://docs.codeg.app/guide/research)** — bundled research skills (hypothesis generation, experimental design, statistics, visualization, critical appraisal, literature search) any agent can invoke
-- **[Project Boot](https://docs.codeg.app/guide/project-boot)** — scaffold new projects visually, with live preview, then open them straight in the workspace
-- **[MCP](https://docs.codeg.app/guide/mcp) & [Skills](https://docs.codeg.app/guide/skills)** — local server scan plus registry search/install, and skills managed at global or project scope
-- **[Desktop, Server & Docker](https://docs.codeg.app/getting-started/deployment)** — a native desktop app, a standalone `codeg-server` you reach from any browser, or `docker compose up`
-- **[iPhone, iPad & Android](https://docs.codeg.app/getting-started/installation#mobile-apps)** — native mobile clients that connect to your desktop or server: start sessions, stream replies, approve permissions, and browse projects from anywhere
-
-## 📦 Install & Run
-
-**Desktop** — download the installer for macOS, Windows, or Linux from [Releases](https://github.com/xintaofei/codeg/releases), then follow [Installation](https://docs.codeg.app/getting-started/installation).
-
-**Server** — run Codeg headless and reach it from any browser. On Linux or macOS:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/xintaofei/codeg/main/install.sh | bash
-CODEG_STATIC_DIR=/usr/local/share/codeg/web codeg-server
+```text
+需求 -> 规格 -> 实现 -> 验证 -> 审查 -> 有证据的交付
 ```
 
-On Windows, in PowerShell:
+核心方向：
+
+- 多智能体统一接入和协作。
+- 目标、范围、约束和验收标准结构化。
+- 测试、构建、代码审查、截图和日志自动形成证据。
+- 高风险操作人工审批，阶段转换受质量门禁约束。
+- 工作流、上下文包和团队最佳实践可复用。
+
+## 现有能力
+
+从 Codeg `0.24.0` 继承的主要能力包括：
+
+- Claude Code、Codex CLI、OpenCode、Gemini CLI、OpenClaw、Cline 等智能体接入。
+- 多智能体委托、会话聚合、工作区、终端、Git 和 Worktree。
+- Tauri 桌面应用、Rust/Axum 服务端和 Docker 部署。
+- 自动化、技能包、远程工作区、备份恢复和多语言界面。
+- Next.js 16 + React 19 前端，SeaORM + SQLite 数据层。
+
+## 开发环境
+
+- Node.js 20+
+- pnpm `11.9.0`
+- Rust stable
+- Windows：Visual Studio C++ Build Tools、WebView2
+
+安装依赖：
 
 ```powershell
-irm https://raw.githubusercontent.com/xintaofei/codeg/main/install.ps1 | iex
-$env:CODEG_STATIC_DIR="$env:LOCALAPPDATA\codeg\web"; codeg-server
+pnpm install --frozen-lockfile
 ```
 
-**Docker** — the same server, in one container:
+启动 Web 开发模式：
 
-```bash
-docker run -d -p 3080:3080 -v codeg-data:/data ghcr.io/xintaofei/codeg:latest
+```powershell
+pnpm dev
 ```
 
-**Mobile** — install the [iOS app](https://apps.apple.com/app/codeg-client/id6785199071) or the [Android APK](https://github.com/xintaofei/codeg-android/releases/latest), then point it at the **Web Service** of your desktop app or at your own `codeg-server`: URL, token, done. Pairing steps in [Mobile apps](https://docs.codeg.app/getting-started/installation#mobile-apps).
+启动桌面开发模式：
 
-Compose, prebuilt binaries, source builds, and in-place updates are covered in [Deployment](https://docs.codeg.app/getting-started/deployment); environment variables in [Configuration](https://docs.codeg.app/getting-started/configuration). Building Codeg itself: [Development](https://docs.codeg.app/reference/development) and [Architecture](https://docs.codeg.app/reference/architecture).
+```powershell
+pnpm tauri dev
+```
 
-## 🔒 Privacy & Security
+## 检查与构建
 
-- Local-first by default for parsing, storage, and project operations — network access happens only on user-triggered actions
-- Web and server modes are guarded by token-based authentication
-- System proxy support for enterprise environments
+```powershell
+pnpm lint
+pnpm test
+pnpm build
 
-Details in [Privacy & Security](https://docs.codeg.app/reference/privacy).
+cd src-tauri
+cargo check --locked
+cd ..
 
-## 👥 Community
+pnpm tauri build --bundles nsis
+```
 
-- Scan the QR code below to join our WeChat group for discussions, feedback, and updates
+服务端仍保留兼容二进制名：
 
-<img src="./docs/images/weixin-light.jpg#gh-light-mode-only" alt="WeChat" width="240" />
-<img src="./docs/images/weixin-dark.jpg#gh-dark-mode-only" alt="WeChat" width="240" />
+```powershell
+pnpm server:build
+```
 
-- Thanks to the [LinuxDO](https://linux.do) community for their support
+## 发布与更新
 
-## 🙏 Acknowledgments
+桌面和服务端更新从以下仓库发布：
 
-- [Agent Client Protocol](https://agentclientprotocol.com) — the foundation that lets Codeg connect to every agent it supports
-- [Superpowers](https://github.com/obra/superpowers) — powers Codeg's expert skills module
-- [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) — powers Codeg's Office documents workflow
-- [scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills) — powers Codeg's Scientific Research skills (MIT-licensed subset)
+```text
+https://github.com/xuhengmao/prooflane/releases
+```
 
-## 📜 License
+GitHub Actions 需要以下仓库 Secrets：
 
-Apache-2.0. See [LICENSE](./LICENSE).
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+
+私钥和密码不得提交到 Git。Tauri 配置中只允许保存公钥。
+
+## 兼容说明
+
+首阶段仅迁移产品品牌和发布身份。为避免破坏已有数据、协议和备份，以下内部名称暂时保留：
+
+- `codeg-server`、`codeg-mcp`、`codeg_lib`
+- `CODEG_*` 环境变量
+- `~/.codeg` 数据目录
+- `codeg://` 内部引用协议
+
+后续迁移必须采用双读、数据迁移和明确废弃周期，不能全局替换。
+
+## 上游与许可
+
+Prooflane 基于 Codeg `0.24.0` 二次开发。感谢 Codeg 作者和贡献者提供的基础工程。
+
+本仓库遵循 [Apache License 2.0](./LICENSE)。二次分发和商业使用时仍需遵守原许可证中的版权、许可和 NOTICE 要求。

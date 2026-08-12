@@ -16,12 +16,12 @@ use crate::app_error::AppCommandError;
 /// Update manifest URL — mirrors the `endpoints` entry in `tauri.conf.json`
 /// so desktop and server modes consult the same source of truth.
 pub const UPDATE_MANIFEST_URL: &str =
-    "https://github.com/xintaofei/codeg/releases/latest/download/latest.json";
+    "https://github.com/xuhengmao/prooflane/releases/latest/download/latest.json";
 
 /// Deterministic base for "latest" release assets (server tarballs + their
 /// `.sig` detached signatures). Same channel as the manifest.
 pub const RELEASE_DOWNLOAD_BASE: &str =
-    "https://github.com/xintaofei/codeg/releases/latest/download";
+    "https://github.com/xuhengmao/prooflane/releases/latest/download";
 
 /// Short-timeout client for the small manifest fetch. Proxy env vars are
 /// sampled at build time, so `init_proxy_from_db` must run before the first
@@ -30,7 +30,7 @@ static MANIFEST_HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLoc
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(8))
         .timeout(Duration::from_secs(15))
-        .user_agent(concat!("codeg/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("prooflane/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| format!("failed to initialize update manifest client: {e}"))
 });
@@ -43,7 +43,7 @@ static DOWNLOAD_HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLoc
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(8))
         .read_timeout(Duration::from_secs(120))
-        .user_agent(concat!("codeg/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("prooflane/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| format!("failed to initialize update download client: {e}"))
 });
@@ -136,5 +136,17 @@ mod tests {
     fn non_semver_falls_back_to_inequality() {
         assert!(is_newer("nightly-2", "nightly-1"));
         assert!(!is_newer("same", "same"));
+    }
+
+    #[test]
+    fn release_channel_belongs_to_prooflane() {
+        assert_eq!(
+            UPDATE_MANIFEST_URL,
+            "https://github.com/xuhengmao/prooflane/releases/latest/download/latest.json"
+        );
+        assert_eq!(
+            RELEASE_DOWNLOAD_BASE,
+            "https://github.com/xuhengmao/prooflane/releases/latest/download"
+        );
     }
 }
