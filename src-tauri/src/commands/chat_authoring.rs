@@ -84,11 +84,11 @@ impl DbChatAuthoring {
             match match_folder_by_path(&folders, raw) {
                 Some(f) => f,
                 None => {
-                    // "known to codeg" — the lookup spans every non-deleted
+                    // "known to Prooflane" — the lookup spans every non-deleted
                     // folder row, which includes projects the user has opened
                     // before but currently has closed.
                     return Err(format!(
-                        "no project matching '{raw}' is known to codeg. Open the project first, \
+                        "no project matching '{raw}' is known to Prooflane. Open the project first, \
                          or omit folder_path to use the one this conversation is in."
                     ));
                 }
@@ -189,7 +189,7 @@ impl ChatAuthoringAccess for DbChatAuthoring {
         if !self.config.automations_enabled().await {
             return AuthoringOutcome::rejected(
                 KIND_AUTOMATION,
-                "Creating automations from chat is turned off in codeg's settings \
+                "Creating automations from chat is turned off in Prooflane's settings \
                  (Settings → General → Create from chat). Ask the user to enable it.",
             );
         }
@@ -303,7 +303,7 @@ impl ChatAuthoringAccess for DbChatAuthoring {
         if !self.config.work_tasks_enabled().await {
             return AuthoringOutcome::rejected(
                 KIND_WORK_TASK,
-                "Creating board tasks from chat is turned off in codeg's settings \
+                "Creating board tasks from chat is turned off in Prooflane's settings \
                  (Settings → General → Create from chat). Ask the user to enable it.",
             );
         }

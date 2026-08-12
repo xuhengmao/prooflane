@@ -1,10 +1,10 @@
 [package]
-name = "codeg"
+name = "prooflane"
 version = "0.24.0"
-description = "Agent Code Generation App"
-authors = ["feitao"]
+description = "Evidence-driven AI engineering delivery workspace"
+authors = ["Prooflane contributors"]
 edition = "2021"
-default-run = "codeg"
+default-run = "prooflane"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -37,7 +37,7 @@ tauri-runtime = [
 test-utils = []
 
 [[bin]]
-name = "codeg"
+name = "prooflane"
 path = "src/main.rs"
 required-features = ["tauri-runtime"]
 

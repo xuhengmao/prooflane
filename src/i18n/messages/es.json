@@ -131,7 +131,7 @@
       },
       "css": {
         "dialogTitle": "CSS personalizado",
-        "dialogDescription": "Se aplica a todas las ventanas de codeg. Los cambios se previsualizan en vivo; pulsa Aplicar para guardar.",
+        "dialogDescription": "Se aplica a todas las ventanas de Prooflane. Los cambios se previsualizan en vivo; pulsa Aplicar para guardar.",
         "size": "{used} KB / {max} KB",
         "ruleCount": "{count} reglas",
         "errorTooLarge": "Demasiado grande para guardar. Redúcelo por debajo del límite.",
@@ -722,7 +722,7 @@
       "configTomlHint": "Se guarda literalmente como todo el ~/.grok/config.toml. El TOML no válido se rechaza para que una errata no trunque tu archivo.",
       "configTomlPlaceholder": "# Claves distintas de los controles de arriba, p. ej.\n# [mcp_servers.*], [cli], reglas [permission].",
       "customModelTitle": "Modelo personalizado (endpoint propio)",
-      "customModelHint": "Apunta Grok a un endpoint personalizado o autoalojado. codeg escribe un bloque `[model.*]` por modelo y lo establece como predeterminado. Deja el ID de modelo vacío para eliminarlo.",
+      "customModelHint": "Apunta Grok a un endpoint personalizado o autoalojado. Prooflane escribe un bloque `[model.*]` por modelo y lo establece como predeterminado. Deja el ID de modelo vacío para eliminarlo.",
       "customModelIdLabel": "ID del modelo",
       "customModelIdPlaceholder": "grok-4.5",
       "customModelIdHint": "Se registra como un bloque `[model.*]` y se envía a la API como nombre del modelo; también se establece como `[models].default`.",
@@ -740,7 +740,7 @@
       "autoCompactHint": "Compacta la conversación cuando el uso del contexto alcanza este porcentaje (predeterminado de Grok: 85). Se escribe en `[session]`."
     },
     "cursor": {
-      "configDescription": "Configura Cursor aquí. Elige un método de autenticación —suscripción oficial (inicio de sesión en el navegador) o una clave API de Cursor para equipos sin interfaz o servidores— y luego elige un modelo y edita las reglas de permisos y el sandbox del CLI. codeg los escribe en ~/.cursor/cli-config.json, compartido con el CLI cursor-agent.",
+      "configDescription": "Configura Cursor aquí. Elige un método de autenticación —suscripción oficial (inicio de sesión en el navegador) o una clave API de Cursor para equipos sin interfaz o servidores— y luego elige un modelo y edita las reglas de permisos y el sandbox del CLI. Prooflane los escribe en ~/.cursor/cli-config.json, compartido con el CLI cursor-agent.",
       "authTitle": "Autenticación",
       "authChecking": "Comprobando…",
       "authNotInstalled": "cursor-agent no está instalado",
@@ -937,7 +937,7 @@
     },
     "hermes": {
       "configManagement": "Configuración de Hermes",
-      "configDescription": "Hermes gestiona sus propias credenciales en ~/.hermes/.env y los ajustes en ~/.hermes/config.yaml. Elige un proveedor y luego establece la clave de API y el modelo: codeg escribe ambos archivos por ti.",
+      "configDescription": "Hermes gestiona sus propias credenciales en ~/.hermes/.env y los ajustes en ~/.hermes/config.yaml. Elige un proveedor y luego establece la clave de API y el modelo: Prooflane escribe ambos archivos por ti.",
       "providerLabel": "Proveedor",
       "providerHint": "El proveedor determina qué variable de clave de API y qué model.provider usa Hermes. Los proveedores de OAuth se configuran mediante la configuración del terminal que aparece a continuación.",
       "groupApiKey": "Proveedores con clave API",
@@ -979,7 +979,7 @@
     },
     "kimiCode": {
       "configManagement": "Configuración de Kimi Code",
-      "configDescription": "`kimi acp` solo acepta un token de sesión almacenado, así que codeg escribe un proveedor gestionado en ~/.kimi-code/config.toml y siembra un token de acceso local: la inferencia sigue usando tu propia clave.",
+      "configDescription": "`kimi acp` solo acepta un token de sesión almacenado, así que Prooflane escribe un proveedor gestionado en ~/.kimi-code/config.toml y siembra un token de acceso local: la inferencia sigue usando tu propia clave.",
       "statusUnconfigured": "Sin configurar",
       "statusDirty": "Cambios sin guardar",
       "summaryLabel": "En vigor",
@@ -991,7 +991,7 @@
       "authModeApiKey": "Clave de API",
       "authModeLogin": "Inicio de sesión de Kimi (suscripción)",
       "authModeApiKeyHint": "Escribe un proveedor gestionado en config.toml y siembra el token de acceso para que las sesiones puedan abrirse.",
-      "loginHint": "Ejecuta `kimi login` en una terminal para iniciar sesión con una cuenta de suscripción de Kimi. codeg no guarda nada y reutiliza el inicio de sesión de Kimi. Guardar aquí elimina el token de acceso por clave de API de codeg.",
+      "loginHint": "Ejecuta `kimi login` en una terminal para iniciar sesión con una cuenta de suscripción de Kimi. Prooflane no guarda nada y reutiliza el inicio de sesión de Kimi. Guardar aquí elimina el token de acceso por clave de API de Prooflane.",
       "credentialTitle": "Credencial",
       "interfaceTypeLabel": "Tipo de proveedor",
       "interfaceTypeHint": "El protocolo de proveedor que habla Kimi (el `type` de config.toml). Usa Kimi / Moonshot para una clave de Moonshot / platform.kimi.com.",
@@ -1020,7 +1020,7 @@
       "modelNotInList": "Este modelo no está en la lista a la que tu clave puede acceder: Kimi fallará con «modelo no encontrado».",
       "reasoningTitle": "Razonamiento",
       "reasoningEnableLabel": "Activar",
-      "reasoningDescription": "Kimi solo muestra el selector «Thinking» en el cuadro de mensaje cuando el modelo declara una capacidad de razonamiento, así que codeg la escribe aquí. Se aplica a las sesiones nuevas.",
+      "reasoningDescription": "Kimi solo muestra el selector «Thinking» en el cuadro de mensaje cuando el modelo declara una capacidad de razonamiento, así que Prooflane la escribe aquí. Se aplica a las sesiones nuevas.",
       "effortsLabel": "Niveles ofrecidos",
       "effortsHint": "Estos son los niveles que aparecerán en el selector «Thinking». Kimi los reenvía al proveedor tal cual, así que elige los que acepte tu modelo.",
       "effortsEmptyHint": "Sin ningún nivel elegido, el cuadro de mensaje se reduce a un simple interruptor Off / On.",
@@ -1185,12 +1185,12 @@
     "adapter": {
       "label": "Adaptador ACP",
       "badge": "Adaptador ACP",
-      "badgeHint": "Para este agente Codeg instala un paquete adaptador ACP, no la CLI del proveedor. Son independientes y comparten la misma configuración.",
+      "badgeHint": "Para este agente Prooflane instala un paquete adaptador ACP, no la CLI del proveedor. Son independientes y comparten la misma configuración.",
       "learnMore": "Más información",
-      "missingWithNative": "Se encontró tu {nativeLabel} en {nativePath}. Codeg habla con los agentes mediante ACP y esa CLI no habla ACP, así que Codeg necesita un paquete adaptador aparte, {adapterPackage}, mantenido por el proyecto Agent Client Protocol (originalmente Zed). Incluye su propio runtime, nunca modifica ni reemplaza tu comando {nativeCmd} y lee el mismo {configDir}: tu sesión y tus ajustes actuales se conservan. Instálalo abajo.",
-      "missing": "Codeg habla con los agentes mediante ACP y la {nativeLabel} no habla ACP, así que Codeg necesita un paquete adaptador aparte, {adapterPackage}, mantenido por el proyecto Agent Client Protocol (originalmente Zed). Incluye su propio runtime, por lo que no hace falta instalar antes la CLI {nativeCmd}; si ya la tienes, ambas conviven y comparten la sesión y los ajustes de {configDir}. Instálalo abajo.",
-      "readyWithNative": "El adaptador {adapterCmd} está instalado: es lo que Codeg ejecuta, no tu propio {nativeCmd} en {nativePath}. Son paquetes distintos que conviven y ambos leen {configDir}, así que la sesión y los ajustes son compartidos.",
-      "ready": "El adaptador {adapterCmd} está instalado: es lo que Codeg ejecuta. Incluye su propio runtime, así que la {nativeLabel} no es necesaria; si la instalas después, ambas conviven y comparten {configDir}."
+      "missingWithNative": "Se encontró tu {nativeLabel} en {nativePath}. Prooflane habla con los agentes mediante ACP y esa CLI no habla ACP, así que Prooflane necesita un paquete adaptador aparte, {adapterPackage}, mantenido por el proyecto Agent Client Protocol (originalmente Zed). Incluye su propio runtime, nunca modifica ni reemplaza tu comando {nativeCmd} y lee el mismo {configDir}: tu sesión y tus ajustes actuales se conservan. Instálalo abajo.",
+      "missing": "Prooflane habla con los agentes mediante ACP y la {nativeLabel} no habla ACP, así que Prooflane necesita un paquete adaptador aparte, {adapterPackage}, mantenido por el proyecto Agent Client Protocol (originalmente Zed). Incluye su propio runtime, por lo que no hace falta instalar antes la CLI {nativeCmd}; si ya la tienes, ambas conviven y comparten la sesión y los ajustes de {configDir}. Instálalo abajo.",
+      "readyWithNative": "El adaptador {adapterCmd} está instalado: es lo que Prooflane ejecuta, no tu propio {nativeCmd} en {nativePath}. Son paquetes distintos que conviven y ambos leen {configDir}, así que la sesión y los ajustes son compartidos.",
+      "ready": "El adaptador {adapterCmd} está instalado: es lo que Prooflane ejecuta. Incluye su propio runtime, así que la {nativeLabel} no es necesaria; si la instalas después, ambas conviven y comparten {configDir}."
     },
     "cline": {
       "configDescription": "Configure el proveedor de API y las credenciales de Cline. La configuración se guarda en ~/.cline/data/."
@@ -1262,7 +1262,7 @@
       "installing": "Instalando…",
       "recheck": "Volver a comprobar",
       "trustTitle": "Confiar automáticamente en los espacios de trabajo abiertos",
-      "trustDescription": "Cuando codeg conecta pi a una carpeta, marca esa carpeta como de confianza para que pi cargue la configuración y las habilidades locales del proyecto sin una confirmación aparte.",
+      "trustDescription": "Cuando Prooflane conecta pi a una carpeta, marca esa carpeta como de confianza para que pi cargue la configuración y las habilidades locales del proyecto sin una confirmación aparte.",
       "trustHint": "Solo se confía en las carpetas que abres aquí, nunca en todo tu equipo, y esto afecta únicamente a la carga de configuración, no a lo que pi puede ejecutar.",
       "configDirSkillsNote": "Con un directorio de configuración personalizado, las habilidades, los expertos y las herramientas de oficina gestionados en Ajustes no se aplican a este pi; gestiona sus habilidades directamente en esa carpeta."
     },
@@ -1295,7 +1295,7 @@
     "customAgentEditNotFound": "No se encontró el agente personalizado {id}",
     "customAgentSaved": "{name} guardado",
     "customAgentVersionProbeLabel": "Comando de consulta de versión (opcional)",
-    "customAgentVersionProbeHint": "Comando que imprime la versión instalada localmente. Si se deja vacío, codeg ejecuta el comando del agente con --version.",
+    "customAgentVersionProbeHint": "Comando que imprime la versión instalada localmente. Si se deja vacío, Prooflane ejecuta el comando del agente con --version.",
     "customAgentRemove": "Eliminar agente",
     "customAgentRemoveHint": "Elimina la definición del agente. Las conversaciones existentes conservan su historial; el agente simplemente ya no se puede iniciar.",
     "customAgentIconLabel": "Icono (opcional)",
@@ -1308,7 +1308,7 @@
     "customAgentSkillsDirLabel": "Directorio de skills dedicado",
     "customAgentSkillsDirHint": "Ruta absoluta del directorio desde el que este agente carga skills: su propio almacén, además del compartido o en su lugar. ~ se expande al directorio personal; las skills vinculadas se colocan aquí primero.",
     "customAgentMcpLabel": "Compatibilidad con MCP",
-    "customAgentMcpHint": "Envía el complemento MCP integrado de codeg a este agente al iniciar la sesión: es el canal de la delegación, los comentarios en vivo y las herramientas de tareas. Desactívalo para un agente que rechaza servidores MCP y no llega a conectarse; el cambio se aplica en la próxima conexión.",
+    "customAgentMcpHint": "Envía el complemento MCP integrado de Prooflane a este agente al iniciar la sesión: es el canal de la delegación, los comentarios en vivo y las herramientas de tareas. Desactívalo para un agente que rechaza servidores MCP y no llega a conectarse; el cambio se aplica en la próxima conexión.",
     "customAgentIconNotAnImage": "Selecciona un archivo de imagen.",
     "customAgentIconTooLarge": "El icono debe pesar menos de {limit} KB.",
     "customAgentIconReadFailed": "No se pudo leer esa imagen.",
@@ -1350,8 +1350,8 @@
     "loadFailed": "Error al cargar: {message}"
   },
   "LoginPage": {
-    "documentTitle": "Iniciar sesión - codeg",
-    "brand": "Codeg",
+    "documentTitle": "Iniciar sesión - Prooflane",
+    "brand": "Prooflane",
     "subtitle": "Introduce tu token de acceso para conectarte a la aplicación de escritorio",
     "tokenPlaceholder": "Token de acceso",
     "connect": "Conectar",
@@ -2487,7 +2487,7 @@
         },
         "backendErrors": {
           "initializeTimeout": "Se agotó el tiempo del handshake de conexión de {agent} (sin respuesta tras 60 segundos). Abre Ajustes para revisar la configuración del agente y de la red.",
-          "mcpRejectedByAgent": "{agent} rechazó la sesión con el complemento MCP de codeg adjunto: {message} Si este agente no admite MCP, desactiva «Compatibilidad con MCP» en Ajustes y vuelve a conectar.",
+          "mcpRejectedByAgent": "{agent} rechazó la sesión con el complemento MCP de Prooflane adjunto: {message} Si este agente no admite MCP, desactiva «Compatibilidad con MCP» en Ajustes y vuelve a conectar.",
           "processExited": "El proceso de {agent} terminó inesperadamente.",
           "spawnFailed": "No se pudo iniciar {agent}: {message}",
           "downloadFailed": "La descarga de {agent} falló: {message}",
@@ -2499,7 +2499,7 @@
           "turnFailedUnknown": "{agent} finalizó el turno con un motivo de parada no reconocido.",
           "grokModelSwitchIncompatibleAgent": "{agent} no puede cambiar a ese modelo en una conversación existente. Inicia una nueva sesión para usarlo.",
           "turnFailedEmpty": "{agent} finalizó el turno sin producir ninguna respuesta. Despliega los detalles para ver la salida del agente.",
-          "turnFailedEmptyProtocol": "{agent} produjo una salida que codeg no pudo analizar; la versión del agente podría no coincidir con el protocolo. Despliega los detalles para ver más.",
+          "turnFailedEmptyProtocol": "{agent} produjo una salida que Prooflane no pudo analizar; la versión del agente podría no coincidir con el protocolo. Despliega los detalles para ver más.",
           "turnFailedEmptyMetadata": "{agent} solo envió actualizaciones de estado en este turno (plan / modo / uso) y ninguna respuesta. Despliega los detalles para ver más."
         },
         "unableReadAgentConfig": "No se puede leer la configuración del agente: {message}",
@@ -2640,7 +2640,7 @@
           "shortcutsAuxPanel": "<shortcut>{toggleAuxPanel}</shortcut> alterna el panel derecho para ver los archivos tocados y los cambios de Git de esta sesión.",
           "shortcutsTerminalSidebar": "<shortcut>{toggleTerminal}</shortcut> abre la terminal integrada, <shortcut>{toggleSidebar}</shortcut> alterna la barra lateral.",
           "customShortcuts": "Todos los atajos se pueden reasignar en Ajustes → Atajos.",
-          "webService": "Activa Ajustes → Servicio web para que tu equipo acceda al mismo codeg desde un navegador.",
+          "webService": "Activa Ajustes → Servicio web para que tu equipo acceda al mismo Prooflane desde un navegador.",
           "fusionMode": "Abre un archivo o diff para mostrarlo automáticamente junto a la conversación.",
           "quickMessages": "Abre el botón + junto a la entrada y elige Mensajes rápidos para insertar un fragmento guardado (gestiónalos en Ajustes → Mensajes rápidos).",
           "experts": "El botón + tiene un menú Habilidades expertas: carga roles como Depuración o Planificación con un clic.",
@@ -2650,7 +2650,7 @@
           "mentionTargets": "@ no solo trae archivos: menciona a otro agente para delegarle una subtarea, o referencia una sesión anterior, un commit o una habilidad.",
           "splitGroups": "Haz clic derecho en una pestaña y elige Dividir a la derecha o Dividir abajo para mantener dos conversaciones en paneles propios.",
           "worktrees": "Abre el botón de rama y elige Nuevo worktree para que varios agentes trabajen en el mismo repositorio sin pisarse los archivos.",
-          "importSessions": "¿Ya ejecutaste sesiones en la terminal? El menú de una carpeta tiene Importar sesiones locales para traer ese historial a codeg.",
+          "importSessions": "¿Ya ejecutaste sesiones en la terminal? El menú de una carpeta tiene Importar sesiones locales para traer ese historial a Prooflane.",
           "subSessions": "Cuando un agente delega, la subsesión aparece anidada bajo él en la barra lateral: despliega la fila para seguir lo que hizo cada una.",
           "liveFeedback": "Comentarios en vivo, en el menú +, inserta una nota en el turno que el agente ya está ejecutando, sin interrumpirlo.",
           "skillPacks": "Configuración → Paquetes de habilidades reúne expertos de programación, investigación científica y ofimática; actívalos por agente.",
@@ -3315,11 +3315,11 @@
   "WebServiceSettings": {
     "addressSwitchHint": "Cambiar solo modifica la dirección que se muestra y se abre aquí; el servicio escucha en todas las interfaces y sigue accesible en cada dirección.",
     "sectionTitle": "Servicio Web",
-    "sectionDescription": "Habilitar para acceder a Codeg de forma remota a través del navegador",
+    "sectionDescription": "Habilitar para acceder a Prooflane de forma remota a través del navegador",
     "port": "Puerto",
     "status": "Estado",
     "autoStart": "Inicio automático",
-    "autoStartHint": "Iniciar el servicio web al abrir Codeg",
+    "autoStartHint": "Iniciar el servicio web al abrir Prooflane",
     "running": "En ejecución",
     "stopped": "Detenido",
     "processing": "Procesando...",
@@ -3334,7 +3334,7 @@
     "copy": "Copiar",
     "qrcode": "Código QR",
     "qrcodeTitle": "Escanear para abrir",
-    "qrcodeHint": "Escanea con tu teléfono para abrir Codeg en el navegador",
+    "qrcodeHint": "Escanea con tu teléfono para abrir Prooflane en el navegador",
     "addressLabel": "Dirección de acceso",
     "tokenLabel": "Token de acceso",
     "tokenHint": "Ingrese este token al acceder al cliente Web por primera vez",
@@ -3342,7 +3342,7 @@
     "regenerate": "Regenerar",
     "stalePortOccupiedTitle": "El puerto {port} está en uso por otro proceso",
     "stalePortUnknownTitle": "Estado del puerto {port} indeterminado",
-    "stalePortHint": "Codeg no puede vincularse hasta que se libere el puerto. Cambia el puerto arriba o cierra el proceso que lo retiene.",
+    "stalePortHint": "Prooflane no puede vincularse hasta que se libere el puerto. Cambia el puerto arriba o cierra el proceso que lo retiene.",
     "errors": {
       "alreadyRunning": "El servicio Web ya está en ejecución",
       "invalidAddress": "Formato de host o puerto no válido",
@@ -3381,7 +3381,7 @@
     "tokenRequired": "El token es obligatorio.",
     "chatIdRequired": "El Chat ID es obligatorio.",
     "topicMode": "Modo de grupo por temas",
-    "topicModeHint": "Enruta los temas de foros de Telegram como sesiones Codeg separadas. El bot debe estar en un supergrupo de foro y poder administrar temas.",
+    "topicModeHint": "Enruta los temas de foros de Telegram como sesiones Prooflane separadas. El bot debe estar en un supergrupo de foro y poder administrar temas.",
     "loadFailed": "Error al cargar los canales.",
     "saveFailed": "Error al guardar los cambios.",
     "connectSuccess": "Canal conectado.",
@@ -3578,7 +3578,7 @@
     },
     "confirm": {
       "disableTitle": "¿Desactivar estos enlaces?",
-      "disableBody": "Esto eliminará {count} enlaces de habilidades gestionados por codeg. Las habilidades que ocupan un directorio personalizado no se modifican. Puedes reactivarlas cuando quieras.",
+      "disableBody": "Esto eliminará {count} enlaces de habilidades gestionados por Prooflane. Las habilidades que ocupan un directorio personalizado no se modifican. Puedes reactivarlas cuando quieras.",
       "cancel": "Cancelar",
       "confirm": "Desactivar"
     },
@@ -3599,7 +3599,7 @@
   },
   "ExpertsSettings": {
     "title": "Habilidades de expertos",
-    "description": "Habilita flujos de trabajo de habilidades cuidadosamente seleccionadas y probadas en la práctica para tus agentes de codificación de IA. Cada experto es una habilidad independiente del proyecto superpowers — codeg gestiona la copia central y la vincula a los agentes que elijas.",
+    "description": "Habilita flujos de trabajo de habilidades cuidadosamente seleccionadas y probadas en la práctica para tus agentes de codificación de IA. Cada experto es una habilidad independiente del proyecto superpowers — Prooflane gestiona la copia central y la vincula a los agentes que elijas.",
     "loading": "Cargando expertos…",
     "loadingContent": "Cargando contenido…",
     "emptyExperts": "No hay expertos disponibles. Revisa los registros de la aplicación.",
@@ -3608,7 +3608,7 @@
     "searchPlaceholder": "Buscar expertos por nombre, ID o descripción",
     "enableForAgents": "Habilitar para agentes",
     "noAgents": "No se detectaron agentes ACP.",
-    "copyModeWarning": "Copiado (no vinculado). Vuelve a habilitarlo después de actualizar codeg para obtener la última versión.",
+    "copyModeWarning": "Copiado (no vinculado). Vuelve a habilitarlo después de actualizar Prooflane para obtener la última versión.",
     "previewTitle": "Vista previa de SKILL.md",
     "categories": {
       "discovery": "Descubrimiento y diseño",
@@ -3644,7 +3644,7 @@
   },
   "ScienceSettings": {
     "title": "Habilidades de investigación científica",
-    "description": "Habilita habilidades de investigación científica seleccionadas para tus agentes de código con IA: generación de hipótesis, diseño experimental, estadística, visualización, evaluación crítica y búsqueda bibliográfica. codeg gestiona una copia central y enlaza cada habilidad a los agentes que elijas.",
+    "description": "Habilita habilidades de investigación científica seleccionadas para tus agentes de código con IA: generación de hipótesis, diseño experimental, estadística, visualización, evaluación crítica y búsqueda bibliográfica. Prooflane gestiona una copia central y enlaza cada habilidad a los agentes que elijas.",
     "loading": "Cargando habilidades científicas…",
     "emptySkills": "No hay habilidades científicas disponibles. Revisa los registros de la aplicación.",
     "searchPlaceholder": "Buscar habilidades científicas por nombre, id o descripción",
@@ -3738,7 +3738,7 @@
   },
   "SkillPacksSettings": {
     "title": "Paquetes de habilidades",
-    "description": "Paquetes de habilidades seleccionados que codeg gestiona de forma centralizada y vincula a tus agentes de IA: expertos en programación, investigación científica y herramientas de documentos de oficina. Actívalos por agente abajo.",
+    "description": "Paquetes de habilidades seleccionados que Prooflane gestiona de forma centralizada y vincula a tus agentes de IA: expertos en programación, investigación científica y herramientas de documentos de oficina. Actívalos por agente abajo.",
     "tabs": {
       "experts": "Expertos",
       "science": "Ciencia",
@@ -3959,7 +3959,7 @@
   },
   "BackupSettings": {
     "title": "Copia de seguridad y restauración",
-    "description": "Exporta una copia de seguridad portátil de tus datos de codeg, o restaura desde una.",
+    "description": "Exporta una copia de seguridad portátil de tus datos de Prooflane, o restaura desde una.",
     "tabs": {
       "backup": "Copia de seguridad",
       "restore": "Restaurar"
@@ -3989,9 +3989,9 @@
         "incompatible": "Incompatible",
         "createdAt": "Creada: {value}",
         "appVersion": "Versión de la app: {value}",
-        "incompatibleHint": "Esta copia fue creada por una versión más reciente de codeg y no se puede restaurar."
+        "incompatibleHint": "Esta copia fue creada por una versión más reciente de Prooflane y no se puede restaurar."
       },
-      "replaceWarning": "Restaurar reemplaza todos los datos actuales de codeg (base de datos y subidas). Tus datos actuales se guardan primero en una instantánea para poder recuperarlos.",
+      "replaceWarning": "Restaurar reemplaza todos los datos actuales de Prooflane (base de datos y subidas). Tus datos actuales se guardan primero en una instantánea para poder recuperarlos.",
       "keyringNote": "Los tokens de GitHub/chat del escritorio están en el llavero del sistema y no se incluyen; vuelve a introducirlos tras restaurar.",
       "button": "Restaurar",
       "staging": "Preparando la restauración…",
@@ -4000,7 +4000,7 @@
       "restartTimeout": "El servidor no volvió a tiempo. Recarga la página cuando esté activo.",
       "externalSideLocation": "Las transcripciones de conversaciones se restauraron en {path}",
       "confirmTitle": "¿Reemplazar todos los datos?",
-      "confirmBody": "Esto reemplazará tu base de datos y subidas actuales de codeg con la copia y luego reiniciará. Tus datos actuales se guardan primero en una instantánea.",
+      "confirmBody": "Esto reemplazará tu base de datos y subidas actuales de Prooflane con la copia y luego reiniciará. Tus datos actuales se guardan primero en una instantánea.",
       "cancel": "Cancelar",
       "confirmAction": "Reemplazar y reiniciar",
       "external": {
@@ -4018,15 +4018,15 @@
       },
       "restartFailed": "La restauración quedó preparada, pero el servidor no pudo reiniciarse. Reinícialo manualmente para aplicarla."
     },
-    "remoteUnsupported": "La copia de seguridad y la restauración actúan sobre los datos de la máquina que ejecuta codeg. Estás conectado a un espacio de trabajo remoto: gestiona sus copias desde ese servidor directamente."
+    "remoteUnsupported": "La copia de seguridad y la restauración actúan sobre los datos de la máquina que ejecuta Prooflane. Estás conectado a un espacio de trabajo remoto: gestiona sus copias desde ese servidor directamente."
   },
   "backup": {
     "restore": {
       "error": {
         "badPassphrase": "Frase de contraseña incorrecta o copia dañada.",
         "corrupted": "El archivo de copia de seguridad está dañado.",
-        "unknownFormat": "Este archivo no es una copia de seguridad de codeg reconocida.",
-        "newerVersion": "Esta copia fue creada por codeg {backupVersion}, más reciente que esta versión ({appVersion}).",
+        "unknownFormat": "Este archivo no es una copia de seguridad de Prooflane reconocida.",
+        "newerVersion": "Esta copia fue creada por Prooflane {backupVersion}, más reciente que esta versión ({appVersion}).",
         "alreadyPending": "Ya hay una restauración preparada. Reinicia para aplicarla antes de preparar otra."
       }
     },
@@ -4064,7 +4064,7 @@
   },
   "AgentToolsSettings": {
     "title": "Herramientas en la conversación",
-    "description": "Herramientas adicionales que codeg entrega a un agente dentro de una conversación. Se inyectan al iniciar el agente, así que los cambios se aplican a los agentes iniciados después.",
+    "description": "Herramientas adicionales que Prooflane entrega a un agente dentro de una conversación. Se inyectan al iniciar el agente, así que los cambios se aplican a los agentes iniciados después.",
     "feedbackLabel": "Comentarios en vivo",
     "feedbackHint": "Envía notas y correcciones a un agente mientras trabaja. Si el agente admite la inserción instantánea, tu nota se inserta de inmediato en el turno en curso; de lo contrario, el agente recibe una herramienta para consultar tus comentarios — esos agentes suelen consultarla solo si lo mencionas en tu prompt, por ejemplo añade \"revisa mi feedback en vivo con regularidad\" a tu mensaje.",
     "questionLabel": "Preguntar al usuario",
@@ -4089,7 +4089,7 @@
     "preview": "Escuchar",
     "previewEvent": "Escuchar el sonido de {event}",
     "onlyWhenUnfocused": "Solo cuando la ventana no está enfocada",
-    "onlyWhenUnfocusedHint": "Permanece en silencio mientras estás mirando Codeg.",
+    "onlyWhenUnfocusedHint": "Permanece en silencio mientras estás mirando Prooflane.",
     "eventsTitle": "Eventos",
     "eventsHint": "Elige un tono para cada evento o «Silencio» para omitirlo. Si el mismo evento se repite en pocos segundos, solo suena una vez.",
     "toneNone": "Silencio",
@@ -4590,7 +4590,7 @@
     }
   },
   "CodexModelEditor": {
-    "customizedNotice": "Has personalizado la lista de modelos, así que ahora codeg gestiona toda la tabla de modelos de codex. Los modelos oficiales que codex añada después no aparecerán automáticamente: haz clic en el botón actualizar de abajo y guarda de nuevo para sincronizarlos. Borra tus personalizaciones para que codex vuelva a actualizarse automáticamente.",
+    "customizedNotice": "Has personalizado la lista de modelos, así que ahora Prooflane gestiona toda la tabla de modelos de codex. Los modelos oficiales que codex añada después no aparecerán automáticamente: haz clic en el botón actualizar de abajo y guarda de nuevo para sincronizarlos. Borra tus personalizaciones para que codex vuelva a actualizarse automáticamente.",
     "officialsTitle": "Modelos oficiales",
     "officialsHint": "Se incluyen automáticamente del codex que ejecutas; elimina los que no quieras.",
     "officialsEmpty": "No hay modelos oficiales disponibles.",
@@ -4643,8 +4643,8 @@
       "terminal_only_path": "El comando se resuelve en tu terminal pero no en la app: una diferencia de PATH de la GUI. Inicia la app desde una terminal o reinstala desde Ajustes de agentes.",
       "npm_prefix_timeout": "npm prefix -g fue demasiado lento (más de 1,5 s), por lo que se omitió la detección de reserva. Reinicia la app e inténtalo de nuevo.",
       "node_too_old": "Tu Node.js activo es más antiguo de lo que requiere este agente. Actualiza Node.js.",
-      "adapter_missing_native_present": "Tu CLI de {agent} sí está instalada, pero Codeg ejecuta un paquete adaptador ACP aparte, y ese todavía no lo está. Instálalo desde la configuración de agentes: no toca tu CLI y comparte la misma sesión.",
-      "adapter_missing": "Codeg ejecuta un paquete adaptador ACP aparte para {agent} y aún no está instalado. Instálalo desde la configuración de agentes: instalar solo la CLI del proveedor no basta."
+      "adapter_missing_native_present": "Tu CLI de {agent} sí está instalada, pero Prooflane ejecuta un paquete adaptador ACP aparte, y ese todavía no lo está. Instálalo desde la configuración de agentes: no toca tu CLI y comparte la misma sesión.",
+      "adapter_missing": "Prooflane ejecuta un paquete adaptador ACP aparte para {agent} y aún no está instalado. Instálalo desde la configuración de agentes: instalar solo la CLI del proveedor no basta."
     }
   },
   "TokenUsage": {
@@ -4678,7 +4678,7 @@
     "resetFilters": "Restablecer filtros",
     "refresh": "Actualizar",
     "rebuild": "Reconstruir todo",
-    "rebuildHint": "Descarta lo contabilizado y vuelve a leer todas las transcripciones. Útil si una sesión creció fuera de codeg.",
+    "rebuildHint": "Descarta lo contabilizado y vuelve a leer todas las transcripciones. Útil si una sesión creció fuera de Prooflane.",
     "syncing": "Contando sesiones…",
     "syncProgress": "{done} / {total}",
     "syncDone": "{synced} sesiones contabilizadas",
@@ -4757,7 +4757,7 @@
     "cardHeading": "Mis estadísticas de código con IA",
     "cardRangeAll": "Todo el tiempo",
     "cardTotalLabel": "Tokens usados",
-    "cardFooter": "Hecho con codeg",
+    "cardFooter": "Hecho con Prooflane",
     "cardTopModels": "Modelos principales",
     "cardTopProjects": "Proyectos principales",
     "archetypeNightOwl": "Ave nocturna",
@@ -4779,7 +4779,7 @@
     "archetypeSteady": "Constructor constante",
     "archetypeSteadyDesc": "{days} días entregando.",
     "emptyTitle": "Todavía no hay nada contabilizado",
-    "emptyHint": "Codeg lee los tokens directamente de la transcripción de cada agente. Actualiza para contabilizar lo que ya hay en esta máquina.",
+    "emptyHint": "Prooflane lee los tokens directamente de la transcripción de cada agente. Actualiza para contabilizar lo que ya hay en esta máquina.",
     "emptyAction": "Contabilizar mis sesiones",
     "loadFailed": "No se pudo cargar el uso",
     "truncatedNotice": "Este periodo es muy amplio: las cifras cubren solo su tramo más reciente."

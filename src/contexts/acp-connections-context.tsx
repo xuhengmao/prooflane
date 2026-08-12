@@ -3240,7 +3240,7 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
             const nc = storeRef.current.connections.get(contextKey)
             const agentLabel = nc ? getAgentLabel(nc.agentType) : "Agent"
             const fn = folderNameRef.current
-            const title = fn ? `${fn} - Codeg` : "Codeg"
+            const title = fn ? `${fn} - Prooflane` : "Prooflane"
             for (const settled of e.settled) {
               const body =
                 settled.summary ??
@@ -3300,7 +3300,7 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
             if (nc) {
               const agentLabel = getAgentLabel(nc.agentType)
               const fn = folderNameRef.current
-              const title = fn ? `${fn} - Codeg` : "Codeg"
+              const title = fn ? `${fn} - Prooflane` : "Prooflane"
               sendSystemNotification(
                 title,
                 `${agentLabel}: ${tChat("permissionDialog.subtitle")}`
@@ -3493,7 +3493,7 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
             if (nc) {
               const agentLabel = getAgentLabel(nc.agentType)
               const fn = folderNameRef.current
-              const title = fn ? `${fn} - Codeg` : "Codeg"
+              const title = fn ? `${fn} - Prooflane` : "Prooflane"
               sendSystemNotification(
                 title,
                 t("notificationTurnComplete", { agent: agentLabel })
@@ -3605,7 +3605,7 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
           // agent output must not be forwarded there.
           if (nc) {
             const fn = folderNameRef.current
-            const title = fn ? `${fn} - Codeg` : "Codeg"
+            const title = fn ? `${fn} - Prooflane` : "Prooflane"
             sendSystemNotification(
               title,
               t("notificationError", {

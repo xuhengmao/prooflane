@@ -131,7 +131,7 @@
       },
       "css": {
         "dialogTitle": "カスタム CSS",
-        "dialogDescription": "すべての codeg ウィンドウに適用されます。変更はリアルタイムでプレビューされ、「適用」で保存されます。",
+        "dialogDescription": "すべての Prooflane ウィンドウに適用されます。変更はリアルタイムでプレビューされ、「適用」で保存されます。",
         "size": "{used} KB / {max} KB",
         "ruleCount": "{count} 個のルール",
         "errorTooLarge": "サイズが大きすぎて保存できません。上限以下に減らしてください。",
@@ -722,7 +722,7 @@
       "configTomlHint": "~/.grok/config.toml 全体としてそのまま書き込まれます。無効な TOML は拒否され、タイプミスでファイルが切り詰められることはありません。",
       "configTomlPlaceholder": "# 上のコントロール以外のキー。例:\n# [mcp_servers.*]、[cli]、[permission] ルール。",
       "customModelTitle": "カスタムモデル（独自エンドポイント）",
-      "customModelHint": "Grok をカスタムまたは自己ホストのエンドポイントに向けます。codeg はモデルごとの `[model.*]` ブロックを書き込み、既定モデルに設定します。モデル ID を空にすると削除されます。",
+      "customModelHint": "Grok をカスタムまたは自己ホストのエンドポイントに向けます。Prooflane はモデルごとの `[model.*]` ブロックを書き込み、既定モデルに設定します。モデル ID を空にすると削除されます。",
       "customModelIdLabel": "モデル ID",
       "customModelIdPlaceholder": "grok-4.5",
       "customModelIdHint": "`[model.*]` ブロックとして登録され、モデル名として API に送信されます。`[models].default` にも設定されます。",
@@ -740,7 +740,7 @@
       "autoCompactHint": "コンテキスト使用率がこの割合に達したら会話を圧縮します（Grok の既定は 85）。`[session]` に書き込まれます。"
     },
     "cursor": {
-      "configDescription": "ここで Cursor を設定します。まず認証方式を選択し——公式サブスクリプション（ブラウザログイン）またはヘッドレス/サーバー用の Cursor API キー——次にモデルを選び、CLI の権限ルールとサンドボックスを編集します。codeg はこれらを ~/.cursor/cli-config.json に書き込み、cursor-agent CLI と共有します。",
+      "configDescription": "ここで Cursor を設定します。まず認証方式を選択し——公式サブスクリプション（ブラウザログイン）またはヘッドレス/サーバー用の Cursor API キー——次にモデルを選び、CLI の権限ルールとサンドボックスを編集します。Prooflane はこれらを ~/.cursor/cli-config.json に書き込み、cursor-agent CLI と共有します。",
       "authTitle": "認証",
       "authChecking": "確認中…",
       "authNotInstalled": "cursor-agent が未インストールです",
@@ -937,7 +937,7 @@
     },
     "hermes": {
       "configManagement": "Hermes 設定",
-      "configDescription": "Hermes は認証情報を ~/.hermes/.env に、設定を ~/.hermes/config.yaml に独自に管理します。プロバイダーを選択し、API キーとモデルを設定してください。codeg が両方のファイルを書き込みます。",
+      "configDescription": "Hermes は認証情報を ~/.hermes/.env に、設定を ~/.hermes/config.yaml に独自に管理します。プロバイダーを選択し、API キーとモデルを設定してください。Prooflane が両方のファイルを書き込みます。",
       "providerLabel": "プロバイダー",
       "providerHint": "プロバイダーによって、Hermes が使用する API キー変数と model.provider が決まります。OAuth プロバイダーは下のターミナルセットアップから設定します。",
       "groupApiKey": "API キー プロバイダー",
@@ -979,7 +979,7 @@
     },
     "kimiCode": {
       "configManagement": "Kimi Code の設定",
-      "configDescription": "`kimi acp` は保存済みのログイントークンしか受け付けないため、codeg は ~/.kimi-code/config.toml に管理対象プロバイダーを書き込み、ローカルにゲートトークンを配置します。推論は引き続きご自身のキーで実行されます。",
+      "configDescription": "`kimi acp` は保存済みのログイントークンしか受け付けないため、Prooflane は ~/.kimi-code/config.toml に管理対象プロバイダーを書き込み、ローカルにゲートトークンを配置します。推論は引き続きご自身のキーで実行されます。",
       "statusUnconfigured": "未設定",
       "statusDirty": "未保存の変更あり",
       "summaryLabel": "有効な設定",
@@ -991,7 +991,7 @@
       "authModeApiKey": "API キー",
       "authModeLogin": "Kimi アカウントログイン（サブスクリプション）",
       "authModeApiKeyHint": "config.toml に管理対象プロバイダーを書き込み、セッションを開けるようゲートトークンを配置します。",
-      "loginHint": "ターミナルで `kimi login` を実行し、Kimi サブスクリプションアカウントでログインしてください。codeg は資格情報を保存せず、Kimi 自身のログインを再利用します。ここで保存すると codeg の API キー用ゲートトークンが削除されます。",
+      "loginHint": "ターミナルで `kimi login` を実行し、Kimi サブスクリプションアカウントでログインしてください。Prooflane は資格情報を保存せず、Kimi 自身のログインを再利用します。ここで保存すると Prooflane の API キー用ゲートトークンが削除されます。",
       "credentialTitle": "資格情報",
       "interfaceTypeLabel": "プロバイダー種別",
       "interfaceTypeHint": "Kimi が話すプロバイダープロトコル（config.toml の `type`）。Moonshot / platform.kimi.com のキーには「Kimi / Moonshot」を選びます。",
@@ -1020,7 +1020,7 @@
       "modelNotInList": "このモデルはキーがアクセスできる一覧に含まれていません。Kimi は「モデルが見つかりません」で失敗します。",
       "reasoningTitle": "推論",
       "reasoningEnableLabel": "有効にする",
-      "reasoningDescription": "モデルが推論機能を宣言している場合にのみ Kimi は入力欄に「Thinking」ピッカーを表示するため、その宣言を codeg がここで書き込みます。新しいセッションから有効になります。",
+      "reasoningDescription": "モデルが推論機能を宣言している場合にのみ Kimi は入力欄に「Thinking」ピッカーを表示するため、その宣言を Prooflane がここで書き込みます。新しいセッションから有効になります。",
       "effortsLabel": "選択できるレベル",
       "effortsHint": "ここで選んだ値が入力欄の「Thinking」ピッカーの項目になります。Kimi はレベルをそのままプロバイダーへ渡すので、モデルが受け付ける値を選んでください。",
       "effortsEmptyHint": "レベルを 1 つも選ばない場合、入力欄は Off / On の 2 段トグルに退化します。",
@@ -1185,12 +1185,12 @@
     "adapter": {
       "label": "ACP アダプター",
       "badge": "ACP アダプター",
-      "badgeHint": "このエージェントで Codeg がインストールするのはベンダー CLI ではなく ACP アダプターのパッケージです。両者は独立しており、設定は共有されます。",
+      "badgeHint": "このエージェントで Prooflane がインストールするのはベンダー CLI ではなく ACP アダプターのパッケージです。両者は独立しており、設定は共有されます。",
       "learnMore": "詳細",
-      "missingWithNative": "お使いの {nativeLabel} を {nativePath} で検出しました。Codeg はエージェントを ACP で駆動しますが、この CLI 自体は ACP に対応していないため、別パッケージのアダプター {adapterPackage}（Agent Client Protocol プロジェクトが保守。当初は Zed チーム）が必要です。独自のランタイムを同梱しており、既存の {nativeCmd} コマンドを変更も置き換えもしません。読み込む設定は同じ {configDir} なので、ログインと設定はそのまま引き継がれます。下のボタンからインストールしてください。",
-      "missing": "Codeg はエージェントを ACP で駆動しますが、{nativeLabel} 自体は ACP に対応していないため、別パッケージのアダプター {adapterPackage}（Agent Client Protocol プロジェクトが保守。当初は Zed チーム）が必要です。独自のランタイムを同梱しているので {nativeCmd} CLI を先に入れる必要はありません。すでにお持ちの場合も両者は共存し、{configDir} のログインと設定を共有します。下のボタンからインストールしてください。",
-      "readyWithNative": "アダプター {adapterCmd} はインストール済みです。Codeg が起動するのはこちらで、あなたの {nativeCmd}（{nativePath}）ではありません。両者は独立したパッケージとして共存し、どちらも {configDir} を読むためログインと設定は共有されます。",
-      "ready": "アダプター {adapterCmd} はインストール済みで、Codeg が起動するのはこれです。独自のランタイムを同梱しているため {nativeLabel} は不要です。後から入れても両者は共存し、{configDir} を共有します。"
+      "missingWithNative": "お使いの {nativeLabel} を {nativePath} で検出しました。Prooflane はエージェントを ACP で駆動しますが、この CLI 自体は ACP に対応していないため、別パッケージのアダプター {adapterPackage}（Agent Client Protocol プロジェクトが保守。当初は Zed チーム）が必要です。独自のランタイムを同梱しており、既存の {nativeCmd} コマンドを変更も置き換えもしません。読み込む設定は同じ {configDir} なので、ログインと設定はそのまま引き継がれます。下のボタンからインストールしてください。",
+      "missing": "Prooflane はエージェントを ACP で駆動しますが、{nativeLabel} 自体は ACP に対応していないため、別パッケージのアダプター {adapterPackage}（Agent Client Protocol プロジェクトが保守。当初は Zed チーム）が必要です。独自のランタイムを同梱しているので {nativeCmd} CLI を先に入れる必要はありません。すでにお持ちの場合も両者は共存し、{configDir} のログインと設定を共有します。下のボタンからインストールしてください。",
+      "readyWithNative": "アダプター {adapterCmd} はインストール済みです。Prooflane が起動するのはこちらで、あなたの {nativeCmd}（{nativePath}）ではありません。両者は独立したパッケージとして共存し、どちらも {configDir} を読むためログインと設定は共有されます。",
+      "ready": "アダプター {adapterCmd} はインストール済みで、Prooflane が起動するのはこれです。独自のランタイムを同梱しているため {nativeLabel} は不要です。後から入れても両者は共存し、{configDir} を共有します。"
     },
     "cline": {
       "configDescription": "Cline API プロバイダーと認証情報を設定します。設定は ~/.cline/data/ に保存されます。"
@@ -1262,7 +1262,7 @@
       "installing": "インストール中…",
       "recheck": "再確認",
       "trustTitle": "開いたワークスペースを自動的に信頼",
-      "trustDescription": "codeg が pi をフォルダーに接続する際、そのフォルダーを信頼済みとして登録し、別途の確認なしにプロジェクトのローカル設定とスキルを読み込めるようにします。",
+      "trustDescription": "Prooflane が pi をフォルダーに接続する際、そのフォルダーを信頼済みとして登録し、別途の確認なしにプロジェクトのローカル設定とスキルを読み込めるようにします。",
       "trustHint": "信頼されるのはここで開いたフォルダーのみで、マシン全体ではありません。また影響するのは設定の読み込みだけで、pi が実行できる内容には影響しません。",
       "configDirSkillsNote": "カスタム設定ディレクトリを指定すると、設定画面で管理するスキル・エキスパート・オフィスツールはこの pi に適用されません。スキルはそのフォルダー内で直接管理してください。"
     },
@@ -1308,7 +1308,7 @@
     "customAgentSkillsDirLabel": "専用スキルディレクトリ",
     "customAgentSkillsDirHint": "このエージェントがスキルを読み込むディレクトリの絶対パスです。共有ストアと併用も単独利用も可能です。~ はホームディレクトリに展開され、リンクしたスキルはまずここに配置されます。",
     "customAgentMcpLabel": "MCP サポート",
-    "customAgentMcpHint": "セッション開始時に codeg 内蔵の codeg-mcp コンパニオンをこのエージェントへ渡します。委任・リアルタイムフィードバック・タスクツールはこの経路を使います。MCP サーバーを受け付けず接続に失敗するエージェントではオフにしてください。設定は次回の接続から有効になります。",
+    "customAgentMcpHint": "セッション開始時に Prooflane 内蔵の codeg-mcp コンパニオンをこのエージェントへ渡します。委任・リアルタイムフィードバック・タスクツールはこの経路を使います。MCP サーバーを受け付けず接続に失敗するエージェントではオフにしてください。設定は次回の接続から有効になります。",
     "customAgentIconNotAnImage": "画像ファイルを選んでください。",
     "customAgentIconTooLarge": "アイコンは {limit} KB 未満にしてください。",
     "customAgentIconReadFailed": "その画像を読み込めませんでした。",
@@ -1350,8 +1350,8 @@
     "loadFailed": "読み込みに失敗しました: {message}"
   },
   "LoginPage": {
-    "documentTitle": "ログイン - codeg",
-    "brand": "Codeg",
+    "documentTitle": "ログイン - Prooflane",
+    "brand": "Prooflane",
     "subtitle": "デスクトップアプリに接続するためのアクセストークンを入力してください",
     "tokenPlaceholder": "アクセストークン",
     "connect": "接続",
@@ -2487,7 +2487,7 @@
         },
         "backendErrors": {
           "initializeTimeout": "{agent} の接続ハンドシェイクがタイムアウトしました（60 秒以内に応答なし）。設定を開いてエージェントとネットワーク設定を確認してください。",
-          "mcpRejectedByAgent": "codeg の MCP コンパニオンを渡した際、{agent} がセッションを拒否しました: {message} このエージェントが MCP に対応していない場合は、設定で「MCP サポート」をオフにして再接続してください。",
+          "mcpRejectedByAgent": "Prooflane の MCP コンパニオンを渡した際、{agent} がセッションを拒否しました: {message} このエージェントが MCP に対応していない場合は、設定で「MCP サポート」をオフにして再接続してください。",
           "processExited": "{agent} プロセスが予期せず終了しました。",
           "spawnFailed": "{agent} の起動に失敗しました: {message}",
           "downloadFailed": "{agent} のダウンロードに失敗しました: {message}",
@@ -2499,7 +2499,7 @@
           "turnFailedUnknown": "{agent} が不明な停止理由でターンを終了しました。",
           "grokModelSwitchIncompatibleAgent": "{agent} は既存の会話ではこのモデルに切り替えられません。新しいセッションを開始して使用してください。",
           "turnFailedEmpty": "{agent} は応答を生成せずにターンを終了しました。詳細を展開してエージェントの出力を確認してください。",
-          "turnFailedEmptyProtocol": "{agent} の出力を codeg が解析できませんでした。エージェントのバージョンがプロトコルと一致していない可能性があります。詳細を展開して確認してください。",
+          "turnFailedEmptyProtocol": "{agent} の出力を Prooflane が解析できませんでした。エージェントのバージョンがプロトコルと一致していない可能性があります。詳細を展開して確認してください。",
           "turnFailedEmptyMetadata": "{agent} はこのターンでステータス更新（計画 / モード / 使用量）のみを送信し、応答はありませんでした。詳細を展開して確認してください。"
         },
         "unableReadAgentConfig": "エージェント設定を読み取れません: {message}",
@@ -2640,7 +2640,7 @@
           "shortcutsAuxPanel": "<shortcut>{toggleAuxPanel}</shortcut> で右側パネルを開き、このセッションで変更したファイルや Git の差分を確認できます",
           "shortcutsTerminalSidebar": "<shortcut>{toggleTerminal}</shortcut> で内蔵ターミナル、<shortcut>{toggleSidebar}</shortcut> でサイドバーを切り替えできます",
           "customShortcuts": "すべてのショートカットは「設定 → ショートカット」で自由に変更できます",
-          "webService": "「設定 → Web サービス」を有効にすると、チームメンバーが同じ codeg にブラウザでアクセスできます",
+          "webService": "「設定 → Web サービス」を有効にすると、チームメンバーが同じ Prooflane にブラウザでアクセスできます",
           "fusionMode": "ファイルや差分を開くと、会話の横に自動で表示されます。",
           "quickMessages": "入力欄横の + ボタンから「クイックメッセージ」を選ぶと、保存済みのスニペットを一発で挿入できます（「設定 → クイックメッセージ」で管理）",
           "experts": "+ ボタンの「エキスパートスキル」メニューから、デバッグや計画などのプリセットロールをワンクリックで読み込めます",
@@ -2650,7 +2650,7 @@
           "mentionTargets": "@ で参照できるのはファイルだけではありません。別のエージェントをメンションしてサブタスクを任せたり、過去のセッション・コミット・スキルを参照したりできます。",
           "splitGroups": "タブを右クリックして「右に分割」または「下に分割」を選ぶと、2 つの会話をそれぞれのペインで開いたままにできます。",
           "worktrees": "ブランチボタンから「新規ワークツリー」を選ぶと、複数のエージェントが同じリポジトリで互いのファイルを上書きせずに並行作業できます。",
-          "importSessions": "すでにターミナルで実行したセッションは、フォルダーのメニューにある「ローカルセッションをインポート」で codeg に取り込めます。",
+          "importSessions": "すでにターミナルで実行したセッションは、フォルダーのメニューにある「ローカルセッションをインポート」で Prooflane に取り込めます。",
           "subSessions": "エージェントが委任すると、サブセッションがサイドバーの親セッションの下に入れ子で表示されます。行を展開すれば、それぞれの作業を追えます。",
           "liveFeedback": "「+」メニューのライブフィードバックを使えば、エージェントが実行中のターンに、中断させずにメモを差し込めます。",
           "skillPacks": "設定 → スキルパックには、コーディング専門家・科学研究・オフィス作業のスキルがまとまっています。エージェントごとに有効化できます。",
@@ -3315,11 +3315,11 @@
   "WebServiceSettings": {
     "addressSwitchHint": "切り替えても、ここに表示され開くアドレスが変わるだけです。サービスはすべてのインターフェースで待ち受けており、どのアドレスからもアクセスできます。",
     "sectionTitle": "Webサービス",
-    "sectionDescription": "有効にするとブラウザからCodegにリモートアクセスできます",
+    "sectionDescription": "有効にするとブラウザからProoflaneにリモートアクセスできます",
     "port": "ポート",
     "status": "ステータス",
     "autoStart": "自動起動",
-    "autoStartHint": "Codeg の起動時に Web サービスを開始",
+    "autoStartHint": "Prooflane の起動時に Web サービスを開始",
     "running": "実行中",
     "stopped": "停止中",
     "processing": "処理中...",
@@ -3334,7 +3334,7 @@
     "copy": "コピー",
     "qrcode": "QRコード",
     "qrcodeTitle": "スキャンして開く",
-    "qrcodeHint": "スマートフォンでスキャンして、ブラウザで Codeg を開きます",
+    "qrcodeHint": "スマートフォンでスキャンして、ブラウザで Prooflane を開きます",
     "addressLabel": "アクセスアドレス",
     "tokenLabel": "アクセストークン",
     "tokenHint": "Webクライアントの初回アクセス時にこのトークンを入力してください",
@@ -3342,7 +3342,7 @@
     "regenerate": "再生成",
     "stalePortOccupiedTitle": "ポート {port} は他のプロセスに使用されています",
     "stalePortUnknownTitle": "ポート {port} の状態を確認できません",
-    "stalePortHint": "ポートが解放されるまで Codeg はバインドできません。上のポートを変更するか、占有しているプロセスを終了してください。",
+    "stalePortHint": "ポートが解放されるまで Prooflane はバインドできません。上のポートを変更するか、占有しているプロセスを終了してください。",
     "errors": {
       "alreadyRunning": "Web サービスはすでに起動しています",
       "invalidAddress": "ホストまたはポートの形式が無効です",
@@ -3381,7 +3381,7 @@
     "tokenRequired": "トークンを入力してください。",
     "chatIdRequired": "Chat ID を入力してください。",
     "topicMode": "トピックグループモード",
-    "topicModeHint": "Telegram forum topics を個別の Codeg セッションとしてルーティングします。Bot は forum supergroup に参加し、topics を管理できる必要があります。",
+    "topicModeHint": "Telegram forum topics を個別の Prooflane セッションとしてルーティングします。Bot は forum supergroup に参加し、topics を管理できる必要があります。",
     "loadFailed": "チャンネルの読み込みに失敗しました。",
     "saveFailed": "保存に失敗しました。",
     "connectSuccess": "チャンネルに接続しました。",
@@ -3578,7 +3578,7 @@
     },
     "confirm": {
       "disableTitle": "これらのリンクを無効化しますか？",
-      "disableBody": "codeg が管理する {count} 件のスキルリンクを削除します。カスタムディレクトリを占有しているスキルはそのまま残ります。いつでも再び有効化できます。",
+      "disableBody": "Prooflane が管理する {count} 件のスキルリンクを削除します。カスタムディレクトリを占有しているスキルはそのまま残ります。いつでも再び有効化できます。",
       "cancel": "キャンセル",
       "confirm": "無効化"
     },
@@ -3599,7 +3599,7 @@
   },
   "ExpertsSettings": {
     "title": "エキスパートスキル",
-    "description": "AI コーディングエージェント向けに、厳選され実戦で検証されたスキルワークフローを有効にします。各エキスパートは superpowers プロジェクトの独立したスキルで、codeg が中央コピーを管理し、選択したエージェントにリンクします。",
+    "description": "AI コーディングエージェント向けに、厳選され実戦で検証されたスキルワークフローを有効にします。各エキスパートは superpowers プロジェクトの独立したスキルで、Prooflane が中央コピーを管理し、選択したエージェントにリンクします。",
     "loading": "エキスパートを読み込み中…",
     "loadingContent": "コンテンツを読み込み中…",
     "emptyExperts": "利用可能なエキスパートがありません。アプリケーションログを確認してください。",
@@ -3608,7 +3608,7 @@
     "searchPlaceholder": "名前、ID、または説明でエキスパートを検索",
     "enableForAgents": "エージェントで有効化",
     "noAgents": "ACP エージェントが検出されません。",
-    "copyModeWarning": "コピー済み（リンクなし）。codeg 更新後に最新版を取得するには再度有効化してください。",
+    "copyModeWarning": "コピー済み（リンクなし）。Prooflane 更新後に最新版を取得するには再度有効化してください。",
     "previewTitle": "SKILL.md プレビュー",
     "categories": {
       "discovery": "発見と設計",
@@ -3644,7 +3644,7 @@
   },
   "ScienceSettings": {
     "title": "科学研究スキル",
-    "description": "AI コーディングエージェント向けに厳選した科学研究スキル（仮説生成・実験計画・統計・可視化・批判的評価・文献検索）を有効化します。codeg が中央コピーを管理し、選んだエージェントに各スキルをリンクします。",
+    "description": "AI コーディングエージェント向けに厳選した科学研究スキル（仮説生成・実験計画・統計・可視化・批判的評価・文献検索）を有効化します。Prooflane が中央コピーを管理し、選んだエージェントに各スキルをリンクします。",
     "loading": "科学研究スキルを読み込み中…",
     "emptySkills": "利用可能な科学研究スキルがありません。アプリのログを確認してください。",
     "searchPlaceholder": "名前・ID・説明で科学研究スキルを検索",
@@ -3738,7 +3738,7 @@
   },
   "SkillPacksSettings": {
     "title": "スキルパック",
-    "description": "codeg が一元管理し、各 AI エージェントにリンクする厳選スキルの束です——コーディング専門家、科学研究、オフィス文書ツール。下でエージェントごとに有効化できます。",
+    "description": "Prooflane が一元管理し、各 AI エージェントにリンクする厳選スキルの束です——コーディング専門家、科学研究、オフィス文書ツール。下でエージェントごとに有効化できます。",
     "tabs": {
       "experts": "エキスパート",
       "science": "科学研究",
@@ -3959,7 +3959,7 @@
   },
   "BackupSettings": {
     "title": "バックアップと復元",
-    "description": "codeg データのポータブルなバックアップを書き出すか、バックアップから復元します。",
+    "description": "Prooflane データのポータブルなバックアップを書き出すか、バックアップから復元します。",
     "tabs": {
       "backup": "バックアップ",
       "restore": "復元"
@@ -3989,9 +3989,9 @@
         "incompatible": "互換なし",
         "createdAt": "作成日時: {value}",
         "appVersion": "アプリのバージョン: {value}",
-        "incompatibleHint": "このバックアップは新しいバージョンの codeg で作成されており、復元できません。"
+        "incompatibleHint": "このバックアップは新しいバージョンの Prooflane で作成されており、復元できません。"
       },
-      "replaceWarning": "復元すると現在の codeg データ（データベースとアップロード）がすべて置き換えられます。現在のデータは先にスナップショットされ、復旧できます。",
+      "replaceWarning": "復元すると現在の Prooflane データ（データベースとアップロード）がすべて置き換えられます。現在のデータは先にスナップショットされ、復旧できます。",
       "keyringNote": "デスクトップの GitHub/チャットのトークンは OS のキーチェーンに保存され、含まれません。復元後に再入力してください。",
       "button": "復元",
       "staging": "復元を準備中…",
@@ -4000,7 +4000,7 @@
       "restartTimeout": "サーバーが時間内に復帰しませんでした。起動後にページを再読み込みしてください。",
       "externalSideLocation": "会話履歴を {path} に復元しました",
       "confirmTitle": "すべてのデータを置き換えますか？",
-      "confirmBody": "現在の codeg データベースとアップロードをバックアップで置き換えてから再起動します。現在のデータは先にスナップショットされます。",
+      "confirmBody": "現在の Prooflane データベースとアップロードをバックアップで置き換えてから再起動します。現在のデータは先にスナップショットされます。",
       "cancel": "キャンセル",
       "confirmAction": "置き換えて再起動",
       "external": {
@@ -4018,15 +4018,15 @@
       },
       "restartFailed": "復元は準備できましたが、サーバーを再起動できませんでした。手動で再起動して復元を適用してください。"
     },
-    "remoteUnsupported": "バックアップと復元は codeg を実行しているマシンのデータを対象とします。現在リモートワークスペースに接続中です。そのサーバー上で直接バックアップを管理してください。"
+    "remoteUnsupported": "バックアップと復元は Prooflane を実行しているマシンのデータを対象とします。現在リモートワークスペースに接続中です。そのサーバー上で直接バックアップを管理してください。"
   },
   "backup": {
     "restore": {
       "error": {
         "badPassphrase": "パスフレーズが正しくないか、バックアップが破損しています。",
         "corrupted": "バックアップアーカイブが破損しています。",
-        "unknownFormat": "このファイルは認識可能な codeg バックアップではありません。",
-        "newerVersion": "このバックアップは codeg {backupVersion} で作成されており、現在のバージョン（{appVersion}）より新しいです。",
+        "unknownFormat": "このファイルは認識可能な Prooflane バックアップではありません。",
+        "newerVersion": "このバックアップは Prooflane {backupVersion} で作成されており、現在のバージョン（{appVersion}）より新しいです。",
         "alreadyPending": "適用待ちの復元が既にあります。先に再起動して適用してから、新しい復元を準備してください。"
       }
     },
@@ -4064,7 +4064,7 @@
   },
   "AgentToolsSettings": {
     "title": "会話内ツール",
-    "description": "codeg が会話の中でエージェントに追加で渡すツールです。エージェントの起動時に注入されるため、変更は以降に起動したエージェントに適用されます。",
+    "description": "Prooflane が会話の中でエージェントに追加で渡すツールです。エージェントの起動時に注入されるため、変更は以降に起動したエージェントに適用されます。",
     "feedbackLabel": "ライブフィードバック",
     "feedbackHint": "作業中のエージェントにメモや修正を送れます。即時ステアリングに対応したエージェントでは、メモは実行中のターンへ即座に挿入されます。それ以外のエージェントはフィードバック確認ツールで読み取りますが、通常はプロンプトで言及した場合にのみ確認します。例：「ライブフィードバックを定期的に確認して」とメッセージに追加してください。",
     "questionLabel": "ユーザーに質問",
@@ -4089,7 +4089,7 @@
     "preview": "試聴",
     "previewEvent": "「{event}」の通知音を試聴",
     "onlyWhenUnfocused": "ウィンドウが非アクティブなときのみ再生",
-    "onlyWhenUnfocusedHint": "Codeg を表示している間は鳴らしません。",
+    "onlyWhenUnfocusedHint": "Prooflane を表示している間は鳴らしません。",
     "eventsTitle": "イベント",
     "eventsHint": "イベントごとに音を選びます。「なし」を選ぶと鳴りません。同じイベントが数秒以内に繰り返された場合は 1 回だけ再生されます。",
     "toneNone": "なし",
@@ -4590,7 +4590,7 @@
     }
   },
   "CodexModelEditor": {
-    "customizedNotice": "モデル一覧をカスタマイズしたため、codeg が codex のモデル表全体を管理します。codex が今後追加する公式モデルは自動では表示されません。下の更新をクリックして保存し直すと同期できます。カスタマイズをすべて削除すると codex の自動更新に戻ります。",
+    "customizedNotice": "モデル一覧をカスタマイズしたため、Prooflane が codex のモデル表全体を管理します。codex が今後追加する公式モデルは自動では表示されません。下の更新をクリックして保存し直すと同期できます。カスタマイズをすべて削除すると codex の自動更新に戻ります。",
     "officialsTitle": "公式モデル",
     "officialsHint": "起動する codex の公式モデルを自動的に含めます。不要なものは削除できます。",
     "officialsEmpty": "利用可能な公式モデルがありません。",
@@ -4643,8 +4643,8 @@
       "terminal_only_path": "このコマンドはターミナルでは解決されますが、アプリでは解決されません。GUI の PATH のずれです。ターミナルからアプリを起動するか、エージェント設定から再インストールしてください。",
       "npm_prefix_timeout": "npm prefix -g が遅すぎました（1.5 秒超）。フォールバック検出をスキップしました。アプリを再起動して再試行してください。",
       "node_too_old": "使用中の Node.js がこのエージェントの要件より古いです。Node.js をアップグレードしてください。",
-      "adapter_missing_native_present": "お使いの {agent} CLI は確かにインストールされていますが、Codeg が起動するのは別の ACP アダプターパッケージで、そちらが未インストールです。エージェント設定からインストールしてください。既存の CLI には触れず、ログインも共有されます。",
-      "adapter_missing": "Codeg は {agent} 用に別個の ACP アダプターパッケージを起動しますが、まだインストールされていません。エージェント設定からインストールしてください。ベンダー CLI を入れるだけでは足りません。"
+      "adapter_missing_native_present": "お使いの {agent} CLI は確かにインストールされていますが、Prooflane が起動するのは別の ACP アダプターパッケージで、そちらが未インストールです。エージェント設定からインストールしてください。既存の CLI には触れず、ログインも共有されます。",
+      "adapter_missing": "Prooflane は {agent} 用に別個の ACP アダプターパッケージを起動しますが、まだインストールされていません。エージェント設定からインストールしてください。ベンダー CLI を入れるだけでは足りません。"
     }
   },
   "TokenUsage": {
@@ -4678,7 +4678,7 @@
     "resetFilters": "フィルタをリセット",
     "refresh": "更新",
     "rebuild": "すべて再構築",
-    "rebuildHint": "集計済みデータを破棄し、すべてのセッション記録を読み直します。codeg 以外の CLI で追記された場合に使います。",
+    "rebuildHint": "集計済みデータを破棄し、すべてのセッション記録を読み直します。Prooflane 以外の CLI で追記された場合に使います。",
     "syncing": "セッションを集計中…",
     "syncProgress": "{done} / {total}",
     "syncDone": "{synced} 件のセッションを集計しました",
@@ -4757,7 +4757,7 @@
     "cardHeading": "私の AI コーディング記録",
     "cardRangeAll": "全期間",
     "cardTotalLabel": "使用トークン",
-    "cardFooter": "codeg で作成",
+    "cardFooter": "Prooflane で作成",
     "cardTopModels": "よく使うモデル",
     "cardTopProjects": "主なプロジェクト",
     "archetypeNightOwl": "夜型コーダー",
@@ -4779,7 +4779,7 @@
     "archetypeSteady": "安定型ビルダー",
     "archetypeSteadyDesc": "のべ {days} 日開発しました。",
     "emptyTitle": "集計データがまだありません",
-    "emptyHint": "codeg は各エージェント自身のセッション記録から直接トークン数を読み取ります。更新すると、このマシンにある記録を集計します。",
+    "emptyHint": "Prooflane は各エージェント自身のセッション記録から直接トークン数を読み取ります。更新すると、このマシンにある記録を集計します。",
     "emptyAction": "セッションを集計",
     "loadFailed": "使用量を読み込めませんでした",
     "truncatedNotice": "期間が非常に長いため、表示中の数値は直近の一部のみを対象としています。"

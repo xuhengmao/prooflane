@@ -18,7 +18,7 @@ use minisign_verify::{PublicKey, Signature};
 /// Tauri-format minisign public key — copied verbatim from
 /// `tauri.conf.json` `plugins.updater.pubkey`. Base64 of the two-line
 /// `minisign.pub` file (`untrusted comment:` + `RW…` key line).
-const TAURI_PUBKEY_B64: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ4OEM3NkMyMTVENjdBODgKUldTSWV0WVZ3bmFNU0NnSzhpdFg2bXFmMHFidWd1eWpuZ2Y2WmU5QmVXdWVrU0ZpOCt2dnd6WW4K";
+const TAURI_PUBKEY_B64: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhFOEE3N0QxRUE2MTVFQ0MKUldUTVhtSHEwWGVLam5CN3hOeW1kTC9QMVNTb3ZRR2pPeEttS2R2YzIzelUrd3VpQUJVS1FUSmsK";
 
 /// Decode an outer base64 wrapper into the inner minisign text file.
 fn unwrap_base64(b64: &str) -> Result<String, String> {
@@ -83,6 +83,17 @@ mod tests {
         // The const baked from tauri.conf.json must always decode to a
         // usable key — a bad paste would silently disable verification.
         embedded_public_key().expect("embedded pubkey should parse");
+    }
+
+    #[test]
+    fn embedded_pubkey_matches_tauri_config() {
+        let config: serde_json::Value = serde_json::from_str(include_str!("../../tauri.conf.json"))
+            .expect("tauri.conf.json should parse");
+        let configured = config["plugins"]["updater"]["pubkey"]
+            .as_str()
+            .expect("updater pubkey should be a string");
+
+        assert_eq!(TAURI_PUBKEY_B64, configured);
     }
 
     #[test]

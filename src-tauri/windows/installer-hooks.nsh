@@ -2,12 +2,12 @@
 ;
 ; codeg-mcp.exe is the MCP stdio companion spawned by each agent CLI
 ; (claude / codex / opencode / ...), which is itself a grandchild of
-; codeg.exe. Windows does not propagate parent death to descendants the
+; Prooflane.exe. Windows does not propagate parent death to descendants the
 ; way Unix does, so stale codeg-mcp.exe processes from a previous session
 ; can keep the binary file locked. The installer then fails to overwrite
 ; it with:
 ;
-;     Error opening file for writing: ...\codeg\codeg-mcp.exe
+;     Error opening file for writing: ...\Prooflane\codeg-mcp.exe
 ;
 ; Stop any running companion processes before the installer writes new
 ; binaries (or removes the existing ones on uninstall). taskkill returns

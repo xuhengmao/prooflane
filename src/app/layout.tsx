@@ -21,13 +21,10 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: "codeg",
-  description: "AI Coding Agent Conversation Manager",
+  title: "Prooflane",
+  description: "Evidence-driven AI engineering delivery workspace",
   icons: {
-    icon: [
-      { url: "/icon-32x32.png", sizes: "32x32", type: "image/png" },
-      { url: "/icon.svg", type: "image/svg+xml" },
-    ],
+    icon: [{ url: "/icon-32x32.png", sizes: "32x32", type: "image/png" }],
     apple: { url: "/icon-128x128.png", sizes: "128x128", type: "image/png" },
   },
 }

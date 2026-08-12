@@ -1617,7 +1617,7 @@ fn strip_unknown_config_options(raw: &mut serde_json::Value, method: &str) {
         }
         tracing::warn!(
             "[ACP] {method}: dropping config option '{}' — unsupported kind '{kind}'; \
-             codeg's ACP schema knows {:?}. The selector will not be shown.",
+             Prooflane's ACP schema knows {:?}. The selector will not be shown.",
             option
                 .get("id")
                 .and_then(serde_json::Value::as_str)
@@ -3078,7 +3078,7 @@ async fn inject_codeg_mcp(
             "[delegation][WARN] codeg-mcp companion binary not found (checked CODEG_MCP_BIN, \
              exe sibling, and PATH); skipping delegate_to_agent / check_user_feedback / \
              ask_user_question / get_session_info tool injection for connection \
-             {parent_connection_id}. Reinstall codeg or set CODEG_MCP_BIN to fix."
+              {parent_connection_id}. Reinstall Prooflane or set CODEG_MCP_BIN to fix."
         );
         return None;
     };
@@ -3362,7 +3362,7 @@ async fn run_connection(
 
     Client
         .builder()
-        .name("codeg")
+        .name("prooflane")
         .on_receive_request(
             {
                 let emitter_inner = emitter_clone.clone();
@@ -6212,7 +6212,7 @@ impl EmptyTurnCause {
                 format!("{agent_type} ended the turn without producing any response.")
             }
             EmptyTurnCause::ProtocolMismatch => format!(
-                "{agent_type} produced output that codeg could not parse — \
+                "{agent_type} produced output that Prooflane could not parse — \
                  the agent version may not match the protocol."
             ),
             EmptyTurnCause::MetadataOnly => format!(
@@ -8365,7 +8365,7 @@ fn track_grok_spawn_call(
 }
 
 /// True when a tool call's ACP `_meta` marks it as grok's native
-/// `ask_user_question` (`x.ai/tool.kind == "ask_user"`). Codeg answers grok's
+/// `ask_user_question` (`x.ai/tool.kind == "ask_user"`). Prooflane answers grok's
 /// blocking `_x.ai/ask_user_question` ext request by rendering the interactive
 /// `AskQuestionCard` (see `handle_grok_ask_user_question`), so the parallel
 /// `tool_call` stream grok emits for the same call is redundant — it is dropped

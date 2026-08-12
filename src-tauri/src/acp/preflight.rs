@@ -570,7 +570,7 @@ async fn check_binary_environment(
                     label: "Binary cache".into(),
                     status: CheckStatus::Pass,
                     message: format!(
-                        "Using the system-installed {cmd} (codeg-managed download also available)"
+                        "Using the system-installed {cmd} (Prooflane-managed download also available)"
                     ),
                     fixes: vec![],
                 }

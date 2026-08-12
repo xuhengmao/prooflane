@@ -448,7 +448,7 @@ const fixPythonTripleQuotes: BeforeMount = (monaco) => {
   })
 }
 
-// Codeg renders files from arbitrary projects but never loads their build
+// Prooflane renders files from arbitrary projects but never loads their build
 // context — there is no tsconfig, no `node_modules`, no `--jsx` flag, and no
 // network access to fetch a `$schema` URL. Monaco's bundled TypeScript and JSON
 // language services don't know that, so they decorate ordinary files with

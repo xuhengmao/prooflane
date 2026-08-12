@@ -128,7 +128,7 @@ pub fn build_task_engine(
         Ownership::Exclusive(file) => file,
         Ownership::Taken => {
             tracing::info!(
-                "[work_task] another codeg process owns the task engine for {}; \
+                "[work_task] another Prooflane process owns the task engine for {}; \
                  this process will not drive tasks",
                 data_dir.display()
             );
