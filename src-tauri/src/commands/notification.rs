@@ -1,7 +1,5 @@
 #[cfg(feature = "tauri-runtime")]
 use tauri::AppHandle;
-#[cfg(all(feature = "tauri-runtime", target_os = "macos"))]
-use tauri::Manager;
 
 use crate::app_error::AppCommandError;
 

@@ -56,6 +56,16 @@ describe("Prooflane brand configuration", () => {
     expect(cargo).toMatch(/\[\[bin\]\]\s+name = "prooflane"/m)
   })
 
+  test("keeps the macOS notification identifier portable across Tauri builds", () => {
+    const notification = readFileSync(
+      path.join(root, "src-tauri/src/commands/notification.rs"),
+      "utf8"
+    )
+
+    expect(notification).toContain("app.config().identifier.as_str()")
+    expect(notification).not.toContain("use tauri::Manager;")
+  })
+
   test("uses the Prooflane release channel and a dedicated updater key", () => {
     const tauri = readJson("src-tauri/tauri.conf.json") as {
       plugins: { updater: { pubkey: string; endpoints: string[] } }
