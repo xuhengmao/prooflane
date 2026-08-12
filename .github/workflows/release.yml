@@ -761,10 +761,15 @@ jobs:
           set -euo pipefail
           pnpm tauri signer sign "dist/${{ matrix.artifact }}.tar.gz"
           test -f "dist/${{ matrix.artifact }}.tar.gz.sig"
-          cargo run --locked --manifest-path src-tauri/Cargo.toml \
-            --no-default-features --bin prooflane-verify-release -- \
-            "dist/${{ matrix.artifact }}.tar.gz" \
-            "dist/${{ matrix.artifact }}.tar.gz.sig"
+          env \
+            -u PKG_CONFIG_ALLOW_CROSS \
+            -u PKG_CONFIG_PATH \
+            -u PKG_CONFIG_LIBDIR \
+            -u PKG_CONFIG_SYSROOT_DIR \
+            cargo run --locked --manifest-path src-tauri/Cargo.toml \
+              --no-default-features --bin prooflane-verify-release -- \
+              "dist/${{ matrix.artifact }}.tar.gz" \
+              "dist/${{ matrix.artifact }}.tar.gz.sig"
           ( cd dist && shasum -a 256 "${{ matrix.artifact }}.tar.gz" > "${{ matrix.artifact }}.tar.gz.sha256" )
 
       - name: Sign and checksum bundle (Windows)
