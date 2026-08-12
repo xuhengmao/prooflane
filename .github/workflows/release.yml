@@ -66,6 +66,18 @@ jobs:
             exit 1
           fi
 
+      - name: Verify release signing secrets
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/validate-release-secrets.mjs
+
       - id: release
         name: Create or reuse draft release
         uses: actions/github-script@v7
@@ -168,8 +180,6 @@ jobs:
     name: Build ${{ matrix.name }}
     permissions:
       contents: write
-    env:
-      APPLE_SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.KEYCHAIN_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
     strategy:
       fail-fast: false
       # tauri-action merges latest.json through non-atomic GitHub asset calls.
@@ -333,7 +343,7 @@ jobs:
           ls -la "$file"
 
       - name: Import Apple Developer ID certificate
-        if: contains(matrix.target, 'apple-darwin') && env.APPLE_SIGNING_CONFIGURED == 'true'
+        if: contains(matrix.target, 'apple-darwin')
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -408,7 +418,7 @@ jobs:
           security find-identity -v -p codesigning "$keychain_path"
 
       - name: Resolve Apple Developer ID identity
-        if: contains(matrix.target, 'apple-darwin') && env.APPLE_SIGNING_CONFIGURED == 'true'
+        if: contains(matrix.target, 'apple-darwin')
         shell: bash
         run: |
           set -euo pipefail
@@ -509,7 +519,7 @@ jobs:
           retryAttempts: 2
 
       - name: Build, sign, and upload to draft release (macOS)
-        if: contains(matrix.target, 'apple-darwin') && env.APPLE_SIGNING_CONFIGURED == 'true'
+        if: contains(matrix.target, 'apple-darwin')
         uses: tauri-apps/tauri-action@v0.6.1
         env:
           # The matrix-target sidecar is already staged and verified above.
@@ -535,11 +545,6 @@ jobs:
           args: --target ${{ matrix.target }}
           includeUpdaterJson: true
           retryAttempts: 2
-
-      - name: Report skipped macOS release
-        if: contains(matrix.target, 'apple-darwin') && env.APPLE_SIGNING_CONFIGURED != 'true'
-        shell: bash
-        run: echo "::notice::Skipping macOS release because Apple signing and notarization secrets are not configured."
 
       - name: Delete Apple signing keychain
         if: always() && contains(matrix.target, 'apple-darwin')
@@ -756,6 +761,10 @@ jobs:
           set -euo pipefail
           pnpm tauri signer sign "dist/${{ matrix.artifact }}.tar.gz"
           test -f "dist/${{ matrix.artifact }}.tar.gz.sig"
+          cargo run --locked --manifest-path src-tauri/Cargo.toml \
+            --no-default-features --bin prooflane-verify-release -- \
+            "dist/${{ matrix.artifact }}.tar.gz" \
+            "dist/${{ matrix.artifact }}.tar.gz.sig"
           ( cd dist && shasum -a 256 "${{ matrix.artifact }}.tar.gz" > "${{ matrix.artifact }}.tar.gz.sha256" )
 
       - name: Sign and checksum bundle (Windows)
@@ -768,6 +777,13 @@ jobs:
           pnpm tauri signer sign "dist/${{ matrix.artifact }}.zip"
           if (-not (Test-Path "dist/${{ matrix.artifact }}.zip.sig")) {
             throw "signature not produced for ${{ matrix.artifact }}.zip"
+          }
+          cargo run --locked --manifest-path src-tauri/Cargo.toml `
+            --no-default-features --bin prooflane-verify-release -- `
+            "dist/${{ matrix.artifact }}.zip" `
+            "dist/${{ matrix.artifact }}.zip.sig"
+          if ($LASTEXITCODE -ne 0) {
+            throw "release signature verification failed for ${{ matrix.artifact }}.zip"
           }
           $hash = (Get-FileHash -Algorithm SHA256 "dist/${{ matrix.artifact }}.zip").Hash.ToLower()
           "$hash  ${{ matrix.artifact }}.zip" | Out-File -Encoding ascii "dist/${{ matrix.artifact }}.zip.sha256"

@@ -84,6 +84,7 @@ describe("Prooflane brand configuration", () => {
 
   test("does not expose the upstream brand in user-facing source strings", () => {
     const sourceFiles = [
+      "src/components/settings/add-github-account-dialog.tsx",
       "src/contexts/git-credential-context.tsx",
       "src-tauri/src/acp/connection.rs",
       "src-tauri/src/acp/delegation/tool_schema.json",
