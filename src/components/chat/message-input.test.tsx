@@ -17,6 +17,13 @@ import type { RichComposerHandle } from "./composer/rich-composer"
 import { serializeDocToText } from "./composer/to-prompt-blocks"
 import { emitAttachFileToSession } from "@/lib/session-attachment-events"
 
+const toastMock = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}))
+vi.mock("sonner", () => ({ toast: toastMock }))
+
 // MessageInput holds its RichComposer handle internally and does not forward a
 // ref, so capture that handle through a partial mock that still renders the real
 // composer. The "insertion position" tests below drive the very Tiptap editor
@@ -130,6 +137,11 @@ import type {
   PromptCapabilitiesInfo,
   SessionConfigOptionInfo,
 } from "@/lib/types"
+import type { PromptOptimizationProvider } from "./composer/prompt-optimization"
+import type {
+  SpeechTranscriptionProvider,
+  SpeechTranscriptionSessionOptions,
+} from "./composer/speech-input-provider"
 
 import { MessageInput } from "./message-input"
 
@@ -150,7 +162,12 @@ function renderInput(
 }
 
 describe("MessageInput (RichComposer integration)", () => {
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    toastMock.success.mockClear()
+    toastMock.error.mockClear()
+    toastMock.info.mockClear()
+  })
 
   it("mounts and renders the rich-text composer surface", async () => {
     const { container } = renderInput({})
@@ -172,6 +189,471 @@ describe("MessageInput (RichComposer integration)", () => {
     )
     expect(sendButton).not.toBeNull()
     expect(sendButton).toBeDisabled()
+  })
+
+  it("renders prompt optimization and speech controls before the primary send action", async () => {
+    const { container } = renderInput({})
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    const optimize = screen.getByRole("button", {
+      name: enMessages.Folder.chat.messageInput.optimizePrompt,
+    })
+    const speech = screen.getByRole("button", {
+      name: enMessages.Folder.chat.messageInput.startSpeechInput,
+    })
+    const send = screen.getByTitle(enMessages.Folder.chat.messageInput.send)
+
+    expect(optimize.compareDocumentPosition(speech)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    expect(speech.compareDocumentPosition(send)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    expect(optimize).toBeDisabled()
+    expect(speech).toBeEnabled()
+  })
+
+  it("keeps prompt optimization disabled for a reference-only draft", async () => {
+    renderInput({})
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    act(() => {
+      composerHandle.current?.getEditor()?.commands.insertReference({
+        id: "app.ts",
+        refType: "file",
+        uri: "file:///repo/app.ts",
+        label: "app.ts",
+        meta: null,
+      })
+    })
+
+    expect(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
+      })
+    ).toBeDisabled()
+    expect(
+      screen.getByTitle(enMessages.Folder.chat.messageInput.send)
+    ).toBeEnabled()
+  })
+
+  it("optimizes the current draft and can restore the original document", async () => {
+    const provider: PromptOptimizationProvider = {
+      optimize: vi.fn(async (text) => text.replace("verbose", "concise")),
+    }
+    const user = userEvent.setup()
+    const { container } = renderInput({ promptOptimizationProvider: provider })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+
+    act(() => composerHandle.current?.setText("verbose request"))
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
+      })
+    )
+
+    await waitFor(() =>
+      expect(composerHandle.current?.getText()).toBe("concise request")
+    )
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.undoPromptOptimization,
+      })
+    )
+    expect(composerHandle.current?.getText()).toBe("verbose request")
+    expect(
+      container.querySelector("[data-prompt-optimization-summary]")
+    ).toBeNull()
+  })
+
+  it("keeps the one-step undo available after editing an optimized draft", async () => {
+    const provider: PromptOptimizationProvider = {
+      optimize: vi.fn(async (text) => text.replace("verbose", "concise")),
+    }
+    const user = userEvent.setup()
+    renderInput({ promptOptimizationProvider: provider })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    act(() => composerHandle.current?.setText("verbose request"))
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
+      })
+    )
+    await waitFor(() =>
+      expect(composerHandle.current?.getText()).toBe("concise request")
+    )
+
+    act(() => composerHandle.current?.setText("concise request with detail"))
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.undoPromptOptimization,
+      })
+    )
+
+    expect(composerHandle.current?.getText()).toBe("verbose request")
+  })
+
+  it("does not overwrite edits made while prompt optimization is pending", async () => {
+    let resolveOptimization: ((value: string) => void) | null = null
+    const provider: PromptOptimizationProvider = {
+      optimize: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveOptimization = resolve
+          })
+      ),
+    }
+    const user = userEvent.setup()
+    renderInput({ promptOptimizationProvider: provider })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    act(() => composerHandle.current?.setText("original request"))
+
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
+      })
+    )
+    const cancelButton = screen.getByRole("button", {
+      name: enMessages.Folder.chat.messageInput.cancelPromptOptimization,
+    })
+    expect(cancelButton.firstElementChild).toHaveClass(
+      "motion-safe:animate-pulse"
+    )
+    expect(cancelButton.firstElementChild).not.toHaveClass("animate-pulse")
+    act(() => composerHandle.current?.setText("user edited request"))
+    await act(async () => {
+      resolveOptimization?.("late optimized request")
+    })
+
+    expect(composerHandle.current?.getText()).toBe("user edited request")
+    expect(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
+      })
+    ).toBeEnabled()
+  })
+
+  it("does not report a stale provider error after the draft changes", async () => {
+    let rejectOptimization: ((reason: Error) => void) | null = null
+    const provider: PromptOptimizationProvider = {
+      optimize: vi.fn(
+        () =>
+          new Promise<string>((_resolve, reject) => {
+            rejectOptimization = reject
+          })
+      ),
+    }
+    const user = userEvent.setup()
+    renderInput({ promptOptimizationProvider: provider })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    act(() => composerHandle.current?.setText("original request"))
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
+      })
+    )
+
+    act(() => composerHandle.current?.setText("user edited request"))
+    await act(async () => {
+      rejectOptimization?.(new Error("late provider failure"))
+    })
+
+    expect(toastMock.error).not.toHaveBeenCalled()
+  })
+
+  it("does not apply a pending optimization after the session changes", async () => {
+    let resolveOptimization: ((value: string) => void) | null = null
+    const provider: PromptOptimizationProvider = {
+      optimize: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveOptimization = resolve
+          })
+      ),
+    }
+    const user = userEvent.setup()
+    const rendered = renderInput({
+      attachmentTabId: "session-a",
+      promptOptimizationProvider: provider,
+    })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    act(() => composerHandle.current?.setText("session A request"))
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
+      })
+    )
+
+    rendered.rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput
+          onSend={vi.fn()}
+          promptCapabilities={CAPS}
+          attachmentTabId="session-b"
+          promptOptimizationProvider={provider}
+        />
+      </NextIntlClientProvider>
+    )
+    act(() => composerHandle.current?.setText("session B request"))
+    await act(async () => {
+      resolveOptimization?.("late session A optimization")
+    })
+
+    expect(composerHandle.current?.getText()).toBe("session B request")
+  })
+
+  it("inserts confirmed speech at the caret without sending the draft", async () => {
+    let session: SpeechTranscriptionSessionOptions | null = null
+    const speechProvider: SpeechTranscriptionProvider = {
+      start: vi.fn((options) => {
+        session = options
+        options.onStart?.()
+      }),
+      stop: vi.fn(() => session?.onEnd()),
+      abort: vi.fn(),
+    }
+    const getUserMedia = vi.fn(async () => ({
+      getTracks: () => [{ stop: vi.fn() }],
+    }))
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia },
+    })
+    const onSend = vi.fn()
+    const user = userEvent.setup()
+    renderInput({ onSend, speechTranscriptionProvider: speechProvider })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+
+    act(() => composerHandle.current?.setText("Before "))
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.startSpeechInput,
+      })
+    )
+    act(() => {
+      session?.onTranscript([{ index: 0, text: "spoken text", isFinal: true }])
+    })
+
+    await waitFor(() =>
+      expect(composerHandle.current?.getText()).toContain("spoken text")
+    )
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it("does not start recognition when voice input is stopped during permission request", async () => {
+    let resolveStream: ((stream: MediaStream) => void) | null = null
+    const track = { stop: vi.fn() }
+    const getUserMedia = vi.fn(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          resolveStream = resolve
+        })
+    )
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia },
+    })
+    const speechProvider: SpeechTranscriptionProvider = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      abort: vi.fn(),
+    }
+    const user = userEvent.setup()
+    renderInput({ speechTranscriptionProvider: speechProvider })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.startSpeechInput,
+      })
+    )
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.stopSpeechInput,
+      })
+    )
+    act(() =>
+      resolveStream?.({
+        getTracks: () => [track],
+      } as unknown as MediaStream)
+    )
+
+    await waitFor(() => expect(track.stop).toHaveBeenCalledOnce())
+    expect(speechProvider.start).not.toHaveBeenCalled()
+  })
+
+  it("does not start recognition after a draft is sent during permission request", async () => {
+    let resolveStream: ((stream: MediaStream) => void) | null = null
+    const track = { stop: vi.fn() }
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(
+          () =>
+            new Promise<MediaStream>((resolve) => {
+              resolveStream = resolve
+            })
+        ),
+      },
+    })
+    const speechProvider: SpeechTranscriptionProvider = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      abort: vi.fn(),
+    }
+    const onSend = vi.fn()
+    const user = userEvent.setup()
+    renderInput({ onSend, speechTranscriptionProvider: speechProvider })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    act(() => composerHandle.current?.setText("send now"))
+
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.startSpeechInput,
+      })
+    )
+    await user.click(
+      screen.getByTitle(enMessages.Folder.chat.messageInput.send)
+    )
+    act(() =>
+      resolveStream?.({
+        getTracks: () => [track],
+      } as unknown as MediaStream)
+    )
+
+    await waitFor(() => expect(track.stop).toHaveBeenCalledOnce())
+    expect(onSend).toHaveBeenCalledOnce()
+    expect(speechProvider.start).not.toHaveBeenCalled()
+  })
+
+  it("releases active speech resources when the session changes", async () => {
+    const track = { stop: vi.fn() }
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [track],
+        })),
+      },
+    })
+    const speechProvider: SpeechTranscriptionProvider = {
+      start: vi.fn((options) => options.onStart?.()),
+      stop: vi.fn(),
+      abort: vi.fn(),
+    }
+    const user = userEvent.setup()
+    const rendered = renderInput({
+      attachmentTabId: "session-a",
+      speechTranscriptionProvider: speechProvider,
+    })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.startSpeechInput,
+      })
+    )
+
+    rendered.rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput
+          onSend={vi.fn()}
+          promptCapabilities={CAPS}
+          attachmentTabId="session-b"
+          speechTranscriptionProvider={speechProvider}
+        />
+      </NextIntlClientProvider>
+    )
+
+    await waitFor(() => expect(track.stop).toHaveBeenCalledOnce())
+    expect(speechProvider.abort).toHaveBeenCalled()
+  })
+
+  it("ignores late speech callbacks after the session changes", async () => {
+    let sessionOptions: SpeechTranscriptionSessionOptions | null = null
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+      },
+    })
+    const speechProvider: SpeechTranscriptionProvider = {
+      start: vi.fn((options) => {
+        sessionOptions = options
+        options.onStart?.()
+      }),
+      stop: vi.fn(),
+      abort: vi.fn(),
+    }
+    const user = userEvent.setup()
+    const rendered = renderInput({
+      attachmentTabId: "session-a",
+      speechTranscriptionProvider: speechProvider,
+    })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.startSpeechInput,
+      })
+    )
+    await waitFor(() => expect(sessionOptions).not.toBeNull())
+
+    rendered.rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput
+          onSend={vi.fn()}
+          promptCapabilities={CAPS}
+          attachmentTabId="session-b"
+          speechTranscriptionProvider={speechProvider}
+        />
+      </NextIntlClientProvider>
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: enMessages.Folder.chat.messageInput.startSpeechInput,
+        })
+      ).toBeEnabled()
+    )
+    act(() => {
+      sessionOptions?.onTranscript([
+        { index: 0, text: "old session text", isFinal: true },
+      ])
+      sessionOptions?.onError("network")
+      sessionOptions?.onEnd()
+    })
+
+    expect(composerHandle.current?.getText()).toBe("")
+    expect(toastMock.error).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.startSpeechInput,
+      })
+    ).toBeEnabled()
   })
 
   it("claims a mousedown on the input's empty chrome (P8d focus wiring)", async () => {

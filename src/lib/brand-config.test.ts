@@ -41,6 +41,15 @@ function removeCompatibilityNames(value: string): string {
 }
 
 describe("Prooflane brand configuration", () => {
+  it("declares the macOS microphone usage purpose for voice input", () => {
+    const infoPlist = readFileSync(
+      path.join(root, "src-tauri/Info.plist"),
+      "utf8"
+    )
+
+    expect(infoPlist).toContain("<key>NSMicrophoneUsageDescription</key>")
+    expect(infoPlist).toContain("语音")
+  })
   test("uses independent package and desktop identities", () => {
     const packageJson = readJson("package.json") as { name: string }
     const tauri = readJson("src-tauri/tauri.conf.json") as {

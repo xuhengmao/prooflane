@@ -14,8 +14,6 @@ import {
   GitFork,
   MessageSquareText,
   Scissors,
-  Send,
-  Square,
   TextSelect,
   X,
   Zap,
@@ -128,6 +126,22 @@ import { ComposerAddMenu } from "@/components/chat/composer/composer-add-menu"
 import { ComposerImageThumbnails } from "@/components/chat/composer/composer-image-thumbnails"
 import { useComposerAttachments } from "@/components/chat/composer/use-composer-attachments"
 import { useComposerShortcuts } from "@/components/chat/composer/use-composer-shortcuts"
+import {
+  LocalPromptOptimizationProvider,
+  hasEditablePromptText,
+  optimizeComposerDocument,
+  PromptOptimizationError,
+  type PromptOptimizationProvider,
+  type PromptOptimizationResult,
+} from "@/components/chat/composer/prompt-optimization"
+import {
+  isSpeechTranscriptionSupported,
+  WebSpeechTranscriptionProvider,
+  type SpeechTranscriptionProvider,
+} from "@/components/chat/composer/speech-input-provider"
+import { composerActionState } from "@/components/chat/composer/smart-composer-state"
+import { SpeechTranscriptBuffer } from "@/components/chat/composer/speech-transcript"
+import { SpeechWaveform } from "@/components/chat/composer/speech-waveform"
 
 /**
  * Payload pushed into the composer from outside (e.g. a welcome-page quick
@@ -201,6 +215,26 @@ interface MessageInputProps {
   feedbackAddDisabled?: boolean
   injectContent?: ComposerInjectContent | null
   onInjectConsumed?: () => void
+  speechTranscriptionProvider?: SpeechTranscriptionProvider
+  promptOptimizationProvider?: PromptOptimizationProvider
+}
+
+const EMPTY_WAVEFORM_LEVELS = Array.from({ length: 28 }, () => 0.18)
+
+function ComposerImageIcon({
+  src,
+  className,
+}: {
+  src: string
+  className?: string
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("block bg-contain bg-center bg-no-repeat", className)}
+      style={{ backgroundImage: `url(${src})` }}
+    />
+  )
 }
 
 // Non-image files attach as inline file badges in the editor (like `@`-file
@@ -301,6 +335,8 @@ export function MessageInput({
   feedbackAddDisabled,
   injectContent,
   onInjectConsumed,
+  speechTranscriptionProvider,
+  promptOptimizationProvider,
 }: MessageInputProps) {
   const t = useTranslations("Folder.chat.messageInput")
   const tQueue = useTranslations("Folder.chat.messageQueue")
@@ -324,16 +360,44 @@ export function MessageInput({
   const resolvedPlaceholder = placeholder ?? t("askAnything")
   const editorRef = useRef<RichComposerHandle>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const speechProvider = useMemo(
+    () => speechTranscriptionProvider ?? new WebSpeechTranscriptionProvider(),
+    [speechTranscriptionProvider]
+  )
+  const optimizationProvider = useMemo(
+    () => promptOptimizationProvider ?? new LocalPromptOptimizationProvider(),
+    [promptOptimizationProvider]
+  )
   // The editor owns the content now; this mirror of its empty state drives the
   // send button and `hasSendableContent`.
   const [composerEmpty, setComposerEmpty] = useState(true)
+  const [composerHasEditableText, setComposerHasEditableText] = useState(false)
   // Flips true once the RichComposer's async (immediatelyRender:false) editor has
   // mounted, so the hydration effect can use the imperative handle.
   const [composerReady, setComposerReady] = useState(false)
+  const [speechStatus, setSpeechStatus] = useState<
+    "idle" | "requesting_permission" | "listening" | "finalizing"
+  >("idle")
+  const [speechInterim, setSpeechInterim] = useState("")
+  const [waveformLevels, setWaveformLevels] = useState(EMPTY_WAVEFORM_LEVELS)
+  const [isOptimizing, setIsOptimizing] = useState(false)
+  const [optimizationResult, setOptimizationResult] =
+    useState<PromptOptimizationResult | null>(null)
+  const speechTranscriptRef = useRef(new SpeechTranscriptBuffer())
+  const speechSessionKeyRef = useRef(attachmentTabId)
+  const speechStreamRef = useRef<MediaStream | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const waveformFrameRef = useRef<number | null>(null)
+  const speechRequestGenerationRef = useRef(0)
+  const optimizationAbortRef = useRef<AbortController | null>(null)
+  const optimizationSnapshotRef = useRef<JSONContent | null>(null)
+  const optimizationGenerationRef = useRef(0)
+  const applyingOptimizationRef = useRef(false)
 
   const syncComposerEmpty = useCallback(() => {
     const ed = editorRef.current?.getEditor()
     setComposerEmpty(ed ? isComposerEmpty(ed) : true)
+    setComposerHasEditableText(hasEditablePromptText(ed?.getJSON() ?? {}))
   }, [])
 
   // Attachments (images → thumbnail strip, files → inline badges) and the "+"
@@ -494,8 +558,7 @@ export function MessageInput({
           ed.setText(loaded.markdown)
         }
       }
-      const editor = ed.getEditor()
-      setComposerEmpty(editor ? isComposerEmpty(editor) : true)
+      syncComposerEmpty()
     })
     return () => cancelAnimationFrame(raf)
   }, [
@@ -506,6 +569,7 @@ export function MessageInput({
     editingDraftBlocks,
     effectiveDraftStorageKey,
     hydrateFromBlocks,
+    syncComposerEmpty,
   ])
 
   // Focus the composer the moment the editor exists and this tab is active, so
@@ -547,7 +611,7 @@ export function MessageInput({
         } else if (editingDraftText != null) {
           editorRef.current?.setText(editingDraftText)
         }
-        setComposerEmpty(editor ? isComposerEmpty(editor) : true)
+        syncComposerEmpty()
         editorRef.current?.focus()
       })
       return () => cancelAnimationFrame(raf)
@@ -560,6 +624,7 @@ export function MessageInput({
     editingDraftText,
     editingDraftBlocks,
     hydrateFromBlocks,
+    syncComposerEmpty,
   ])
 
   useEffect(() => {
@@ -591,13 +656,19 @@ export function MessageInput({
             })
           }
         }
-        setComposerEmpty(false)
+        syncComposerEmpty()
         handle.focus()
       }
       onInjectConsumed?.()
     })
     return () => cancelAnimationFrame(raf)
-  }, [injectContent, composerReady, skillPrefix, onInjectConsumed])
+  }, [
+    injectContent,
+    composerReady,
+    skillPrefix,
+    onInjectConsumed,
+    syncComposerEmpty,
+  ])
 
   // A skill / expert badge freezes its invocation prefix (`$` for Codex, `/`
   // elsewhere) at insert time. On the welcome page users routinely click a
@@ -618,11 +689,26 @@ export function MessageInput({
     return () => cancelAnimationFrame(raf)
   }, [skillPrefix, composerReady])
 
+  const invalidatePromptOptimization = useCallback(() => {
+    optimizationGenerationRef.current += 1
+    optimizationAbortRef.current?.abort()
+    optimizationAbortRef.current = null
+    optimizationSnapshotRef.current = null
+    setIsOptimizing(false)
+    setOptimizationResult(null)
+  }, [])
+
   const handleComposerChange = useCallback(() => {
+    if (
+      !applyingOptimizationRef.current &&
+      optimizationAbortRef.current != null
+    ) {
+      invalidatePromptOptimization()
+    }
     syncComposerEmpty()
     scheduleDraftSave()
     detectSlashTriggerRef.current?.()
-  }, [syncComposerEmpty, scheduleDraftSave])
+  }, [invalidatePromptOptimization, syncComposerEmpty, scheduleDraftSave])
 
   const handleComposerReady = useCallback(() => {
     setComposerReady(true)
@@ -659,6 +745,251 @@ export function MessageInput({
   const imageAttachments = attach.imageAttachments
   const hasAttachments = attachments.length > 0
   const hasSendableContent = !composerEmpty || hasAttachments
+  const smartActionState = composerActionState({
+    speechStatus,
+    isOptimizing,
+    hasEditableText: composerHasEditableText,
+    disabled,
+  })
+
+  const stopWaveformAnalysis = useCallback(() => {
+    if (waveformFrameRef.current != null && typeof window !== "undefined") {
+      window.cancelAnimationFrame(waveformFrameRef.current)
+      waveformFrameRef.current = null
+    }
+    const audioContext = audioContextRef.current
+    audioContextRef.current = null
+    if (audioContext && audioContext.state !== "closed") {
+      void audioContext.close()
+    }
+    speechStreamRef.current?.getTracks().forEach((track) => track.stop())
+    speechStreamRef.current = null
+    setWaveformLevels(EMPTY_WAVEFORM_LEVELS)
+  }, [])
+
+  const finishSpeechInput = useCallback(() => {
+    stopWaveformAnalysis()
+    setSpeechInterim("")
+    setSpeechStatus("idle")
+  }, [stopWaveformAnalysis])
+
+  const startWaveformAnalysis = useCallback((stream: MediaStream) => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.AudioContext !== "function"
+    ) {
+      return
+    }
+    const audioContext = new window.AudioContext()
+    const source = audioContext.createMediaStreamSource(stream)
+    const analyser = audioContext.createAnalyser()
+    analyser.fftSize = 64
+    analyser.smoothingTimeConstant = 0.72
+    source.connect(analyser)
+    audioContextRef.current = audioContext
+    const samples = new Uint8Array(analyser.frequencyBinCount)
+
+    const updateLevels = () => {
+      analyser.getByteFrequencyData(samples)
+      setWaveformLevels(
+        Array.from({ length: 28 }, (_, index) =>
+          Math.max(0.08, (samples[index % samples.length] ?? 0) / 255)
+        )
+      )
+      waveformFrameRef.current = window.requestAnimationFrame(updateLevels)
+    }
+    updateLevels()
+  }, [])
+
+  const stopSpeechInput = useCallback(() => {
+    if (speechStatus === "idle" || speechStatus === "finalizing") return
+    if (speechStatus === "requesting_permission") {
+      speechRequestGenerationRef.current += 1
+      finishSpeechInput()
+      return
+    }
+    setSpeechStatus("finalizing")
+    speechProvider.stop()
+  }, [finishSpeechInput, speechProvider, speechStatus])
+
+  const startSpeechInput = useCallback(async () => {
+    if (!smartActionState.canStartSpeech) return
+    const injectedProvider = speechTranscriptionProvider != null
+    if (!injectedProvider && !isSpeechTranscriptionSupported()) {
+      toast.error(t("speechUnsupported"))
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error(t("speechUnsupported"))
+      return
+    }
+
+    const requestGeneration = speechRequestGenerationRef.current + 1
+    speechRequestGenerationRef.current = requestGeneration
+    setSpeechStatus("requesting_permission")
+    speechTranscriptRef.current.reset()
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (speechRequestGenerationRef.current !== requestGeneration) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
+      speechStreamRef.current = stream
+      startWaveformAnalysis(stream)
+      speechProvider.start({
+        locale: document.documentElement.lang || navigator.language || "en-US",
+        onStart: () => {
+          if (speechRequestGenerationRef.current !== requestGeneration) return
+          setSpeechStatus("listening")
+        },
+        onTranscript: (results) => {
+          if (speechRequestGenerationRef.current !== requestGeneration) return
+          const update = speechTranscriptRef.current.update(results)
+          setSpeechInterim(update.interim)
+          for (const text of update.confirmed) {
+            editorRef.current?.insertTextAtCursor(`${text} `)
+          }
+          syncComposerEmpty()
+        },
+        onError: (error) => {
+          if (speechRequestGenerationRef.current !== requestGeneration) return
+          const denied =
+            error === "not-allowed" || error === "service-not-allowed"
+          toast.error(
+            denied
+              ? t("speechPermissionDenied")
+              : t("speechFailed", { message: error })
+          )
+          finishSpeechInput()
+        },
+        onEnd: () => {
+          if (speechRequestGenerationRef.current !== requestGeneration) return
+          finishSpeechInput()
+        },
+      })
+    } catch (error) {
+      if (speechRequestGenerationRef.current !== requestGeneration) return
+      const denied =
+        error instanceof DOMException &&
+        (error.name === "NotAllowedError" || error.name === "SecurityError")
+      toast.error(
+        denied
+          ? t("speechPermissionDenied")
+          : t("speechFailed", { message: toErrorMessage(error) })
+      )
+      finishSpeechInput()
+    }
+  }, [
+    finishSpeechInput,
+    smartActionState.canStartSpeech,
+    speechProvider,
+    speechTranscriptionProvider,
+    startWaveformAnalysis,
+    syncComposerEmpty,
+    t,
+  ])
+
+  const cancelPromptOptimization = useCallback(() => {
+    invalidatePromptOptimization()
+  }, [invalidatePromptOptimization])
+
+  const handleOptimizePrompt = useCallback(async () => {
+    const handle = editorRef.current
+    if (!handle || !smartActionState.canOptimize) return
+    const snapshot = handle.getJSON()
+    const controller = new AbortController()
+    const requestGeneration = optimizationGenerationRef.current + 1
+    optimizationGenerationRef.current = requestGeneration
+    optimizationSnapshotRef.current = snapshot
+    optimizationAbortRef.current = controller
+    setIsOptimizing(true)
+    setOptimizationResult(null)
+    try {
+      const result = await optimizeComposerDocument(
+        snapshot,
+        optimizationProvider,
+        controller.signal
+      )
+      if (
+        controller.signal.aborted ||
+        optimizationGenerationRef.current !== requestGeneration
+      ) {
+        return
+      }
+      applyingOptimizationRef.current = true
+      try {
+        handle.setDoc(result.document)
+      } finally {
+        applyingOptimizationRef.current = false
+      }
+      syncComposerEmpty()
+      setOptimizationResult(result)
+      toast.success(
+        result.beforeCharacters === result.afterCharacters
+          ? t("optimizePromptUnchanged")
+          : t("optimizePromptSuccess", {
+              before: result.beforeCharacters,
+              after: result.afterCharacters,
+            })
+      )
+    } catch (error) {
+      const isCurrentRequest =
+        optimizationGenerationRef.current === requestGeneration
+      if (
+        isCurrentRequest &&
+        !controller.signal.aborted &&
+        !(error instanceof DOMException && error.name === "AbortError") &&
+        !(error instanceof PromptOptimizationError && error.code === "aborted")
+      ) {
+        toast.error(t("optimizePromptFailed"), {
+          description: toErrorMessage(error),
+        })
+      }
+    } finally {
+      if (optimizationAbortRef.current === controller) {
+        optimizationAbortRef.current = null
+        setIsOptimizing(false)
+      }
+    }
+  }, [optimizationProvider, smartActionState.canOptimize, syncComposerEmpty, t])
+
+  const undoPromptOptimization = useCallback(() => {
+    const snapshot = optimizationSnapshotRef.current
+    if (!snapshot) return
+    applyingOptimizationRef.current = true
+    try {
+      editorRef.current?.setDoc(snapshot)
+    } finally {
+      applyingOptimizationRef.current = false
+    }
+    syncComposerEmpty()
+    optimizationSnapshotRef.current = null
+    setOptimizationResult(null)
+  }, [syncComposerEmpty])
+
+  useEffect(() => {
+    return () => {
+      speechRequestGenerationRef.current += 1
+      speechProvider.abort()
+      optimizationGenerationRef.current += 1
+      optimizationAbortRef.current?.abort()
+      stopWaveformAnalysis()
+    }
+  }, [speechProvider, stopWaveformAnalysis])
+
+  useEffect(() => {
+    if (speechSessionKeyRef.current === attachmentTabId) return
+    speechSessionKeyRef.current = attachmentTabId
+    speechRequestGenerationRef.current += 1
+    speechProvider.abort()
+    finishSpeechInput()
+    invalidatePromptOptimization()
+  }, [
+    attachmentTabId,
+    finishSpeechInput,
+    invalidatePromptOptimization,
+    speechProvider,
+  ])
 
   // ── Slash command autocomplete ──
   //
@@ -1089,11 +1420,22 @@ export function MessageInput({
 
   // Clear the editor + attachments after a send / enqueue / save.
   const resetComposer = useCallback(() => {
+    speechRequestGenerationRef.current += 1
+    speechProvider.abort()
+    finishSpeechInput()
+    invalidatePromptOptimization()
     editorRef.current?.clear()
     setComposerEmpty(true)
+    setComposerHasEditableText(false)
     clearAttachments()
     closeSlashMenu()
-  }, [clearAttachments, closeSlashMenu])
+  }, [
+    clearAttachments,
+    closeSlashMenu,
+    finishSpeechInput,
+    invalidatePromptOptimization,
+    speechProvider,
+  ])
 
   const handleSend = useCallback(() => {
     // The editor stays editable while `disabled` (the agent is busy) so the user
@@ -1551,7 +1893,10 @@ export function MessageInput({
           className="h-8 w-8"
           title={t("cancel")}
         >
-          <Square className="size-4" />
+          <ComposerImageIcon
+            src="/prooflane/composer/chat_stop.png"
+            className="size-8"
+          />
         </Button>
         <div className="flex items-center">
           <Button
@@ -1561,7 +1906,10 @@ export function MessageInput({
             className="h-8 w-8 rounded-r-none"
             title={t("queueMessage")}
           >
-            <Send className="size-4" />
+            <ComposerImageIcon
+              src="/prooflane/composer/chat_send.png"
+              className="size-8"
+            />
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1599,7 +1947,10 @@ export function MessageInput({
         className="h-8 w-8"
         title={t("cancel")}
       >
-        <Square className="size-4" />
+        <ComposerImageIcon
+          src="/prooflane/composer/chat_stop.png"
+          className="size-8"
+        />
       </Button>
     )
   ) : onForkSend ? (
@@ -1611,7 +1962,10 @@ export function MessageInput({
         className="h-8 w-8 rounded-r-none"
         title={t("send")}
       >
-        <Send className="size-4" />
+        <ComposerImageIcon
+          src="/prooflane/composer/chat_send.png"
+          className="size-8"
+        />
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -1640,8 +1994,76 @@ export function MessageInput({
       className="h-8 w-8"
       title={t("send")}
     >
-      <Send className="size-4" />
+      <ComposerImageIcon
+        src="/prooflane/composer/chat_send.png"
+        className="size-8"
+      />
     </Button>
+  )
+
+  const smartActionButtons = (
+    <div className="flex items-center gap-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="h-6 w-6 shrink-0"
+        disabled={!isOptimizing && !smartActionState.canOptimize}
+        aria-label={
+          isOptimizing ? t("cancelPromptOptimization") : t("optimizePrompt")
+        }
+        title={
+          isOptimizing ? t("cancelPromptOptimization") : t("optimizePrompt")
+        }
+        aria-pressed={isOptimizing}
+        onClick={
+          isOptimizing
+            ? cancelPromptOptimization
+            : () => void handleOptimizePrompt()
+        }
+      >
+        <ComposerImageIcon
+          src="/prooflane/composer/y_put.png"
+          className={cn("size-5", isOptimizing && "motion-safe:animate-pulse")}
+        />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="h-6 w-6 shrink-0"
+        disabled={
+          smartActionState.speechActive
+            ? !smartActionState.canStopSpeech
+            : !smartActionState.canStartSpeech
+        }
+        aria-label={
+          smartActionState.speechActive
+            ? t("stopSpeechInput")
+            : t("startSpeechInput")
+        }
+        title={
+          smartActionState.speechActive
+            ? t("stopSpeechInput")
+            : t("startSpeechInput")
+        }
+        aria-pressed={smartActionState.speechActive}
+        onClick={
+          smartActionState.speechActive
+            ? stopSpeechInput
+            : () => void startSpeechInput()
+        }
+      >
+        <ComposerImageIcon
+          src={
+            smartActionState.speechActive
+              ? "/prooflane/composer/call_stop.png"
+              : "/prooflane/composer/call_send.png"
+          }
+          className="size-6"
+        />
+      </Button>
+    </div>
   )
 
   return (
@@ -1739,6 +2161,7 @@ export function MessageInput({
           <ContextMenuTrigger asChild disabled={!clipboardReadSupported}>
             <div
               onMouseDown={handleChromeMouseDown}
+              aria-busy={isOptimizing}
               className={cn(
                 // `codeg-composer-chrome` paints the text I-beam across the box's
                 // blank areas (padding, the dead space below a short message, the
@@ -1770,6 +2193,7 @@ export function MessageInput({
                 // A lone/non-tiled session (showActiveFlow=false) and inactive
                 // tiles show the plain default border.
                 showActiveFlow && "codeg-composer-flow",
+                isOptimizing && "prooflane-composer-optimizing",
                 !folderBranchPickerAttached &&
                   showDragActive &&
                   "ring-1 ring-primary/40",
@@ -1807,6 +2231,52 @@ export function MessageInput({
                 onExternalMenuKeyDown={handleExternalMenuKeyDown}
                 className="min-h-0 flex-1"
               />
+              {(smartActionState.speechActive || speechInterim) && (
+                <div
+                  className="flex min-h-7 items-center gap-2 px-3 pb-1 text-xs text-muted-foreground"
+                  aria-live="polite"
+                >
+                  <SpeechWaveform
+                    levels={waveformLevels}
+                    label={t("speechListening")}
+                    backgroundImage="/prooflane/composer/call_wen.png"
+                  />
+                  <span className="min-w-0 truncate">
+                    {speechInterim
+                      ? t("speechInterim", { text: speechInterim })
+                      : t("speechListening")}
+                  </span>
+                </div>
+              )}
+              {optimizationResult && (
+                <div
+                  data-prompt-optimization-summary
+                  className="flex min-h-7 items-center justify-end gap-2 px-3 pb-1 text-xs text-muted-foreground"
+                  aria-live="polite"
+                >
+                  <span>
+                    {t("optimizationSummary", {
+                      before: optimizationResult.beforeCharacters,
+                      after: optimizationResult.afterCharacters,
+                      beforeTokens: Math.ceil(
+                        optimizationResult.beforeCharacters / 4
+                      ),
+                      afterTokens: Math.ceil(
+                        optimizationResult.afterCharacters / 4
+                      ),
+                    })}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="h-6 px-1 text-xs"
+                    onClick={undoPromptOptimization}
+                  >
+                    {t("undoPromptOptimization")}
+                  </Button>
+                </div>
+              )}
               <div className="flex shrink-0 items-end justify-between gap-1 px-2 pb-2">
                 <div className="flex min-w-0 items-end gap-1">
                   <ComposerAddMenu
@@ -1884,7 +2354,10 @@ export function MessageInput({
                     </div>
                   )}
                 </div>
-                <div className="shrink-0">{actionButtons}</div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {smartActionButtons}
+                  {actionButtons}
+                </div>
               </div>
               {showDragActive && (
                 <div className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded-md border border-dashed border-primary/50 bg-background/80 text-xs text-muted-foreground">
