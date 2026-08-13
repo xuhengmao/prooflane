@@ -4,8 +4,30 @@ import { describe, expect, it, vi } from "vitest"
 // The composer body itself is irrelevant here — these tests are about which
 // events the wrapper lets escape to the conversation panel around it.
 vi.mock("@/components/chat/message-input", () => ({
-  MessageInput: () => (
-    <button type="button" data-testid="agent-icon">
+  MessageInput: (props: {
+    promptStartedAt?: number | null
+    activeToolTitle?: string | null
+    waitingReason?: string | null
+    hasError?: boolean
+    errorMessage?: string | null
+    onRetry?: (() => void) | undefined
+    isNewConversation?: boolean
+    placeholder?: string
+  }) => (
+    <button
+      type="button"
+      data-testid="agent-icon"
+      data-composer-state={JSON.stringify({
+        promptStartedAt: props.promptStartedAt,
+        activeToolTitle: props.activeToolTitle,
+        waitingReason: props.waitingReason,
+        hasError: props.hasError,
+        errorMessage: props.errorMessage,
+        hasRetry: typeof props.onRetry === "function",
+        isNewConversation: props.isNewConversation,
+        placeholder: props.placeholder,
+      })}
+    >
       agent
     </button>
   ),
@@ -82,5 +104,46 @@ describe("ChatInput event containment", () => {
 
     fireEvent.contextMenu(screen.getByTestId("agent-icon"))
     expect(onContextMenu).not.toHaveBeenCalled()
+  })
+})
+
+describe("ChatInput composer state", () => {
+  it("forwards structured composer state to MessageInput without changing queue behavior", () => {
+    const onRetry = vi.fn()
+    render(
+      <ChatInput
+        status="prompting"
+        promptCapabilities={{
+          image: false,
+          audio: false,
+          embedded_context: false,
+        }}
+        onSend={() => {}}
+        onCancel={() => {}}
+        promptStartedAt={1_700_000_000_000}
+        activeToolTitle="Inspect repository"
+        waitingReason="question"
+        hasError
+        errorMessage="Connection lost"
+        onRetry={onRetry}
+        isNewConversation
+      />
+    )
+
+    expect(
+      JSON.parse(
+        screen.getByTestId("agent-icon").getAttribute("data-composer-state") ??
+          "{}"
+      )
+    ).toEqual({
+      promptStartedAt: 1_700_000_000_000,
+      activeToolTitle: "Inspect repository",
+      waitingReason: "question",
+      hasError: true,
+      errorMessage: "Connection lost",
+      hasRetry: true,
+      isNewConversation: true,
+      placeholder: "continueInputQueue",
+    })
   })
 })

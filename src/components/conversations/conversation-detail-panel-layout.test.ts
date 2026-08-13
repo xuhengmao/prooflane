@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
+import { resolveConversationComposerState } from "./conversation-composer-state"
 
 const source = readFileSync(
   resolve(
@@ -72,6 +73,15 @@ describe("ConversationDetailPanel new conversation layout", () => {
     // The welcome composer is taller (min-h-30) than the compact default kept by
     // active/historical conversations.
     expect(welcomeBranch).toContain("tall")
+  })
+
+  it("derives the new-conversation input flag for the welcome and ordinary render paths", () => {
+    expect(resolveConversationComposerState(true)).toEqual({
+      isNewConversation: true,
+    })
+    expect(resolveConversationComposerState(false)).toEqual({
+      isNewConversation: false,
+    })
   })
 
   it("snaps the hidden keep-alive tab so `transition-all` descendants don't ghost", () => {

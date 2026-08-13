@@ -163,6 +163,7 @@ function renderInput(
 
 describe("MessageInput (RichComposer integration)", () => {
   afterEach(() => {
+    vi.useRealTimers()
     cleanup()
     toastMock.success.mockClear()
     toastMock.error.mockClear()
@@ -177,6 +178,165 @@ describe("MessageInput (RichComposer integration)", () => {
     )
     const textbox = container.querySelector('[role="textbox"]')
     expect(textbox).toHaveAttribute("aria-multiline", "true")
+  })
+
+  it("derives new-empty and focused states from the real editor", async () => {
+    const { container } = renderInput({ isNewConversation: true })
+    const textbox = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>('[role="textbox"]')
+      expect(element).not.toBeNull()
+      return element as HTMLElement
+    })
+    const chrome = container.querySelector<HTMLElement>(
+      "[data-composer-state]"
+    )
+
+    expect(chrome).toHaveAttribute("data-composer-state", "new_empty")
+    fireEvent.focus(textbox)
+    expect(chrome).toHaveAttribute("data-composer-state", "focused")
+    fireEvent.blur(textbox)
+    act(() => composerHandle.current?.setText("continue the task"))
+    expect(chrome).toHaveAttribute("data-composer-state", "idle")
+  })
+
+  it("shows a single generating or active-tool status with elapsed time", async () => {
+    const startedAt = Date.now() - 1_250
+    const { container, rerender } = renderInput({
+      isPrompting: true,
+      promptStartedAt: startedAt,
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    const chrome = container.querySelector<HTMLElement>(
+      "[data-composer-state]"
+    )
+    expect(chrome).toHaveAttribute("data-composer-state", "generating")
+    expect(screen.getByRole("status")).toHaveTextContent(
+      enMessages.Folder.chat.messageInput.statusGenerating
+    )
+    expect(screen.getByTestId("composer-status-elapsed")).toHaveTextContent(
+      /^1\.[0-9]s$/
+    )
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput
+          onSend={vi.fn()}
+          promptCapabilities={CAPS}
+          isPrompting
+          promptStartedAt={startedAt}
+          activeToolTitle="Reading project files"
+        />
+      </NextIntlClientProvider>
+    )
+
+    expect(chrome).toHaveAttribute("data-composer-state", "tool_running")
+    expect(screen.getByRole("status")).toHaveTextContent(
+      enMessages.Folder.chat.messageInput.statusToolRunning.replace(
+        "{tool}",
+        "Reading project files"
+      )
+    )
+  })
+
+  it("gives waiting for user precedence and removes the flowing status", async () => {
+    const { container } = renderInput({
+      isPrompting: true,
+      activeToolTitle: "Apply changes",
+      waitingReason: "permission",
+      promptStartedAt: Date.now() - 2_000,
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    const chrome = container.querySelector<HTMLElement>(
+      "[data-composer-state]"
+    )
+    expect(chrome).toHaveAttribute("data-composer-state", "waiting_for_user")
+    expect(screen.getByRole("status")).toHaveTextContent(
+      enMessages.Folder.chat.messageInput.statusWaitingPermission
+    )
+    expect(screen.queryByTestId("composer-status-elapsed")).toBeNull()
+  })
+
+  it("shows stopped briefly only after the user cancels an active turn", async () => {
+    const onCancel = vi.fn()
+    const { container, rerender } = renderInput({
+      isPrompting: true,
+      onCancel,
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    await userEvent.click(
+      screen.getByTitle(enMessages.Folder.chat.messageInput.cancel)
+    )
+    expect(onCancel).toHaveBeenCalledOnce()
+
+    vi.useFakeTimers()
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput onSend={vi.fn()} promptCapabilities={CAPS} />
+      </NextIntlClientProvider>
+    )
+
+    const chrome = container.querySelector<HTMLElement>(
+      "[data-composer-state]"
+    )
+    expect(chrome).toHaveAttribute("data-composer-state", "stopped")
+    expect(screen.getByRole("status")).toHaveTextContent(
+      enMessages.Folder.chat.messageInput.statusStopped
+    )
+
+    act(() => vi.advanceTimersByTime(1_500))
+    expect(chrome).toHaveAttribute("data-composer-state", "idle")
+    expect(screen.queryByRole("status")).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it("does not show stopped after an ordinary completed turn", async () => {
+    const { container, rerender } = renderInput({ isPrompting: true })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput onSend={vi.fn()} promptCapabilities={CAPS} />
+      </NextIntlClientProvider>
+    )
+
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "idle")
+    expect(screen.queryByRole("status")).toBeNull()
+  })
+
+  it("keeps a failed state visible and exposes the existing retry action", async () => {
+    const onRetry = vi.fn()
+    const { container } = renderInput({
+      hasError: true,
+      errorMessage: "Connection lost",
+      onRetry,
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "failed")
+    expect(screen.getByRole("status")).toHaveTextContent("Connection lost")
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.retryStatus,
+      })
+    )
+    expect(onRetry).toHaveBeenCalledOnce()
   })
 
   it("disables Send while the composer is empty and has no attachments", async () => {
