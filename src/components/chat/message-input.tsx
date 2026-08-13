@@ -403,7 +403,12 @@ export function MessageInput({
   const [composerEmpty, setComposerEmpty] = useState(true)
   const [composerHasEditableText, setComposerHasEditableText] = useState(false)
   const [composerFocused, setComposerFocused] = useState(false)
-  const [stoppedVisible, setStoppedVisible] = useState(false)
+  const composerScopeId = JSON.stringify([
+    attachmentTabId ?? null,
+    conversationId ?? null,
+  ])
+  const [stoppedScopeId, setStoppedScopeId] = useState<string | null>(null)
+  const stoppedVisible = stoppedScopeId === composerScopeId
   const [elapsedMs, setElapsedMs] = useState(() =>
     promptStartedAt === null ? 0 : Math.max(0, Date.now() - promptStartedAt)
   )
@@ -486,7 +491,7 @@ export function MessageInput({
   const [contextSelectionActive, setContextSelectionActive] = useState(false)
   const isPromptingRef = useRef(isPrompting)
   const previousPromptingRef = useRef(isPrompting)
-  const cancelRequestedRef = useRef(false)
+  const cancelRequestedScopeRef = useRef<string | null>(null)
   const hydratedRef = useRef(false)
   // Tracks the last queue-item id hydrated, so a re-edit of the *same* item
   // doesn't clobber the user's in-progress changes — keyed on id, not display
@@ -505,26 +510,26 @@ export function MessageInput({
     previousPromptingRef.current = isPrompting
 
     if (isPrompting) {
-      cancelRequestedRef.current = false
-      setStoppedVisible(false)
+      cancelRequestedScopeRef.current = null
+      setStoppedScopeId(null)
       return
     }
-    if (wasPrompting && cancelRequestedRef.current) {
-      cancelRequestedRef.current = false
-      setStoppedVisible(true)
+    if (wasPrompting && cancelRequestedScopeRef.current !== null) {
+      setStoppedScopeId(cancelRequestedScopeRef.current)
+      cancelRequestedScopeRef.current = null
     }
   }, [isPrompting])
 
   useEffect(() => {
-    if (!stoppedVisible) return
-    const timer = window.setTimeout(() => setStoppedVisible(false), 1_500)
+    if (stoppedScopeId === null) return
+    const timer = window.setTimeout(() => setStoppedScopeId(null), 1_500)
     return () => window.clearTimeout(timer)
-  }, [stoppedVisible])
+  }, [stoppedScopeId])
 
   useEffect(() => {
-    cancelRequestedRef.current = false
-    setStoppedVisible(false)
-  }, [attachmentTabId, conversationId])
+    cancelRequestedScopeRef.current = null
+    setStoppedScopeId(null)
+  }, [composerScopeId])
 
   useEffect(() => {
     if (!isPrompting || promptStartedAt === null) {
@@ -1631,9 +1636,9 @@ export function MessageInput({
 
   const handleCancelGeneration = useCallback(() => {
     if (!isPrompting || !onCancel) return
-    cancelRequestedRef.current = true
+    cancelRequestedScopeRef.current = composerScopeId
     onCancel()
-  }, [isPrompting, onCancel])
+  }, [composerScopeId, isPrompting, onCancel])
 
   const handleForkSendClick = useCallback(() => {
     if (!onForkSend) return
@@ -2360,7 +2365,8 @@ export function MessageInput({
                 // flow (globals.css) so the default focus ring above takes over.
                 // A lone/non-tiled session (showActiveFlow=false) and inactive
                 // tiles show the plain default border.
-                showActiveFlow && composerStatus === "idle" &&
+                showActiveFlow &&
+                  composerStatus === "idle" &&
                   "codeg-composer-flow",
                 isOptimizing && "prooflane-composer-optimizing",
                 !folderBranchPickerAttached &&

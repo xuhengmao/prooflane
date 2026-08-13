@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { NextIntlClientProvider } from "next-intl"
-import type { ComponentProps } from "react"
+import { useLayoutEffect, useRef, useState, type ComponentProps } from "react"
 import type { Editor } from "@tiptap/core"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -187,9 +187,7 @@ describe("MessageInput (RichComposer integration)", () => {
       expect(element).not.toBeNull()
       return element as HTMLElement
     })
-    const chrome = container.querySelector<HTMLElement>(
-      "[data-composer-state]"
-    )
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
 
     expect(chrome).toHaveAttribute("data-composer-state", "new_empty")
     fireEvent.focus(textbox)
@@ -209,9 +207,7 @@ describe("MessageInput (RichComposer integration)", () => {
       expect(container.querySelector('[role="textbox"]')).not.toBeNull()
     )
 
-    const chrome = container.querySelector<HTMLElement>(
-      "[data-composer-state]"
-    )
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
     expect(chrome).toHaveAttribute("data-composer-state", "generating")
     expect(screen.getByRole("status")).toHaveTextContent(
       enMessages.Folder.chat.messageInput.statusGenerating
@@ -252,9 +248,7 @@ describe("MessageInput (RichComposer integration)", () => {
       expect(container.querySelector('[role="textbox"]')).not.toBeNull()
     )
 
-    const chrome = container.querySelector<HTMLElement>(
-      "[data-composer-state]"
-    )
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
     expect(chrome).toHaveAttribute("data-composer-state", "waiting_for_user")
     expect(screen.getByRole("status")).toHaveTextContent(
       enMessages.Folder.chat.messageInput.statusWaitingPermission
@@ -284,9 +278,7 @@ describe("MessageInput (RichComposer integration)", () => {
       </NextIntlClientProvider>
     )
 
-    const chrome = container.querySelector<HTMLElement>(
-      "[data-composer-state]"
-    )
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
     expect(chrome).toHaveAttribute("data-composer-state", "stopped")
     expect(screen.getByRole("status")).toHaveTextContent(
       enMessages.Folder.chat.messageInput.statusStopped
@@ -296,6 +288,74 @@ describe("MessageInput (RichComposer integration)", () => {
     expect(chrome).toHaveAttribute("data-composer-state", "idle")
     expect(screen.queryByRole("status")).toBeNull()
     vi.useRealTimers()
+  })
+
+  it("does not expose the previous stop feedback on the first frame of a new conversation", async () => {
+    const committedStates: string[] = []
+
+    function ScopeHarness() {
+      const [isPrompting, setIsPrompting] = useState(true)
+      const [conversationId, setConversationId] = useState(1)
+      const hostRef = useRef<HTMLDivElement>(null)
+
+      useLayoutEffect(() => {
+        if (conversationId !== 2) return
+        const chrome = hostRef.current?.querySelector<HTMLElement>(
+          "[data-composer-state]"
+        )
+        committedStates.push(chrome?.dataset.composerState ?? "missing")
+      }, [conversationId])
+
+      return (
+        <div>
+          <button type="button" onClick={() => setIsPrompting(false)}>
+            Finish old turn
+          </button>
+          <button type="button" onClick={() => setConversationId(2)}>
+            Switch conversation
+          </button>
+          <div ref={hostRef}>
+            <MessageInput
+              onSend={vi.fn()}
+              onCancel={vi.fn()}
+              promptCapabilities={CAPS}
+              isPrompting={isPrompting}
+              conversationId={conversationId}
+            />
+          </div>
+        </div>
+      )
+    }
+
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ScopeHarness />
+      </NextIntlClientProvider>
+    )
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    fireEvent.click(
+      screen.getByTitle(enMessages.Folder.chat.messageInput.cancel)
+    )
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByRole("button", { name: "Finish old turn" }))
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "stopped")
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch conversation" }))
+
+    expect(committedStates).toEqual(["idle"])
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "idle")
+
+    act(() => vi.advanceTimersByTime(1_500))
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "idle")
   })
 
   it("does not show stopped after an ordinary completed turn", async () => {
