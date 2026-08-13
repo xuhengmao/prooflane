@@ -2579,7 +2579,7 @@
         "optimizePrompt": "تحسين الموجّه",
         "optimizingPrompt": "جارٍ تحسين الموجّه",
         "cancelPromptOptimization": "إلغاء تحسين الموجّه",
-        "optimizePromptSuccess": "تم تحسين الموجّه: {before} ← {after} حرفًا",
+        "optimizePromptSuccess": "تم تحسين الموجّه",
         "optimizationSummary": "{before} ← {after} حرفًا · نحو {beforeTokens} ← {afterTokens} رمزًا",
         "optimizePromptUnchanged": "الموجّه موجز بالفعل",
         "optimizePromptFailed": "تعذّر تحسين الموجّه",
@@ -2590,6 +2590,7 @@
         "speechInterim": "جارٍ التعرّف: {text}",
         "speechUnsupported": "الإدخال الصوتي غير مدعوم في هذا المتصفح أو WebView",
         "speechPermissionDenied": "تم رفض إذن الميكروفون",
+        "speechPermissionRequest": "اسمح بالوصول إلى الميكروفون في طلب الإذن",
         "speechFailed": "توقف الإدخال الصوتي: {message}",
         "forkAndSend": "تفريع وإرسال",
         "queueMessage": "إضافة إلى قائمة الانتظار",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "ماذا تودّ أن <highlight>تفعل اليوم</highlight>؟",
+        "title": "مرحبًا، أنا Prooflane",
+        "subtitle": "أنا رفيق ذكاء اصطناعي يعمل محليًا، آمن وقابل للتحكم، يتعلم باستقلالية ويفهم عملك وحياتك أكثر كلما استخدمته.",
+        "animationAlt": "رسوم علامة Prooflane المتحركة",
         "tips": {
           "tileTabs": "انقر بزر الفأرة الأيمن على تبويب محادثة واختر «عرض متجانب» لمقارنة عدة جلسات جنبًا إلى جنب.",
           "pinTab": "انقر نقرًا مزدوجًا على تبويب محادثة لتثبيته كي لا تستبدله جلسة جديدة تلقائيًا.",

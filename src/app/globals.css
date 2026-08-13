@@ -1933,6 +1933,95 @@ div.monaco-diff-editor.side-by-side .editor.modified {
    Live WYSIWYG Markdown styling for the message composer. Scoped to
    `.codeg-composer` so it never leaks into Streamdown message rendering. */
 
+.prooflane-welcome-frame {
+  pointer-events: none;
+}
+
+.prooflane-welcome-frame-base {
+  opacity: 1;
+}
+
+.prooflane-welcome-frame-overlay {
+  opacity: 0;
+  will-change: opacity;
+  animation-duration: 2.8s;
+  animation-timing-function: step-end;
+  animation-iteration-count: infinite;
+}
+
+.prooflane-welcome-frame-2 {
+  animation-name: prooflane-welcome-frame-2;
+}
+
+.prooflane-welcome-frame-3 {
+  animation-name: prooflane-welcome-frame-3;
+}
+
+.prooflane-welcome-frame-4 {
+  animation-name: prooflane-welcome-frame-4;
+}
+
+@keyframes prooflane-welcome-frame-2 {
+  0%,
+  10.7% {
+    opacity: 0;
+  }
+  14.3%,
+  25% {
+    opacity: 1;
+  }
+  28.6%,
+  42.9% {
+    opacity: 0;
+  }
+  46.4%,
+  57.1% {
+    opacity: 1;
+  }
+  60.7%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes prooflane-welcome-frame-3 {
+  0%,
+  25% {
+    opacity: 0;
+  }
+  28.6%,
+  42.9% {
+    opacity: 1;
+  }
+  46.4%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes prooflane-welcome-frame-4 {
+  0%,
+  71.4% {
+    opacity: 0;
+  }
+  75%,
+  82.1% {
+    opacity: 1;
+  }
+  85.7%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prooflane-welcome-frame-overlay {
+    animation: none;
+    opacity: 0;
+    will-change: auto;
+  }
+}
+
 /* The composer box reads as one editable surface: clicking its blank chrome
    (padding, the dead space below a short message, the action-bar gaps) focuses
    the editor, so the I-beam should show across all of it. `cursor` inherits, so
@@ -1963,6 +2052,10 @@ div.monaco-diff-editor.side-by-side .editor.modified {
   animation: prooflane-prompt-optimization 1.25s ease-in-out infinite;
 }
 
+.prooflane-composer-optimizing .codeg-composer-content {
+  animation: prooflane-prompt-text-highlight 0.9s ease-in-out infinite alternate;
+}
+
 @keyframes prooflane-prompt-optimization {
   from {
     background-position-y: 100%;
@@ -1972,10 +2065,26 @@ div.monaco-diff-editor.side-by-side .editor.modified {
   }
 }
 
+@keyframes prooflane-prompt-text-highlight {
+  from {
+    color: inherit;
+    text-shadow: none;
+  }
+  to {
+    color: color-mix(in oklab, var(--primary) 82%, currentColor);
+    text-shadow: 0 0 10px color-mix(in oklab, var(--primary) 38%, transparent);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .prooflane-composer-optimizing::after {
     animation: none;
     background-position-y: 50%;
+  }
+
+  .prooflane-composer-optimizing .codeg-composer-content {
+    animation: none;
+    color: color-mix(in oklab, var(--primary) 75%, currentColor);
   }
 
   .prooflane-speech-waveform > span {

@@ -2579,7 +2579,7 @@
         "optimizePrompt": "Optimizar prompt",
         "optimizingPrompt": "Optimizando prompt",
         "cancelPromptOptimization": "Cancelar optimización del prompt",
-        "optimizePromptSuccess": "Prompt optimizado: {before} → {after} caracteres",
+        "optimizePromptSuccess": "Prompt optimizado",
         "optimizationSummary": "{before} → {after} caracteres · aprox. {beforeTokens} → {afterTokens} tokens",
         "optimizePromptUnchanged": "El prompt ya es conciso",
         "optimizePromptFailed": "No se pudo optimizar el prompt",
@@ -2590,6 +2590,7 @@
         "speechInterim": "Reconociendo: {text}",
         "speechUnsupported": "La entrada de voz no es compatible con este navegador o WebView",
         "speechPermissionDenied": "Se denegó el permiso del micrófono",
+        "speechPermissionRequest": "Permite el acceso al micrófono en el aviso de permisos",
         "speechFailed": "La entrada de voz se detuvo: {message}",
         "forkAndSend": "Fork y Enviar",
         "queueMessage": "Poner en cola",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "¿Qué te gustaría <highlight>hacer hoy</highlight>?",
+        "title": "Hola, soy Prooflane",
+        "subtitle": "Soy un compañero de IA que funciona localmente, es seguro y controlable, aprende de forma autónoma y entiende mejor tu trabajo y tu vida cuanto más lo usas.",
+        "animationAlt": "Animación de la marca Prooflane",
         "tips": {
           "tileTabs": "Haz clic derecho en una pestaña de conversación y elige Vista en mosaico para comparar varias sesiones lado a lado.",
           "pinTab": "Haz doble clic en una pestaña de conversación para fijarla y que una sesión nueva no la reemplace automáticamente.",

@@ -81,6 +81,7 @@ interface ChatInputProps {
    *  (new-conversation) composer, which sits in a roomy empty state; active and
    *  historical conversations keep the compact default. */
   tall?: boolean
+  conversationId?: number | null
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -125,6 +126,7 @@ export const ChatInput = memo(function ChatInput({
   onInjectConsumed,
   flush = false,
   tall = false,
+  conversationId,
 }: ChatInputProps) {
   const t = useTranslations("Folder.chat.chatInput")
   const isConnected = status === "connected"
@@ -202,6 +204,7 @@ export const ChatInput = memo(function ChatInput({
         onSteer={onSteer}
         onAddFeedback={onAddFeedback}
         feedbackAddDisabled={feedbackAddDisabled}
+        conversationId={conversationId}
         injectContent={injectContent}
         onInjectConsumed={onInjectConsumed}
         placeholder={

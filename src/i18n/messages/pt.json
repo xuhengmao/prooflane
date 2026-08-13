@@ -2579,7 +2579,7 @@
         "optimizePrompt": "Otimizar prompt",
         "optimizingPrompt": "Otimizando prompt",
         "cancelPromptOptimization": "Cancelar otimização do prompt",
-        "optimizePromptSuccess": "Prompt otimizado: {before} → {after} caracteres",
+        "optimizePromptSuccess": "Prompt otimizado",
         "optimizationSummary": "{before} → {after} caracteres · cerca de {beforeTokens} → {afterTokens} tokens",
         "optimizePromptUnchanged": "O prompt já está conciso",
         "optimizePromptFailed": "Não foi possível otimizar o prompt",
@@ -2590,6 +2590,7 @@
         "speechInterim": "Reconhecendo: {text}",
         "speechUnsupported": "A entrada de voz não é compatível com este navegador ou WebView",
         "speechPermissionDenied": "A permissão do microfone foi negada",
+        "speechPermissionRequest": "Permita o acesso ao microfone na solicitação de permissão",
         "speechFailed": "A entrada de voz foi interrompida: {message}",
         "forkAndSend": "Fork & Enviar",
         "queueMessage": "Adicionar à fila",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "O que você gostaria de <highlight>fazer hoje</highlight>?",
+        "title": "Olá, eu sou o Prooflane",
+        "subtitle": "Sou um companheiro de IA executado localmente, seguro e controlável, que aprende de forma autônoma e entende melhor seu trabalho e sua vida quanto mais você o usa.",
+        "animationAlt": "Animação da marca Prooflane",
         "tips": {
           "tileTabs": "Clique com o botão direito em uma aba de conversa e escolha Exibir em mosaico para ver várias sessões lado a lado.",
           "pinTab": "Clique duas vezes em uma aba de conversa para fixá-la, evitando que uma nova sessão a substitua automaticamente.",

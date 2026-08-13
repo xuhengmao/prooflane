@@ -2581,7 +2581,7 @@
         "optimizePrompt": "优化提示词",
         "optimizingPrompt": "正在优化提示词",
         "cancelPromptOptimization": "取消提示词优化",
-        "optimizePromptSuccess": "提示词已优化：{before} → {after} 个字符",
+        "optimizePromptSuccess": "提示词已优化",
         "optimizationSummary": "{before} → {after} 个字符 · 约 {beforeTokens} → {afterTokens} Token",
         "optimizePromptUnchanged": "当前提示词已经足够精简",
         "optimizePromptFailed": "提示词优化失败",
@@ -2592,6 +2592,7 @@
         "speechInterim": "正在识别：{text}",
         "speechUnsupported": "当前浏览器或 WebView 不支持语音输入",
         "speechPermissionDenied": "麦克风权限被拒绝",
+        "speechPermissionRequest": "请在权限提示中允许访问麦克风",
         "speechFailed": "语音输入已停止：{message}",
         "forkAndSend": "分叉发送",
         "queueMessage": "加入队列",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "今天准备<highlight>做些什么</highlight>呢？",
+        "title": "Hello，我是prooflane",
+        "subtitle": "我是一个本地运行、安全可控、自主学习、越用越懂你的AI工作生活搭子",
+        "animationAlt": "Prooflane 品牌动画",
         "tips": {
           "tileTabs": "右键点击会话标签选择「平铺显示」，可同屏对比多个会话",
           "pinTab": "双击会话标签可将其固定，避免被新打开的会话自动替换",

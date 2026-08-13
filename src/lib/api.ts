@@ -269,6 +269,42 @@ export async function acpPrompt(
   }
 }
 
+export interface OptimizePromptParams extends Record<string, unknown> {
+  workingDir: string | null
+  draft: string
+  conversationHistory: Array<{
+    role: "user" | "assistant" | "system"
+    text: string
+  }>
+  relatedFiles: string[]
+}
+
+export async function optimizePrompt(
+  params: OptimizePromptParams,
+  signal?: AbortSignal
+): Promise<string> {
+  const requestId = crypto.randomUUID()
+  const transport = getTransport()
+  const cancel = () => {
+    void transport
+      .call("cancel_prompt_optimization", { requestId })
+      .catch(() => {})
+  }
+  if (signal?.aborted) {
+    throw new DOMException("Aborted", "AbortError")
+  }
+  signal?.addEventListener("abort", cancel, { once: true })
+  try {
+    return await transport.call(
+      "optimize_prompt",
+      { ...params, requestId },
+      { timeoutMs: 125_000 }
+    )
+  } finally {
+    signal?.removeEventListener("abort", cancel)
+  }
+}
+
 export async function acpSetMode(
   connectionId: string,
   modeId: string

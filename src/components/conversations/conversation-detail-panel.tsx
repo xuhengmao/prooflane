@@ -1690,6 +1690,7 @@ const ConversationTabView = memo(function ConversationTabView({
         </>
       }
       status={connStatus}
+      conversationId={effectiveConversationId}
       promptCapabilities={conn.promptCapabilities}
       defaultPath={workingDirForConnection}
       agentName={getAgentLabel(selectedAgent)}

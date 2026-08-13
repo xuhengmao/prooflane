@@ -105,6 +105,7 @@ interface ConversationShellProps {
    *  (e.g. the "restart to apply" config-stale banner). Renders nothing when
    *  omitted. */
   topBanner?: ReactNode
+  conversationId?: number | null
 }
 
 export function ConversationShell({
@@ -159,6 +160,7 @@ export function ConversationShell({
   onForkSend,
   onSteer,
   topBanner,
+  conversationId,
 }: ConversationShellProps) {
   const tAcp = useTranslations("Folder.chat.acpConnections")
   const retryLineText = useMemo(() => {
@@ -302,6 +304,7 @@ export function ConversationShell({
               onSteer={onSteer}
               onAddFeedback={onAddFeedback}
               feedbackAddDisabled={feedbackAddDisabled}
+              conversationId={conversationId}
             />
           </div>
         )}

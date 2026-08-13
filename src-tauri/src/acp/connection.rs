@@ -751,6 +751,7 @@ async fn build_agent(
     runtime_env: &BTreeMap<String, String>,
     cwd: &Path,
     stderr_tail: &Arc<StderrTail>,
+    restricted_session: bool,
 ) -> Result<AcpAgent, AcpError> {
     // A conversation can outlive the custom-agent definition it was started
     // with (the user deleted it in settings). `get_agent_meta` cannot report
@@ -827,9 +828,11 @@ async fn build_agent(
             //    launch flag, not a live `session/set_mode`, is the control point.)
             if agent_type == AgentType::Grok {
                 parts.push("--no-auto-update".into());
-                if let Some(mode) = crate::commands::acp::grok_launch_permission_mode() {
-                    parts.push("--permission-mode".into());
-                    parts.push(mode);
+                if !restricted_session {
+                    if let Some(mode) = crate::commands::acp::grok_launch_permission_mode() {
+                        parts.push("--permission-mode".into());
+                        parts.push(mode);
+                    }
                 }
             }
             for a in args {
@@ -969,10 +972,11 @@ async fn build_agent(
                 // approval). Sourced from the panel's permission-mode
                 // control (env_json key CURSOR_FORCE — codeg-side knob; the
                 // CLI reads no such env var).
-                if runtime_env
-                    .get("CURSOR_FORCE")
-                    .map(|v| v.trim())
-                    .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                if !restricted_session
+                    && runtime_env
+                        .get("CURSOR_FORCE")
+                        .map(|v| v.trim())
+                        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 {
                     cmd_args.insert(0, "--force".to_string());
                 }
@@ -1134,6 +1138,10 @@ async fn build_agent(
 /// into boxed sub-futures rather than raising it further.
 const ACP_CONNECTION_STACK_SIZE: usize = 8 * 1024 * 1024;
 
+/// Internal launch marker for short-lived prompt-optimization sessions.
+/// Removed before the child process starts; it only controls host capabilities.
+pub(crate) const RESTRICTED_SESSION_ENV: &str = "CODEG_RESTRICTED_ACP_SESSION";
+
 /// Spawn an ACP agent process and run the connection loop in a background task.
 ///
 /// On success, the newly created `AgentConnection` is inserted into
@@ -1147,7 +1155,7 @@ pub async fn spawn_agent_connection(
     agent_type: AgentType,
     working_dir: Option<String>,
     session_id: Option<String>,
-    runtime_env: BTreeMap<String, String>,
+    mut runtime_env: BTreeMap<String, String>,
     owner_window_label: String,
     emitter: EventEmitter,
     connections: Arc<tokio::sync::Mutex<HashMap<String, AgentConnection>>>,
@@ -1155,6 +1163,9 @@ pub async fn spawn_agent_connection(
     preferred_config_values: BTreeMap<String, String>,
     delegation_injection: Option<DelegationInjection>,
 ) -> Result<tokio::sync::oneshot::Receiver<()>, AcpError> {
+    let restricted_session = runtime_env
+        .remove(RESTRICTED_SESSION_ENV)
+        .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
     // Create the authoritative session state up front. Subsequent emit_with_state
     // calls write through this state and increment its seq counter so the first
     // event the frontend sees has seq=1, not the placeholder 0 from Phase 0.
@@ -1207,7 +1218,13 @@ pub async fn spawn_agent_connection(
     // turn is diagnosed as silently empty. Created here so both the spawn side
     // and the conversation loop share the same buffer.
     let stderr_tail = Arc::new(StderrTail::new());
-    let agent = build_agent(agent_type, &runtime_env, &launch_cwd, &stderr_tail)
+    let agent = build_agent(
+        agent_type,
+        &runtime_env,
+        &launch_cwd,
+        &stderr_tail,
+        restricted_session,
+    )
         .await?
         .on_spawn({
             let child_pid = Arc::clone(&child_pid);
@@ -1229,7 +1246,11 @@ pub async fn spawn_agent_connection(
     // credential keys survive into `terminal_base_env` below), and a per-agent
     // relocation like `GROK_HOME` must move the allowed root along with the
     // agent's state. Uses the same `launch_cwd` the process and ACP session get.
-    let fs_policy = FsAccessPolicy::from_env(&launch_cwd, agent_type, &runtime_env);
+    let fs_policy = if restricted_session {
+        FsAccessPolicy::strict(&launch_cwd)
+    } else {
+        FsAccessPolicy::from_env(&launch_cwd, agent_type, &runtime_env)
+    };
 
     // Forward only the codeg git credential helper keys into the terminal
     // runtime — not the agent's API tokens or model provider credentials.
@@ -1322,6 +1343,7 @@ pub async fn spawn_agent_connection(
             delegation_injection,
             fs_policy,
             stderr_tail,
+            restricted_session,
         )
         .await;
 
@@ -2598,13 +2620,20 @@ fn claude_raw_sdk_session_meta(
 ///   `claude_chunk_parent_tool_use_id`). The adapter checks strictly
 ///   `=== true`, and a pre-0.63 binary ignores the unknown key, so this is
 ///   inert everywhere it isn't understood.
-fn build_client_capabilities(agent_type: AgentType) -> ClientCapabilities {
-    let mut client_capabilities = ClientCapabilities::new().terminal(true).fs(
-        FileSystemCapabilities::new()
-            .read_text_file(true)
-            .write_text_file(true),
-    );
-    if agent_type == AgentType::Codex {
+fn build_client_capabilities(
+    agent_type: AgentType,
+    restricted_session: bool,
+) -> ClientCapabilities {
+    let mut client_capabilities = if restricted_session {
+        ClientCapabilities::new().fs(FileSystemCapabilities::new().read_text_file(true))
+    } else {
+        ClientCapabilities::new().terminal(true).fs(
+            FileSystemCapabilities::new()
+                .read_text_file(true)
+                .write_text_file(true),
+        )
+    };
+    if agent_type == AgentType::Codex && !restricted_session {
         client_capabilities = client_capabilities
             .elicitation(ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()));
     }
@@ -2809,6 +2838,21 @@ fn load_mcp_servers_for_agent(agent_type: AgentType) -> Vec<McpServer> {
         }
     }
     out
+}
+
+fn mcp_servers_for_session<F>(
+    restricted_session: bool,
+    agent_supports_mcp: bool,
+    load: F,
+) -> Vec<McpServer>
+where
+    F: FnOnce() -> Vec<McpServer>,
+{
+    if restricted_session || !agent_supports_mcp {
+        Vec::new()
+    } else {
+        load()
+    }
 }
 
 /// Context the connection layer needs to inject the built-in `codeg-mcp`
@@ -3290,6 +3334,7 @@ async fn run_connection(
     // callback installed by `build_agent`. Read only when a turn ends without
     // agent output, to attach evidence to the synthesized error.
     stderr_tail: Arc<StderrTail>,
+    restricted_session: bool,
 ) -> Result<(), AcpError> {
     let pending_perms: PendingPermissions = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
     // `terminal_base_env` already filtered to just the credential helper
@@ -3372,6 +3417,12 @@ async fn run_connection(
                 async move |req: RequestPermissionRequest,
                             responder: Responder<RequestPermissionResponse>,
                             _cx: ConnectionTo<Agent>| {
+                    if restricted_session {
+                        let _ = responder.respond(RequestPermissionResponse::new(
+                            RequestPermissionOutcome::Cancelled,
+                        ));
+                        return Ok(());
+                    }
                     handle_permission_request(
                         &state_inner,
                         &emitter_inner,
@@ -3405,6 +3456,13 @@ async fn run_connection(
                 async move |req: WriteTextFileRequest,
                             responder: Responder<WriteTextFileResponse>,
                             _cx: ConnectionTo<Agent>| {
+                    if restricted_session {
+                        responder.respond_with_error(
+                            sacp::Error::invalid_params()
+                                .data("Writing files is disabled for prompt optimization"),
+                        )?;
+                        return Ok(());
+                    }
                     respond_file_system_request(responder, runtime.write_text_file(req).await)?;
                     Ok(())
                 }
@@ -3417,6 +3475,13 @@ async fn run_connection(
                 async move |req: CreateTerminalRequest,
                             responder: Responder<CreateTerminalResponse>,
                             _cx: ConnectionTo<Agent>| {
+                    if restricted_session {
+                        responder.respond_with_error(
+                            sacp::Error::invalid_params()
+                                .data("Terminal access is disabled for prompt optimization"),
+                        )?;
+                        return Ok(());
+                    }
                     respond_terminal_request(responder, runtime.create_terminal(req).await)?;
                     Ok(())
                 }
@@ -3548,6 +3613,15 @@ async fn run_connection(
                 async move |req: CodexElicitationRequest,
                             responder: Responder<serde_json::Value>,
                             _cx: ConnectionTo<Agent>| {
+                    if restricted_session {
+                        let _ = responder.respond(
+                            serde_json::to_value(
+                                crate::acp::question::elicitation_decline_response(),
+                            )
+                            .unwrap_or_default(),
+                        );
+                        return Ok(());
+                    }
                     handle_elicitation_request(
                         &access,
                         &perms,
@@ -3568,7 +3642,10 @@ async fn run_connection(
             let agent_name_for_log = registry::get_agent_meta(agent_type).name;
 
             let init_request = InitializeRequest::new(ProtocolVersion::LATEST)
-                .client_capabilities(build_client_capabilities(agent_type));
+                .client_capabilities(build_client_capabilities(
+                    agent_type,
+                    restricted_session,
+                ));
             // Bound the Initialize handshake so an outdated / incompatible
             // cached binary that never responds can't leave the frontend
             // stuck on "Connecting...". A healthy agent answers in <1s; we
@@ -3682,9 +3759,12 @@ async fn run_connection(
             // Load MCP servers configured for this agent and filter by the
             // capabilities the agent just declared. Stdio is mandatory per
             // ACP spec; HTTP/SSE are gated on `mcp_capabilities.{http,sse}`.
-            let mut mcp_servers: Vec<McpServer> = if agent_supports_mcp {
-                let mcp_caps = &init_resp.agent_capabilities.mcp_capabilities;
-                load_mcp_servers_for_agent(agent_type)
+            let mcp_caps = &init_resp.agent_capabilities.mcp_capabilities;
+            let mut mcp_servers: Vec<McpServer> = mcp_servers_for_session(
+                restricted_session,
+                agent_supports_mcp,
+                || load_mcp_servers_for_agent(agent_type),
+            )
                     .into_iter()
                     .filter(|s| match s {
                         McpServer::Stdio(_) => true,
@@ -3712,21 +3792,28 @@ async fn run_connection(
                         }
                         _ => false,
                     })
-                    .collect()
-            } else {
+                    .collect();
+            if !agent_supports_mcp {
                 tracing::info!(
                     "[ACP][{}] supports_mcp=false: skipping all MCP wire forwarding (user servers + codeg-mcp companion)",
                     agent_type
                 );
-                Vec::new()
-            };
+            } else if restricted_session {
+                tracing::info!(
+                    "[ACP][{}] restricted session: skipping all MCP wire forwarding",
+                    agent_type
+                );
+            }
 
             // Inject the built-in `codeg-mcp` MCP server. Stdio is
             // unconditionally supported by the ACP wire — no `mcp_caps`
             // filter needed. The returned token is stashed on the session
             // state so connection teardown can revoke it. Skipped entirely
             // for agents that don't accept MCP over the wire (above).
-            let delegate_injection = if agent_supports_mcp && agent_delivers_wire_mcp(agent_type) {
+            let delegate_injection = if !restricted_session
+                && agent_supports_mcp
+                && agent_delivers_wire_mcp(agent_type)
+            {
                 if let Some(inj) = delegation_injection.as_ref() {
                     // Task-engine launches (owner label "work_task") carry the
                     // task_progress / task_complete tool group.
@@ -10320,7 +10407,7 @@ mod tests {
         // Serialize to inspect the wire shape — `_meta` is the serde rename
         // and the exact key path the adapters read.
         let caps_of = |agent: AgentType| {
-            serde_json::to_value(build_client_capabilities(agent)).expect("caps serialize")
+            serde_json::to_value(build_client_capabilities(agent, false)).expect("caps serialize")
         };
 
         // Claude Code: subagent-transcript opt-in (strict boolean true), and
@@ -10343,6 +10430,20 @@ mod tests {
         assert!(other.get("elicitation").is_none());
         assert_eq!(other["terminal"], serde_json::Value::Bool(true));
         assert_eq!(other["fs"]["readTextFile"], serde_json::Value::Bool(true));
+
+        let restricted =
+            serde_json::to_value(build_client_capabilities(AgentType::Codex, true))
+                .expect("restricted caps serialize");
+        assert_eq!(restricted["terminal"], serde_json::Value::Bool(false));
+        assert_eq!(
+            restricted["fs"]["readTextFile"],
+            serde_json::Value::Bool(true)
+        );
+        assert_eq!(
+            restricted["fs"]["writeTextFile"],
+            serde_json::Value::Bool(false)
+        );
+        assert!(restricted.get("elicitation").is_none());
     }
 
     #[test]
@@ -11448,6 +11549,18 @@ mod tests {
             Some(&serde_json::json!([])),
             "OpenClaw session/load mcpServers must serialize as an empty list"
         );
+    }
+
+    #[test]
+    fn restricted_sessions_never_load_or_forward_mcp_servers() {
+        let servers = mcp_servers_for_session(true, true, || {
+            panic!("restricted sessions must not read user MCP configuration")
+        });
+
+        assert!(servers.is_empty());
+
+        let normal = mcp_servers_for_session(false, true, || vec![stdio_server("configured")]);
+        assert_eq!(normal.len(), 1);
     }
 
     fn stdio_server(name: &str) -> McpServer {

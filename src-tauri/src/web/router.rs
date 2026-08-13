@@ -652,6 +652,14 @@ pub fn build_router(
             post(handlers::acp::acp_touch_connection),
         )
         .route("/acp_prompt", post(handlers::acp::acp_prompt))
+        .route(
+            "/optimize_prompt",
+            post(handlers::prompt_optimization::optimize_prompt),
+        )
+        .route(
+            "/cancel_prompt_optimization",
+            post(handlers::prompt_optimization::cancel_prompt_optimization),
+        )
         .route("/acp_preflight", post(handlers::acp::acp_preflight))
         .route("/acp_set_mode", post(handlers::acp::acp_set_mode))
         .route(
