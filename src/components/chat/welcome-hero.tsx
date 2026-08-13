@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { useState, type ReactNode } from "react"
 import { useTranslations } from "next-intl"
 import { Lightbulb } from "lucide-react"
@@ -102,23 +103,61 @@ const TIPS: TipDef[] = [
   { key: "workspaceBackground" },
 ]
 
-const highlightTitle = (chunks: ReactNode) => (
-  <span className="bg-gradient-to-br from-primary via-primary/85 to-chart-3 bg-clip-text text-transparent">
-    {chunks}
-  </span>
-)
-
 const highlightTip = (chunks: ReactNode) => (
   <span className="font-medium text-primary">{chunks}</span>
 )
+
+const WELCOME_FRAMES = [
+  "/prooflane/welcome/index_stp_1.png",
+  "/prooflane/welcome/index_stp_2.png",
+  "/prooflane/welcome/index_stp_3.png",
+  "/prooflane/welcome/index_stp_4.png",
+] as const
 
 export function WelcomeHero() {
   const t = useTranslations("Folder.chat.welcomePanel")
 
   return (
-    <h1 className="text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-      {t.rich("greeting", { highlight: highlightTitle })}
-    </h1>
+    <section
+      className="flex w-full flex-col items-center text-center"
+      aria-labelledby="prooflane-welcome-title"
+    >
+      <div
+        data-testid="prooflane-welcome-animation"
+        className="relative aspect-[12/5] w-full max-w-[16.25rem] shrink-0 sm:max-w-[22.5rem]"
+      >
+        {WELCOME_FRAMES.map((src, index) => (
+          <Image
+            key={src}
+            src={src}
+            alt={index === 0 ? t("animationAlt") : ""}
+            aria-hidden={index === 0 ? undefined : true}
+            fill
+            unoptimized
+            loading="eager"
+            decoding="async"
+            sizes="(min-width: 640px) 360px, 260px"
+            draggable={false}
+            className={`prooflane-welcome-frame ${
+              index === 0
+                ? "prooflane-welcome-frame-base"
+                : `prooflane-welcome-frame-overlay prooflane-welcome-frame-${index + 1}`
+            } absolute inset-0 h-full w-full select-none object-contain`}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex max-w-full flex-col items-center gap-1.5 px-2 sm:mt-4 sm:gap-2">
+        <h1
+          id="prooflane-welcome-title"
+          className="max-w-full break-words text-2xl font-semibold tracking-normal text-foreground sm:text-3xl"
+        >
+          {t("title")}
+        </h1>
+        <p className="max-w-2xl break-words text-sm leading-6 text-muted-foreground sm:text-base">
+          {t("subtitle")}
+        </p>
+      </div>
+    </section>
   )
 }
 

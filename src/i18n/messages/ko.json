@@ -2579,7 +2579,7 @@
         "optimizePrompt": "프롬프트 최적화",
         "optimizingPrompt": "프롬프트 최적화 중",
         "cancelPromptOptimization": "프롬프트 최적화 취소",
-        "optimizePromptSuccess": "프롬프트 최적화됨: {before} → {after}자",
+        "optimizePromptSuccess": "프롬프트가 최적화되었습니다",
         "optimizationSummary": "{before} → {after}자 · 약 {beforeTokens} → {afterTokens} 토큰",
         "optimizePromptUnchanged": "프롬프트가 이미 간결합니다",
         "optimizePromptFailed": "프롬프트를 최적화하지 못했습니다",
@@ -2590,6 +2590,7 @@
         "speechInterim": "인식 중: {text}",
         "speechUnsupported": "이 브라우저 또는 WebView에서는 음성 입력을 지원하지 않습니다",
         "speechPermissionDenied": "마이크 권한이 거부되었습니다",
+        "speechPermissionRequest": "권한 요청에서 마이크 접근을 허용하세요",
         "speechFailed": "음성 입력이 중지되었습니다: {message}",
         "forkAndSend": "포크 & 전송",
         "queueMessage": "대기열에 추가",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "오늘은 <highlight>무엇을</highlight> 해볼까요?",
+        "title": "안녕하세요, Prooflane입니다",
+        "subtitle": "로컬에서 실행되고 안전하게 제어할 수 있으며 스스로 학습해 사용할수록 업무와 일상을 더 잘 이해하는 AI 동반자입니다.",
+        "animationAlt": "Prooflane 브랜드 애니메이션",
         "tips": {
           "tileTabs": "대화 탭을 우클릭하고 '바둑판 표시'를 선택하면 여러 세션을 나란히 비교할 수 있습니다",
           "pinTab": "대화 탭을 더블클릭하면 고정되어 새로 열린 세션이 자동으로 대체하지 않습니다",

@@ -2579,7 +2579,7 @@
         "optimizePrompt": "Optimiser le prompt",
         "optimizingPrompt": "Optimisation du prompt",
         "cancelPromptOptimization": "Annuler l'optimisation du prompt",
-        "optimizePromptSuccess": "Prompt optimisé : {before} → {after} caractères",
+        "optimizePromptSuccess": "Prompt optimisé",
         "optimizationSummary": "{before} → {after} caractères · environ {beforeTokens} → {afterTokens} jetons",
         "optimizePromptUnchanged": "Le prompt est déjà concis",
         "optimizePromptFailed": "Impossible d'optimiser le prompt",
@@ -2590,6 +2590,7 @@
         "speechInterim": "Reconnaissance : {text}",
         "speechUnsupported": "La saisie vocale n'est pas prise en charge dans ce navigateur ou WebView",
         "speechPermissionDenied": "L'accès au microphone a été refusé",
+        "speechPermissionRequest": "Autorisez l'accès au microphone dans la demande d'autorisation",
         "speechFailed": "La saisie vocale s'est arrêtée : {message}",
         "forkAndSend": "Fork & Envoyer",
         "queueMessage": "Mettre en file d'attente",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "Que souhaites-tu <highlight>faire aujourd'hui</highlight> ?",
+        "title": "Bonjour, je suis Prooflane",
+        "subtitle": "Je suis un compagnon IA local, sûr et contrôlable, qui apprend de façon autonome et comprend de mieux en mieux votre travail et votre quotidien.",
+        "animationAlt": "Animation de la marque Prooflane",
         "tips": {
           "tileTabs": "Faites un clic droit sur un onglet de conversation et choisissez Affichage en mosaïque pour comparer plusieurs sessions côte à côte.",
           "pinTab": "Double-cliquez sur un onglet de conversation pour l'épingler : une nouvelle session ne le remplacera plus automatiquement.",

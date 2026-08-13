@@ -2579,7 +2579,7 @@
         "optimizePrompt": "Prompt optimieren",
         "optimizingPrompt": "Prompt wird optimiert",
         "cancelPromptOptimization": "Prompt-Optimierung abbrechen",
-        "optimizePromptSuccess": "Prompt optimiert: {before} → {after} Zeichen",
+        "optimizePromptSuccess": "Prompt optimiert",
         "optimizationSummary": "{before} → {after} Zeichen · ca. {beforeTokens} → {afterTokens} Token",
         "optimizePromptUnchanged": "Der Prompt ist bereits prägnant",
         "optimizePromptFailed": "Prompt konnte nicht optimiert werden",
@@ -2590,6 +2590,7 @@
         "speechInterim": "Erkennung läuft: {text}",
         "speechUnsupported": "Spracheingabe wird in diesem Browser oder WebView nicht unterstützt",
         "speechPermissionDenied": "Mikrofonzugriff wurde verweigert",
+        "speechPermissionRequest": "Mikrofonzugriff in der Berechtigungsabfrage erlauben",
         "speechFailed": "Spracheingabe wurde beendet: {message}",
         "forkAndSend": "Fork & Senden",
         "queueMessage": "In Warteschlange stellen",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "Was möchtest du heute <highlight>machen</highlight>?",
+        "title": "Hallo, ich bin Prooflane",
+        "subtitle": "Ich bin dein lokal ausgeführter, sicher kontrollierbarer und selbstlernender KI-Begleiter, der deine Arbeit und deinen Alltag mit der Zeit immer besser versteht.",
+        "animationAlt": "Prooflane Markenanimation",
         "tips": {
           "tileTabs": "Klicke mit der rechten Maustaste auf einen Konversations-Tab und wähle Kachelansicht, um mehrere Sitzungen nebeneinander zu sehen.",
           "pinTab": "Doppelklicke auf einen Konversations-Tab, um ihn anzuheften – so wird er nicht von einer neuen Sitzung automatisch ersetzt.",

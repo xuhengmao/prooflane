@@ -2579,7 +2579,7 @@
         "optimizePrompt": "最佳化提示詞",
         "optimizingPrompt": "正在最佳化提示詞",
         "cancelPromptOptimization": "取消提示詞最佳化",
-        "optimizePromptSuccess": "提示詞已最佳化：{before} → {after} 個字元",
+        "optimizePromptSuccess": "提示詞已最佳化",
         "optimizationSummary": "{before} → {after} 個字元 · 約 {beforeTokens} → {afterTokens} Token",
         "optimizePromptUnchanged": "目前提示詞已足夠精簡",
         "optimizePromptFailed": "提示詞最佳化失敗",
@@ -2590,6 +2590,7 @@
         "speechInterim": "辨識中：{text}",
         "speechUnsupported": "此瀏覽器或 WebView 不支援語音輸入",
         "speechPermissionDenied": "麥克風權限遭拒",
+        "speechPermissionRequest": "請在權限提示中允許存取麥克風",
         "speechFailed": "語音輸入已停止：{message}",
         "forkAndSend": "分叉發送",
         "queueMessage": "加入佇列",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "今天打算<highlight>做些什麼</highlight>呢？",
+        "title": "Hello，我是prooflane",
+        "subtitle": "我是一個在本機執行、安全可控、自主學習、越用越懂你的 AI 工作生活夥伴",
+        "animationAlt": "Prooflane 品牌動畫",
         "tips": {
           "tileTabs": "右鍵點擊會話標籤選擇「平鋪顯示」，可同螢幕對比多個會話",
           "pinTab": "雙擊會話標籤可將其固定，避免被新開啟的會話自動取代",

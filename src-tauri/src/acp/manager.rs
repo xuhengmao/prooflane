@@ -466,6 +466,14 @@ impl ConnectionManager {
         // installs the SessionStarted dedup signal on the state, registers
         // a cleanup hook, and returns the rx half of the signal. Any spawn
         // failure short-circuits before we touch the rx wait.
+        let restricted_session = runtime_env
+            .get(crate::acp::connection::RESTRICTED_SESSION_ENV)
+            .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
+        let delegation_injection = if restricted_session {
+            None
+        } else {
+            self.delegation_snapshot()
+        };
         let session_started_rx = spawn_agent_connection(
             connection_id.clone(),
             agent_type,
@@ -477,7 +485,7 @@ impl ConnectionManager {
             self.connections.clone(),
             preferred_mode_id,
             preferred_config_values,
-            self.delegation_snapshot(),
+            delegation_injection,
         )
         .await?;
 

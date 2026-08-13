@@ -2579,7 +2579,7 @@
         "optimizePrompt": "プロンプトを最適化",
         "optimizingPrompt": "プロンプトを最適化中",
         "cancelPromptOptimization": "プロンプトの最適化をキャンセル",
-        "optimizePromptSuccess": "プロンプトを最適化しました：{before} → {after} 文字",
+        "optimizePromptSuccess": "プロンプトを最適化しました",
         "optimizationSummary": "{before} → {after} 文字 · 約 {beforeTokens} → {afterTokens} トークン",
         "optimizePromptUnchanged": "プロンプトはすでに簡潔です",
         "optimizePromptFailed": "プロンプトを最適化できませんでした",
@@ -2590,6 +2590,7 @@
         "speechInterim": "認識中：{text}",
         "speechUnsupported": "このブラウザーまたは WebView は音声入力に対応していません",
         "speechPermissionDenied": "マイクの使用が拒否されました",
+        "speechPermissionRequest": "権限ダイアログでマイクへのアクセスを許可してください",
         "speechFailed": "音声入力が停止しました：{message}",
         "forkAndSend": "フォークして送信",
         "queueMessage": "キューに追加",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "今日は<highlight>何を</highlight>しましょうか？",
+        "title": "こんにちは、Prooflaneです",
+        "subtitle": "ローカルで動作し、安全に管理でき、自律的に学習しながら、使うほど仕事と暮らしを理解するAIパートナーです。",
+        "animationAlt": "Prooflane ブランドアニメーション",
         "tips": {
           "tileTabs": "会話タブを右クリックして「タイル表示」を選ぶと、複数のセッションを並べて比較できます",
           "pinTab": "会話タブをダブルクリックすると固定でき、新しい会話に自動で置き換えられなくなります",

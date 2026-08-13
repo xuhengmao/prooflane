@@ -2581,7 +2581,7 @@
         "optimizePrompt": "Optimize prompt",
         "optimizingPrompt": "Optimizing prompt",
         "cancelPromptOptimization": "Cancel prompt optimization",
-        "optimizePromptSuccess": "Prompt optimized: {before} → {after} characters",
+        "optimizePromptSuccess": "Prompt optimized",
         "optimizationSummary": "{before} → {after} characters · about {beforeTokens} → {afterTokens} tokens",
         "optimizePromptUnchanged": "The prompt is already concise",
         "optimizePromptFailed": "Couldn't optimize the prompt",
@@ -2592,6 +2592,7 @@
         "speechInterim": "Recognizing: {text}",
         "speechUnsupported": "Voice input isn't supported in this browser or WebView",
         "speechPermissionDenied": "Microphone permission was denied",
+        "speechPermissionRequest": "Allow microphone access in the permission prompt",
         "speechFailed": "Voice input stopped: {message}",
         "forkAndSend": "Fork & Send",
         "queueMessage": "Queue message",
@@ -2641,6 +2642,9 @@
       },
       "welcomePanel": {
         "greeting": "What would you like to <highlight>do today</highlight>?",
+        "title": "Hello, I'm Prooflane",
+        "subtitle": "I'm a locally run, secure and controllable AI companion that learns independently and understands your work and life better over time.",
+        "animationAlt": "Prooflane brand animation",
         "tips": {
           "tileTabs": "Right-click any conversation tab and choose Tile Display to see multiple sessions side by side.",
           "pinTab": "Double-click a conversation tab to pin it, so a newly opened session won't auto-replace it.",

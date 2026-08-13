@@ -204,6 +204,8 @@ describe("MessageInput (RichComposer integration)", () => {
       name: enMessages.Folder.chat.messageInput.startSpeechInput,
     })
     const send = screen.getByTitle(enMessages.Folder.chat.messageInput.send)
+    const smartActions = optimize.parentElement
+    const actionBar = smartActions?.parentElement
 
     expect(optimize.compareDocumentPosition(speech)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
@@ -213,6 +215,17 @@ describe("MessageInput (RichComposer integration)", () => {
     )
     expect(optimize).toBeDisabled()
     expect(speech).toBeEnabled()
+    expect(optimize).toHaveClass("h-6", "w-6")
+    expect(speech).toHaveClass("h-6", "w-6")
+    expect(optimize.parentElement).toHaveClass("gap-1.5", "translate-x-0.5")
+    expect(smartActions).toContainElement(speech)
+    expect(actionBar).toContainElement(send)
+    expect(actionBar).toHaveClass("items-end", "gap-2")
+    expect(optimize).toHaveClass(
+      "hover:border-primary/40",
+      "hover:bg-primary/10"
+    )
+    expect(speech).toHaveClass("hover:border-primary/40", "hover:bg-primary/10")
   })
 
   it("keeps prompt optimization disabled for a reference-only draft", async () => {
@@ -242,7 +255,7 @@ describe("MessageInput (RichComposer integration)", () => {
 
   it("optimizes the current draft and can restore the original document", async () => {
     const provider: PromptOptimizationProvider = {
-      optimize: vi.fn(async (text) => text.replace("verbose", "concise")),
+      optimize: vi.fn(async ({ text }) => text.replace("verbose", "concise")),
     }
     const user = userEvent.setup()
     const { container } = renderInput({ promptOptimizationProvider: provider })
@@ -260,11 +273,25 @@ describe("MessageInput (RichComposer integration)", () => {
     await waitFor(() =>
       expect(composerHandle.current?.getText()).toBe("concise request")
     )
-    await user.click(
-      screen.getByRole("button", {
-        name: enMessages.Folder.chat.messageInput.undoPromptOptimization,
+    const undo = screen.getByRole("button", {
+      name: enMessages.Folder.chat.messageInput.undoPromptOptimization,
+    })
+    const speech = screen.getByRole("button", {
+      name: enMessages.Folder.chat.messageInput.startSpeechInput,
+    })
+    expect(
+      screen.queryByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
       })
+    ).not.toBeInTheDocument()
+    expect(undo).toHaveClass("h-6", "w-6")
+    expect(undo).toHaveClass("hover:border-primary/40", "hover:bg-primary/10")
+    expect(undo.parentElement).toContainElement(speech)
+    expect(undo.compareDocumentPosition(speech)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
     )
+
+    await user.click(undo)
     expect(composerHandle.current?.getText()).toBe("verbose request")
     expect(
       container.querySelector("[data-prompt-optimization-summary]")
@@ -273,7 +300,7 @@ describe("MessageInput (RichComposer integration)", () => {
 
   it("keeps the one-step undo available after editing an optimized draft", async () => {
     const provider: PromptOptimizationProvider = {
-      optimize: vi.fn(async (text) => text.replace("verbose", "concise")),
+      optimize: vi.fn(async ({ text }) => text.replace("verbose", "concise")),
     }
     const user = userEvent.setup()
     renderInput({ promptOptimizationProvider: provider })
@@ -322,13 +349,12 @@ describe("MessageInput (RichComposer integration)", () => {
         name: enMessages.Folder.chat.messageInput.optimizePrompt,
       })
     )
-    const cancelButton = screen.getByRole("button", {
-      name: enMessages.Folder.chat.messageInput.cancelPromptOptimization,
+    const optimizeButton = screen.getByRole("button", {
+      name: enMessages.Folder.chat.messageInput.optimizePrompt,
     })
-    expect(cancelButton.firstElementChild).toHaveClass(
-      "motion-safe:animate-pulse"
-    )
-    expect(cancelButton.firstElementChild).not.toHaveClass("animate-pulse")
+    expect(optimizeButton).toBeDisabled()
+    expect(optimizeButton).toHaveAttribute("aria-busy", "true")
+    expect(optimizeButton.querySelector("svg")).toHaveClass("animate-spin")
     act(() => composerHandle.current?.setText("user edited request"))
     await act(async () => {
       resolveOptimization?.("late optimized request")
@@ -372,6 +398,37 @@ describe("MessageInput (RichComposer integration)", () => {
     expect(toastMock.error).not.toHaveBeenCalled()
   })
 
+  it("restores the optimization button after the provider fails", async () => {
+    const provider: PromptOptimizationProvider = {
+      optimize: vi.fn(async () => {
+        throw new Error("provider unavailable")
+      }),
+    }
+    const user = userEvent.setup()
+    const { container } = renderInput({
+      promptOptimizationProvider: provider,
+    })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    act(() => composerHandle.current?.setText("original request"))
+
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
+      })
+    )
+
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledOnce())
+    const optimizeButton = screen.getByRole("button", {
+      name: enMessages.Folder.chat.messageInput.optimizePrompt,
+    })
+    expect(optimizeButton).toBeEnabled()
+    expect(optimizeButton).toHaveAttribute("aria-busy", "false")
+    expect(optimizeButton.querySelector("svg")).toBeNull()
+    expect(container.querySelector(".prooflane-composer-optimizing")).toBeNull()
+  })
+
   it("does not apply a pending optimization after the session changes", async () => {
     let resolveOptimization: ((value: string) => void) | null = null
     const provider: PromptOptimizationProvider = {
@@ -413,6 +470,50 @@ describe("MessageInput (RichComposer integration)", () => {
     })
 
     expect(composerHandle.current?.getText()).toBe("session B request")
+  })
+
+  it("passes workspace, history, and related files to prompt optimization", async () => {
+    const provider: PromptOptimizationProvider = {
+      optimize: vi.fn(async ({ text }) => text),
+    }
+    const user = userEvent.setup()
+    renderInput({
+      agentType: "codex",
+      defaultPath: "C:/repo",
+      promptOptimizationContext: {
+        conversationHistory: [
+          { role: "user", text: "previous question" },
+          { role: "assistant", text: "previous answer" },
+        ],
+        relatedFiles: ["src/auth.ts"],
+      },
+      promptOptimizationProvider: provider,
+    })
+    await waitFor(() =>
+      expect(composerHandle.current?.getEditor()).toBeTruthy()
+    )
+    act(() => composerHandle.current?.setText("improve login"))
+
+    await user.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.optimizePrompt,
+      })
+    )
+
+    expect(provider.optimize).toHaveBeenCalledWith(
+      {
+        text: "{{PROOFLANE_SEGMENT_0_START}}\nimprove login\n{{PROOFLANE_SEGMENT_0_END}}",
+        context: {
+          workspacePath: "C:/repo",
+          conversationHistory: [
+            { role: "user", text: "previous question" },
+            { role: "assistant", text: "previous answer" },
+          ],
+          relatedFiles: ["src/auth.ts"],
+        },
+      },
+      expect.any(AbortSignal)
+    )
   })
 
   it("inserts confirmed speech at the caret without sending the draft", async () => {
@@ -484,11 +585,25 @@ describe("MessageInput (RichComposer integration)", () => {
         name: enMessages.Folder.chat.messageInput.startSpeechInput,
       })
     )
+    const permissionHint = screen.getByRole("status", {
+      name: enMessages.Folder.chat.messageInput.speechPermissionRequest,
+    })
+    const speechButton = screen.getByRole("button", {
+      name: enMessages.Folder.chat.messageInput.stopSpeechInput,
+    })
+    expect(permissionHint).toHaveClass("bottom-full")
+    expect(speechButton.parentElement).toContainElement(permissionHint)
+    expect(speechButton).toHaveClass("h-6", "w-6")
     await user.click(
       screen.getByRole("button", {
         name: enMessages.Folder.chat.messageInput.stopSpeechInput,
       })
     )
+    expect(
+      screen.queryByRole("status", {
+        name: enMessages.Folder.chat.messageInput.speechPermissionRequest,
+      })
+    ).not.toBeInTheDocument()
     act(() =>
       resolveStream?.({
         getTracks: () => [track],

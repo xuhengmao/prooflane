@@ -25,6 +25,7 @@ pub mod office_tools;
 pub mod notification;
 pub mod pet;
 pub mod project_boot;
+pub mod prompt_optimization;
 pub mod question;
 pub mod quick_messages;
 #[cfg(feature = "tauri-runtime")]

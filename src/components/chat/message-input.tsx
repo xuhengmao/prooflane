@@ -12,7 +12,9 @@ import {
   Cog,
   Copy,
   GitFork,
+  Loader2,
   MessageSquareText,
+  RotateCcw,
   Scissors,
   TextSelect,
   X,
@@ -127,13 +129,15 @@ import { ComposerImageThumbnails } from "@/components/chat/composer/composer-ima
 import { useComposerAttachments } from "@/components/chat/composer/use-composer-attachments"
 import { useComposerShortcuts } from "@/components/chat/composer/use-composer-shortcuts"
 import {
-  LocalPromptOptimizationProvider,
+  AgentPromptOptimizationProvider,
   hasEditablePromptText,
   optimizeComposerDocument,
   PromptOptimizationError,
+  type PromptOptimizationContext,
   type PromptOptimizationProvider,
   type PromptOptimizationResult,
 } from "@/components/chat/composer/prompt-optimization"
+import { getTimelineTurns } from "@/stores/conversation-runtime-store"
 import {
   isSpeechTranscriptionSupported,
   WebSpeechTranscriptionProvider,
@@ -217,6 +221,11 @@ interface MessageInputProps {
   onInjectConsumed?: () => void
   speechTranscriptionProvider?: SpeechTranscriptionProvider
   promptOptimizationProvider?: PromptOptimizationProvider
+  promptOptimizationContext?: Pick<
+    PromptOptimizationContext,
+    "conversationHistory" | "relatedFiles"
+  >
+  conversationId?: number | null
 }
 
 const EMPTY_WAVEFORM_LEVELS = Array.from({ length: 28 }, () => 0.18)
@@ -337,6 +346,8 @@ export function MessageInput({
   onInjectConsumed,
   speechTranscriptionProvider,
   promptOptimizationProvider,
+  promptOptimizationContext,
+  conversationId,
 }: MessageInputProps) {
   const t = useTranslations("Folder.chat.messageInput")
   const tQueue = useTranslations("Folder.chat.messageQueue")
@@ -365,7 +376,7 @@ export function MessageInput({
     [speechTranscriptionProvider]
   )
   const optimizationProvider = useMemo(
-    () => promptOptimizationProvider ?? new LocalPromptOptimizationProvider(),
+    () => promptOptimizationProvider ?? new AgentPromptOptimizationProvider(),
     [promptOptimizationProvider]
   )
   // The editor owns the content now; this mirror of its empty state drives the
@@ -889,10 +900,6 @@ export function MessageInput({
     t,
   ])
 
-  const cancelPromptOptimization = useCallback(() => {
-    invalidatePromptOptimization()
-  }, [invalidatePromptOptimization])
-
   const handleOptimizePrompt = useCallback(async () => {
     const handle = editorRef.current
     if (!handle || !smartActionState.canOptimize) return
@@ -905,9 +912,36 @@ export function MessageInput({
     setIsOptimizing(true)
     setOptimizationResult(null)
     try {
+      const runtimeHistory =
+        promptOptimizationContext?.conversationHistory ??
+        (conversationId != null
+          ? getTimelineTurns(conversationId)
+              .slice(-20)
+              .map(({ turn }) => ({
+                role: turn.role,
+                text: turn.blocks
+                  .filter(
+                    (
+                      block
+                    ): block is Extract<
+                      (typeof turn.blocks)[number],
+                      { type: "text" }
+                    > => block.type === "text"
+                  )
+                  .map((block) => block.text)
+                  .join("\n")
+                  .trim(),
+              }))
+              .filter((item) => item.text.length > 0)
+          : [])
       const result = await optimizeComposerDocument(
         snapshot,
         optimizationProvider,
+        {
+          workspacePath: defaultPath,
+          conversationHistory: runtimeHistory,
+          relatedFiles: promptOptimizationContext?.relatedFiles ?? [],
+        },
         controller.signal
       )
       if (
@@ -924,14 +958,7 @@ export function MessageInput({
       }
       syncComposerEmpty()
       setOptimizationResult(result)
-      toast.success(
-        result.beforeCharacters === result.afterCharacters
-          ? t("optimizePromptUnchanged")
-          : t("optimizePromptSuccess", {
-              before: result.beforeCharacters,
-              after: result.afterCharacters,
-            })
-      )
+      toast.success(t("optimizePromptSuccess"))
     } catch (error) {
       const isCurrentRequest =
         optimizationGenerationRef.current === requestGeneration
@@ -951,7 +978,15 @@ export function MessageInput({
         setIsOptimizing(false)
       }
     }
-  }, [optimizationProvider, smartActionState.canOptimize, syncComposerEmpty, t])
+  }, [
+    conversationId,
+    defaultPath,
+    optimizationProvider,
+    promptOptimizationContext,
+    smartActionState.canOptimize,
+    syncComposerEmpty,
+    t,
+  ])
 
   const undoPromptOptimization = useCallback(() => {
     const snapshot = optimizationSnapshotRef.current
@@ -2002,67 +2037,88 @@ export function MessageInput({
   )
 
   const smartActionButtons = (
-    <div className="flex items-center gap-1">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        className="h-6 w-6 shrink-0"
-        disabled={!isOptimizing && !smartActionState.canOptimize}
-        aria-label={
-          isOptimizing ? t("cancelPromptOptimization") : t("optimizePrompt")
-        }
-        title={
-          isOptimizing ? t("cancelPromptOptimization") : t("optimizePrompt")
-        }
-        aria-pressed={isOptimizing}
-        onClick={
-          isOptimizing
-            ? cancelPromptOptimization
-            : () => void handleOptimizePrompt()
-        }
-      >
-        <ComposerImageIcon
-          src="/prooflane/composer/y_put.png"
-          className={cn("size-5", isOptimizing && "motion-safe:animate-pulse")}
-        />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        className="h-6 w-6 shrink-0"
-        disabled={
-          smartActionState.speechActive
-            ? !smartActionState.canStopSpeech
-            : !smartActionState.canStartSpeech
-        }
-        aria-label={
-          smartActionState.speechActive
-            ? t("stopSpeechInput")
-            : t("startSpeechInput")
-        }
-        title={
-          smartActionState.speechActive
-            ? t("stopSpeechInput")
-            : t("startSpeechInput")
-        }
-        aria-pressed={smartActionState.speechActive}
-        onClick={
-          smartActionState.speechActive
-            ? stopSpeechInput
-            : () => void startSpeechInput()
-        }
-      >
-        <ComposerImageIcon
-          src={
+    <div className="flex translate-x-0.5 items-center gap-1.5">
+      {optimizationResult ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="h-6 w-6 shrink-0 hover:border-primary/40 hover:bg-primary/10"
+          onClick={undoPromptOptimization}
+          aria-label={t("undoPromptOptimization")}
+          title={t("undoPromptOptimization")}
+        >
+          <RotateCcw aria-hidden="true" className="size-4" />
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="h-6 w-6 shrink-0 hover:border-primary/40 hover:bg-primary/10"
+          disabled={isOptimizing || !smartActionState.canOptimize}
+          aria-label={t("optimizePrompt")}
+          title={t("optimizePrompt")}
+          aria-busy={isOptimizing}
+          onClick={() => void handleOptimizePrompt()}
+        >
+          {isOptimizing ? (
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+          ) : (
+            <ComposerImageIcon
+              src="/prooflane/composer/y_put.png"
+              className="size-4"
+            />
+          )}
+        </Button>
+      )}
+      <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+        {speechStatus === "requesting_permission" && (
+          <div
+            role="status"
+            aria-label={t("speechPermissionRequest")}
+            className="absolute bottom-full right-0 z-50 mb-2 w-max max-w-56 rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md after:absolute after:right-2 after:top-full after:border-4 after:border-transparent after:border-t-border"
+          >
+            {t("speechPermissionRequest")}
+          </div>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="h-6 w-6 shrink-0 hover:border-primary/40 hover:bg-primary/10"
+          disabled={
             smartActionState.speechActive
-              ? "/prooflane/composer/call_stop.png"
-              : "/prooflane/composer/call_send.png"
+              ? !smartActionState.canStopSpeech
+              : !smartActionState.canStartSpeech
           }
-          className="size-6"
-        />
-      </Button>
+          aria-label={
+            smartActionState.speechActive
+              ? t("stopSpeechInput")
+              : t("startSpeechInput")
+          }
+          title={
+            smartActionState.speechActive
+              ? t("stopSpeechInput")
+              : t("startSpeechInput")
+          }
+          aria-pressed={smartActionState.speechActive}
+          onClick={
+            smartActionState.speechActive
+              ? stopSpeechInput
+              : () => void startSpeechInput()
+          }
+        >
+          <ComposerImageIcon
+            src={
+              smartActionState.speechActive
+                ? "/prooflane/composer/call_stop.png"
+                : "/prooflane/composer/call_send.png"
+            }
+            className="size-4"
+          />
+        </Button>
+      </div>
     </div>
   )
 
@@ -2248,35 +2304,6 @@ export function MessageInput({
                   </span>
                 </div>
               )}
-              {optimizationResult && (
-                <div
-                  data-prompt-optimization-summary
-                  className="flex min-h-7 items-center justify-end gap-2 px-3 pb-1 text-xs text-muted-foreground"
-                  aria-live="polite"
-                >
-                  <span>
-                    {t("optimizationSummary", {
-                      before: optimizationResult.beforeCharacters,
-                      after: optimizationResult.afterCharacters,
-                      beforeTokens: Math.ceil(
-                        optimizationResult.beforeCharacters / 4
-                      ),
-                      afterTokens: Math.ceil(
-                        optimizationResult.afterCharacters / 4
-                      ),
-                    })}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="link"
-                    size="sm"
-                    className="h-6 px-1 text-xs"
-                    onClick={undoPromptOptimization}
-                  >
-                    {t("undoPromptOptimization")}
-                  </Button>
-                </div>
-              )}
               <div className="flex shrink-0 items-end justify-between gap-1 px-2 pb-2">
                 <div className="flex min-w-0 items-end gap-1">
                   <ComposerAddMenu
@@ -2354,7 +2381,7 @@ export function MessageInput({
                     </div>
                   )}
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-end gap-2">
                   {smartActionButtons}
                   {actionButtons}
                 </div>
