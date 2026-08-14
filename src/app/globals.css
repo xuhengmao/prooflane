@@ -2276,6 +2276,10 @@ div.monaco-diff-editor.side-by-side .editor.modified {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .codeg-composer-chrome[data-composer-state] {
+    transition: none;
+  }
+
   .codeg-composer-chrome[data-composer-state="new_empty"]::before,
   .codeg-composer-chrome[data-composer-state="generating"]::before,
   .codeg-composer-chrome[data-composer-state="tool_running"]::before {

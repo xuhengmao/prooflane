@@ -39,6 +39,9 @@ describe("composer status styles", () => {
       "animation: prooflane-composer-status-breathe 2.2s ease-in-out infinite"
     )
     expect(statusRules).toContain('[data-composer-state="generating"]::before')
+    expect(statusRules).toContain(
+      '[data-composer-state="tool_running"]::before'
+    )
     expect(statusRules).toMatch(
       /data-composer-state="focused"\][\s\S]*?box-shadow:\s*0 0 0 3px var\(--prooflane-composer-status-soft\)/
     )
@@ -48,6 +51,12 @@ describe("composer status styles", () => {
       '[data-composer-state="new_empty"]::before'
     )
     expect(reducedMotionRules).toContain("animation: none")
+    expect(reducedMotionRules).toMatch(
+      /\.codeg-composer-chrome\[data-composer-state\]\s*\{[\s\S]*?transition:\s*none/
+    )
+    expect(statusRules).not.toMatch(
+      /data-composer-state="(?:waiting_for_user|failed|stopped)"::before/
+    )
     expect(statusRules).not.toMatch(
       /data-composer-state="(?:generating|tool_running|waiting_for_user|failed)"[^}]*box-shadow/
     )

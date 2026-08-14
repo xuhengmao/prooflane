@@ -26,24 +26,38 @@ function collectKeys(node: MessageNode, prefix = ""): string[] {
 }
 
 const reference = new Set(collectKeys(en as MessageNode))
+const locales = [
+  ["ar", ar],
+  ["de", de],
+  ["en", en],
+  ["es", es],
+  ["fr", fr],
+  ["ja", ja],
+  ["ko", ko],
+  ["pt", pt],
+  ["zh-CN", zhCN],
+  ["zh-TW", zhTW],
+] as const
 
 // `en.json` is the source of truth. Any missing key in another locale fails
 // the test with the exact dotted path, making translation gaps grep-able.
 describe("i18n locale key parity vs en.json", () => {
-  it.each([
-    ["ar", ar],
-    ["de", de],
-    ["es", es],
-    ["fr", fr],
-    ["ja", ja],
-    ["ko", ko],
-    ["pt", pt],
-    ["zh-CN", zhCN],
-    ["zh-TW", zhTW],
-  ] as const)("%s has the same key set as en", (_locale, messages) => {
-    const localeKeys = new Set(collectKeys(messages as MessageNode))
-    const missing = [...reference].filter((k) => !localeKeys.has(k))
-    const extra = [...localeKeys].filter((k) => !reference.has(k))
-    expect({ missing, extra }).toEqual({ missing: [], extra: [] })
-  })
+  it.each(locales.filter(([locale]) => locale !== "en"))(
+    "%s has the same key set as en",
+    (_locale, messages) => {
+      const localeKeys = new Set(collectKeys(messages as MessageNode))
+      const missing = [...reference].filter((k) => !localeKeys.has(k))
+      const extra = [...localeKeys].filter((k) => !reference.has(k))
+      expect({ missing, extra }).toEqual({ missing: [], extra: [] })
+    }
+  )
+
+  it.each(locales)(
+    "%s preserves the tool-name placeholder",
+    (_locale, messages) => {
+      expect(messages.Folder.chat.messageInput.statusToolRunning).toContain(
+        "{tool}"
+      )
+    }
+  )
 })
