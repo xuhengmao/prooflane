@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { extractLiveEditStats } from "./live-turn-stats"
+import {
+  countLiveToolCalls,
+  extractLiveEditStats,
+  resolveLiveTurnPhase,
+} from "./live-turn-stats"
 import type {
   LiveContentBlock,
   LiveMessage,
@@ -49,6 +53,30 @@ const writeInput = (content: string, filePath: string) =>
 const applyPatch = (body: string) => `*** Begin Patch\n${body}\n*** End Patch`
 
 // --- tests -----------------------------------------------------------------
+
+describe("live turn phase", () => {
+  it("only reports thinking for an active stream whose sole block is thinking", () => {
+    const thinking = msg([{ type: "thinking", text: "working" }])
+    const answered = msg([
+      { type: "thinking", text: "working" },
+      { type: "text", text: "answer" },
+    ])
+
+    expect(resolveLiveTurnPhase(thinking, true)).toBe("thinking")
+    expect(resolveLiveTurnPhase(thinking, false)).toBe("streaming")
+    expect(resolveLiveTurnPhase(answered, true)).toBe("streaming")
+  })
+
+  it("counts every live tool call block", () => {
+    const message = msg([
+      toolBlock('{"command":"pwd"}'),
+      { type: "text", text: "done" },
+      toolBlock('{"command":"git status"}'),
+    ])
+
+    expect(countLiveToolCalls(message)).toBe(2)
+  })
+})
 
 describe("extractLiveEditStats", () => {
   it("counts a write tool's added lines and file", () => {
