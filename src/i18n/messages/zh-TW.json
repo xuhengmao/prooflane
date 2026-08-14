@@ -2544,6 +2544,7 @@
       "chatInput": {
         "connecting": "連線中...",
         "agentResponding": "{agent} 正在回應...",
+        "continueInputQueue": "繼續輸入以加入佇列",
         "sendMessage": "傳送訊息..."
       },
       "messageInput": {
@@ -2576,6 +2577,14 @@
         "noModels": "找不到模型",
         "cancel": "取消",
         "send": "傳送",
+        "statusGenerating": "正在思考...",
+        "statusToolRunning": "正在執行 {tool}...",
+        "statusWaitingPermission": "等待你的授權",
+        "statusWaitingQuestion": "等待你的回答",
+        "statusWaitingPlanApproval": "等待計畫確認",
+        "statusFailed": "產生失敗",
+        "statusStopped": "已停止",
+        "retryStatus": "重試",
         "optimizePrompt": "最佳化提示詞",
         "optimizingPrompt": "正在最佳化提示詞",
         "cancelPromptOptimization": "取消提示詞最佳化",

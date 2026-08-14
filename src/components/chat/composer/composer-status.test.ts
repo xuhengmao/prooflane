@@ -40,9 +40,9 @@ describe("resolveComposerStatus", () => {
         activeToolTitle: "Read files",
       })
     ).toBe("tool_running")
-    expect(
-      resolveComposerStatus({ ...idleInput, isPrompting: true })
-    ).toBe("generating")
+    expect(resolveComposerStatus({ ...idleInput, isPrompting: true })).toBe(
+      "generating"
+    )
   })
 
   it("keeps running, result, focus, and new-conversation states ordered", () => {

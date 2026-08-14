@@ -209,7 +209,9 @@ describe("MessageInput (RichComposer integration)", () => {
 
     const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
     expect(chrome).toHaveAttribute("data-composer-state", "generating")
-    expect(screen.getByRole("status")).toHaveTextContent(
+    const status = screen.getByRole("status")
+    expect(status).toHaveAttribute("aria-live", "polite")
+    expect(status).toHaveTextContent(
       enMessages.Folder.chat.messageInput.statusGenerating
     )
     expect(screen.getByTestId("composer-status-elapsed")).toHaveTextContent(

@@ -8,10 +8,7 @@ export type ComposerStatus =
   | "new_empty"
   | "idle"
 
-export type ComposerWaitingReason =
-  | "permission"
-  | "question"
-  | "plan_approval"
+export type ComposerWaitingReason = "permission" | "question" | "plan_approval"
 
 export interface ComposerStatusInput {
   waitingReason: ComposerWaitingReason | null
@@ -45,6 +42,7 @@ export function resolveComposerStatus({
 
 interface ToolCallContent {
   type: string
+  [key: string]: unknown
   info?: {
     title?: unknown
     status?: unknown
