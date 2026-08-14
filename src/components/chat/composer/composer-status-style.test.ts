@@ -61,4 +61,17 @@ describe("composer status styles", () => {
       /data-composer-state="(?:generating|tool_running|waiting_for_user|failed)"[^}]*box-shadow/
     )
   })
+
+  it("styles the external runtime bar and disables all of its motion", () => {
+    expect(statusRules).toContain(".prooflane-composer-runtime-bar")
+    expect(statusRules).toContain("--prooflane-composer-status: #38BF63")
+    expect(statusRules).toContain(
+      '.prooflane-composer-runtime-bar[data-composer-runtime-state="failed"]'
+    )
+    expect(statusRules).toContain(
+      '.prooflane-composer-runtime-bar[data-composer-runtime-state="stopped"]'
+    )
+    expect(reducedMotionRules).toContain(".prooflane-composer-runtime-bar")
+    expect(reducedMotionRules).toContain("animation: none")
+  })
 })
