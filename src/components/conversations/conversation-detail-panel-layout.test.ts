@@ -45,8 +45,37 @@ const messageListViewSource = readFileSync(
   resolve(process.cwd(), "src/components/message/message-list-view.tsx"),
   "utf8"
 )
+const liveTranscriptSource = readFileSync(
+  resolve(process.cwd(), "src/components/message/live-transcript-view.tsx"),
+  "utf8"
+)
+
+function readJsxCall(sourceText: string, marker: string): string {
+  const start = sourceText.indexOf(marker)
+  expect(start).toBeGreaterThan(-1)
+  const end = sourceText.indexOf("/>", start)
+  expect(end).toBeGreaterThan(start)
+  return sourceText.slice(start, end + 2)
+}
 
 describe("ConversationDetailPanel new conversation layout", () => {
+  it("moves live turn stats to the main composer but keeps read-only viewers covered", () => {
+    const mainMessageListCall = readJsxCall(source, "<MessageListView")
+    const liveTranscriptMessageListCall = readJsxCall(
+      liveTranscriptSource,
+      "<MessageListView"
+    )
+
+    expect(mainMessageListCall).toContain("showLiveTurnStats={false}")
+    expect(liveTranscriptMessageListCall).not.toContain(
+      "showLiveTurnStats={false}"
+    )
+    expect(messageListViewSource).toContain("showLiveTurnStats = true")
+    expect(messageListViewSource).toContain(
+      'showLiveTurnStats && liveMessage && connStatus === "prompting"'
+    )
+  })
+
   it("keeps the new-conversation input in the welcome panel with the original scroll layout", () => {
     expect(source).toContain(
       "hideInput={isWelcomeMode || Boolean(acpLoadError)}"

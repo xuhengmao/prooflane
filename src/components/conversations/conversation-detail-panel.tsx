@@ -1659,6 +1659,7 @@ const ConversationTabView = memo(function ConversationTabView({
         detailError={detailError}
         acpLoadError={acpLoadError}
         hideEmptyState={!hasPersistedConversation || hasSentMessage}
+        showLiveTurnStats={false}
         onReload={canShowDetailErrorActions ? handleReloadDetail : undefined}
         onNewSession={
           canShowDetailErrorActions ? handleOpenNewSession : undefined
