@@ -142,7 +142,11 @@ import {
 } from "@/lib/export-conversation"
 import { useExportLabels } from "@/lib/use-export-labels"
 import { resolveActiveSessionDetails } from "./active-session-details"
-import { resolveConversationComposerState } from "./conversation-composer-state"
+import {
+  resolveConversationComposerErrorState,
+  resolveConversationComposerState,
+  retryConversationComposerError,
+} from "./conversation-composer-state"
 import { ConversationDetailHeader } from "./conversation-detail-header"
 import { SessionDetailsDialog } from "./session-details-dialog"
 
@@ -1525,6 +1529,18 @@ const ConversationTabView = memo(function ConversationTabView({
   const showDraftHeader = !hasPersistedConversation && !hasSentMessage
   const isWelcomeMode = showDraftHeader
   const composerState = resolveConversationComposerState(isWelcomeMode)
+  const handleComposerRetry = useCallback(() => {
+    retryConversationComposerError(
+      connStatus,
+      () => acpActions.clearError(tabId),
+      handleFocus
+    )
+  }, [acpActions, connStatus, handleFocus, tabId])
+  const composerErrorState = resolveConversationComposerErrorState(
+    connStatus,
+    conn.error,
+    handleComposerRetry
+  )
 
   const handleQuickAction = useCallback((payload: ComposerInjectContent) => {
     setQuickActionInject(payload)
@@ -1763,9 +1779,7 @@ const ConversationTabView = memo(function ConversationTabView({
       }
       promptStartedAt={liveStartedAt}
       activeToolTitle={activeToolTitle}
-      hasError={connStatus === "error"}
-      errorMessage={conn.error}
-      onRetry={connStatus === "error" ? handleFocus : undefined}
+      {...composerErrorState}
       isNewConversation={composerState.isNewConversation}
     >
       {isWelcomeMode ? (
@@ -1824,6 +1838,7 @@ const ConversationTabView = memo(function ConversationTabView({
                 </div>
               ) : null}
               <ChatInput
+                {...composerErrorState}
                 // composerConnStatus (not connStatus): a chat draft mid-reconnect
                 // reads "connecting" until the connection's cwd matches, so the
                 // send affordance stays disabled until handleSend would accept it.

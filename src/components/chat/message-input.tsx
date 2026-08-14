@@ -407,6 +407,10 @@ export function MessageInput({
     attachmentTabId ?? null,
     conversationId ?? null,
   ])
+  const composerStateScopeRef = useRef(composerScopeId)
+  const composerStateMatchesScope =
+    composerStateScopeRef.current === composerScopeId
+  const interactedComposerScopesRef = useRef(new Set<string>())
   const [stoppedScopeId, setStoppedScopeId] = useState<string | null>(null)
   const stoppedVisible = stoppedScopeId === composerScopeId
   const [elapsedMs, setElapsedMs] = useState(() =>
@@ -532,7 +536,16 @@ export function MessageInput({
   }, [composerScopeId])
 
   useEffect(() => {
-    if (!isPrompting || promptStartedAt === null) {
+    if (composerStateScopeRef.current === composerScopeId) return
+    composerStateScopeRef.current = composerScopeId
+    setComposerEmpty(true)
+    setComposerHasEditableText(false)
+    setComposerFocused(false)
+    clearAttachments()
+  }, [clearAttachments, composerScopeId])
+
+  useEffect(() => {
+    if (!isPrompting || waitingReason !== null || promptStartedAt === null) {
       setElapsedMs(0)
       return
     }
@@ -542,7 +555,7 @@ export function MessageInput({
     updateElapsed()
     const timer = window.setInterval(updateElapsed, 100)
     return () => window.clearInterval(timer)
-  }, [isPrompting, promptStartedAt])
+  }, [composerScopeId, isPrompting, promptStartedAt, waitingReason])
 
   useEffect(() => {
     // navigator.clipboard is undefined at runtime in non-secure contexts even
@@ -825,15 +838,26 @@ export function MessageInput({
   const folderBranchPickerAttached = hasFolderBranchPicker
   const imageAttachments = attach.imageAttachments
   const hasAttachments = attachments.length > 0
-  const hasSendableContent = !composerEmpty || hasAttachments
+  const hasSendableContent =
+    composerStateMatchesScope && (!composerEmpty || hasAttachments)
+  const hasVisibleInteraction = hasSendableContent || injectContent != null
+  const isPristineNewConversation =
+    isNewConversation &&
+    !hasVisibleInteraction &&
+    !interactedComposerScopesRef.current.has(composerScopeId)
+  useEffect(() => {
+    if (hasVisibleInteraction) {
+      interactedComposerScopesRef.current.add(composerScopeId)
+    }
+  }, [composerScopeId, hasVisibleInteraction])
   const composerStatus = resolveComposerStatus({
     waitingReason,
     isPrompting,
     activeToolTitle,
     hasError,
     wasStopped: stoppedVisible,
-    isFocused: composerFocused,
-    isNewConversation,
+    isFocused: composerStateMatchesScope && composerFocused,
+    isNewConversation: isPristineNewConversation,
     isEmpty: !hasSendableContent,
   })
   const showRuntimeStatus =
@@ -2377,18 +2401,18 @@ export function MessageInput({
             >
               <div className="flex h-6 shrink-0 items-center px-3 pt-1">
                 {showRuntimeStatus && runtimeStatusLabel && (
-                  <div
-                    role="status"
-                    aria-live="polite"
-                    className="flex min-w-0 flex-1 items-center justify-between gap-3 text-[11px] text-muted-foreground"
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5">
+                  <div className="flex min-w-0 flex-1 items-center justify-between gap-3 text-[11px] text-muted-foreground">
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="flex min-w-0 flex-1 items-center gap-1.5"
+                    >
                       <span
                         aria-hidden="true"
                         className="prooflane-composer-status-dot size-1.5 shrink-0 rounded-full"
                       />
                       <span className="truncate">{runtimeStatusLabel}</span>
-                    </span>
+                    </div>
                     {composerStatus === "failed" && onRetry ? (
                       <button
                         type="button"

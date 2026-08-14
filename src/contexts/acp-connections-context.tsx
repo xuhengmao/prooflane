@@ -531,6 +531,7 @@ type Action =
       retry: ClaudeApiRetryState | null
     }
   | { type: "ERROR"; contextKey: string; message: string }
+  | { type: "CLEAR_ERROR"; contextKey: string }
   | { type: "ACP_LOAD_ERROR"; contextKey: string; message: string }
   | { type: "CLEAR_ACP_LOAD_ERROR"; contextKey: string }
   | {
@@ -2258,6 +2259,17 @@ function connectionsReducer(
       return next
     }
 
+    case "CLEAR_ERROR": {
+      const conn = state.get(action.contextKey)
+      if (!conn || conn.error === null) return state
+      const next = new Map(state)
+      next.set(action.contextKey, {
+        ...conn,
+        error: null,
+      })
+      return next
+    }
+
     case "ACP_LOAD_ERROR": {
       const conn = state.get(action.contextKey)
       if (!conn) return state
@@ -2432,6 +2444,8 @@ export interface AcpActionsValue {
    * `LiveMessageSink`.
    */
   registerLiveMessageSink(contextKey: string, sink: LiveMessageSink): () => void
+  /** Clear the latest session error without changing the connection status. */
+  clearError(contextKey: string): void
   /**
    * Clear `loadError` set by a `session/load` failure so the next auto-connect
    * attempt isn't gated by stale failure state. Wired to the Reload button in
@@ -2890,6 +2904,13 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
   const clearAcpLoadError = useCallback(
     (contextKey: string) => {
       dispatch({ type: "CLEAR_ACP_LOAD_ERROR", contextKey })
+    },
+    [dispatch]
+  )
+
+  const clearError = useCallback(
+    (contextKey: string) => {
+      dispatch({ type: "CLEAR_ERROR", contextKey })
     },
     [dispatch]
   )
@@ -5050,6 +5071,7 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
       touchActivity,
       registerOpenTabKeys,
       registerLiveMessageSink,
+      clearError,
       clearAcpLoadError,
       attachDelegationChild,
       detachDelegationChild,
@@ -5073,6 +5095,7 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
       touchActivity,
       registerOpenTabKeys,
       registerLiveMessageSink,
+      clearError,
       clearAcpLoadError,
       attachDelegationChild,
       detachDelegationChild,

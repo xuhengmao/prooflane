@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { resolveConversationComposerState } from "./conversation-composer-state"
+import {
+  resolveConversationComposerErrorState,
+  resolveConversationComposerState,
+  retryConversationComposerError,
+} from "./conversation-composer-state"
 
 const source = readFileSync(
   resolve(
@@ -82,6 +86,52 @@ describe("ConversationDetailPanel new conversation layout", () => {
     expect(resolveConversationComposerState(false)).toEqual({
       isNewConversation: false,
     })
+  })
+
+  it("treats a connected connection with a real error as a retryable composer failure", () => {
+    const onRetry = vi.fn()
+
+    const state = resolveConversationComposerErrorState(
+      "connected",
+      "Turn failed",
+      onRetry
+    )
+
+    expect(state).toEqual({
+      hasError: true,
+      errorMessage: "Turn failed",
+      onRetry,
+    })
+    state.onRetry?.()
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it("clears composer errors and only reconnects an errored connection", () => {
+    const clearError = vi.fn()
+    const reconnect = vi.fn()
+
+    retryConversationComposerError("connected", clearError, reconnect)
+    expect(clearError).toHaveBeenCalledOnce()
+    expect(reconnect).not.toHaveBeenCalled()
+
+    clearError.mockClear()
+    retryConversationComposerError("error", clearError, reconnect)
+    expect(clearError).toHaveBeenCalledOnce()
+    expect(reconnect).toHaveBeenCalledOnce()
+  })
+
+  it("passes the same structured connection failure to ordinary and welcome composers", () => {
+    const stateStart = source.indexOf("const composerErrorState =")
+    const ordinaryStart = source.indexOf("<ConversationShell")
+    const welcomeStart = source.indexOf("<ChatInput", ordinaryStart)
+
+    expect(stateStart).toBeGreaterThan(-1)
+    expect(source.slice(ordinaryStart, ordinaryStart + 3000)).toContain(
+      "{...composerErrorState}"
+    )
+    expect(source.slice(welcomeStart, welcomeStart + 1800)).toContain(
+      "{...composerErrorState}"
+    )
   })
 
   it("snaps the hidden keep-alive tab so `transition-all` descendants don't ghost", () => {
