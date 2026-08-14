@@ -336,7 +336,7 @@ describe("MessageInput (RichComposer integration)", () => {
     expect(committedStates[committedStates.length - 1]).toBe("idle")
   })
 
-  it("shows a single generating or active-tool status with elapsed time", async () => {
+  it("shows runtime status inside the single composer frame", async () => {
     const startedAt = Date.now() - 1_250
     const { container, rerender } = renderInput({
       isPrompting: true,
@@ -349,8 +349,8 @@ describe("MessageInput (RichComposer integration)", () => {
     const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
     expect(chrome).toHaveAttribute("data-composer-state", "generating")
     const runtimeBar = screen.getByTestId("composer-runtime-bar")
-    expect(chrome).not.toContainElement(runtimeBar)
-    expect(runtimeBar.nextElementSibling).toBe(chrome)
+    expect(chrome).toContainElement(runtimeBar)
+    expect(chrome?.firstElementChild).toBe(runtimeBar)
     expect(screen.getAllByRole("status")).toHaveLength(1)
     const status = screen.getByRole("status")
     expect(status).toHaveAttribute("aria-live", "polite")

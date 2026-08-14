@@ -2242,27 +2242,35 @@ div.monaco-diff-editor.side-by-side .editor.modified {
 .prooflane-composer-runtime-bar {
   --prooflane-composer-status: #38BF63;
   width: 100%;
-  margin-bottom: 0.375rem;
-  border: 1px solid
+  border-bottom: 1px solid
     color-mix(in oklab, var(--prooflane-composer-status) 38%, var(--border));
-  border-radius: 0.5rem;
+  border-start-start-radius: calc(var(--radius-xl) - 1px);
+  border-start-end-radius: calc(var(--radius-xl) - 1px);
   background: color-mix(
     in oklab,
     var(--prooflane-composer-status) 10%,
     var(--background)
   );
   transition:
-    border-color 150ms ease,
+    border-bottom-color 150ms ease,
     background-color 150ms ease;
 }
 
 .prooflane-composer-runtime-bar[data-composer-runtime-state="failed"] {
-  border-color: color-mix(in oklab, var(--destructive) 42%, var(--border));
+  border-bottom-color: color-mix(
+    in oklab,
+    var(--destructive) 42%,
+    var(--border)
+  );
   background: color-mix(in oklab, var(--destructive) 8%, var(--background));
 }
 
 .prooflane-composer-runtime-bar[data-composer-runtime-state="stopped"] {
-  border-color: color-mix(in oklab, var(--muted-foreground) 32%, var(--border));
+  border-bottom-color: color-mix(
+    in oklab,
+    var(--muted-foreground) 32%,
+    var(--border)
+  );
   background: color-mix(
     in oklab,
     var(--muted-foreground) 6%,

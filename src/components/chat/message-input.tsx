@@ -2351,23 +2351,6 @@ export function MessageInput({
             "ring-1 ring-primary/40"
         )}
       >
-        {runtimeComposerStatus !== null && runtimeStatusLabel !== null && (
-          <ComposerRuntimeBar
-            agentType={agentType}
-            conversationId={conversationId}
-            elapsedLabel={
-              (composerStatus === "generating" ||
-                composerStatus === "tool_running") &&
-              promptStartedAt !== null
-                ? formatComposerElapsed(elapsedMs)
-                : null
-            }
-            onRetry={onRetry}
-            retryLabel={t("retryStatus")}
-            status={runtimeComposerStatus}
-            statusLabel={runtimeStatusLabel}
-          />
-        )}
         <ContextMenu onOpenChange={handleContextMenuOpenChange}>
           {/* Disabled in non-secure web (no async clipboard read) so the native
               context menu — whose Paste still works over the editor text — is
@@ -2417,6 +2400,24 @@ export function MessageInput({
                 className
               )}
             >
+              {runtimeComposerStatus !== null &&
+                runtimeStatusLabel !== null && (
+                  <ComposerRuntimeBar
+                    agentType={agentType}
+                    conversationId={conversationId}
+                    elapsedLabel={
+                      (composerStatus === "generating" ||
+                        composerStatus === "tool_running") &&
+                      promptStartedAt !== null
+                        ? formatComposerElapsed(elapsedMs)
+                        : null
+                    }
+                    onRetry={onRetry}
+                    retryLabel={t("retryStatus")}
+                    status={runtimeComposerStatus}
+                    statusLabel={runtimeStatusLabel}
+                  />
+                )}
               <ConversationContextBar
                 hasExtraContent={hasImageAttachments}
                 scrollEndTrigger={attachments.length}
