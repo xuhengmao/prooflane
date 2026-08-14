@@ -151,6 +151,10 @@ import {
   resolveComposerStatus,
   type ComposerWaitingReason,
 } from "@/components/chat/composer/composer-status"
+import {
+  ComposerRuntimeBar,
+  isComposerRuntimeStatus,
+} from "@/components/chat/composer/composer-runtime-bar"
 
 /**
  * Payload pushed into the composer from outside (e.g. a welcome-page quick
@@ -860,12 +864,9 @@ export function MessageInput({
     isNewConversation: isPristineNewConversation,
     isEmpty: !hasSendableContent,
   })
-  const showRuntimeStatus =
-    composerStatus === "generating" ||
-    composerStatus === "tool_running" ||
-    composerStatus === "waiting_for_user" ||
-    composerStatus === "failed" ||
-    composerStatus === "stopped"
+  const runtimeComposerStatus = isComposerRuntimeStatus(composerStatus)
+    ? composerStatus
+    : null
   const runtimeStatusLabel = (() => {
     switch (composerStatus) {
       case "generating":
@@ -2399,45 +2400,24 @@ export function MessageInput({
                 className
               )}
             >
-              <div className="flex h-6 shrink-0 items-center px-3 pt-1">
-                {showRuntimeStatus && runtimeStatusLabel && (
-                  <div className="flex min-w-0 flex-1 items-center justify-between gap-3 text-[11px] text-muted-foreground">
-                    <div
-                      role="status"
-                      aria-live="polite"
-                      className="flex min-w-0 flex-1 items-center gap-1.5"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="prooflane-composer-status-dot size-1.5 shrink-0 rounded-full"
-                      />
-                      <span className="truncate">{runtimeStatusLabel}</span>
-                    </div>
-                    {composerStatus === "failed" && onRetry ? (
-                      <button
-                        type="button"
-                        onClick={onRetry}
-                        className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                        aria-label={t("retryStatus")}
-                      >
-                        <RotateCcw aria-hidden="true" className="size-3" />
-                        <span>{t("retryStatus")}</span>
-                      </button>
-                    ) : (
+              {runtimeComposerStatus !== null &&
+                runtimeStatusLabel !== null && (
+                  <ComposerRuntimeBar
+                    agentType={agentType}
+                    conversationId={conversationId}
+                    elapsedLabel={
                       (composerStatus === "generating" ||
                         composerStatus === "tool_running") &&
-                      promptStartedAt !== null && (
-                        <span
-                          data-testid="composer-status-elapsed"
-                          className="shrink-0 font-mono tabular-nums"
-                        >
-                          {formatComposerElapsed(elapsedMs)}
-                        </span>
-                      )
-                    )}
-                  </div>
+                      promptStartedAt !== null
+                        ? formatComposerElapsed(elapsedMs)
+                        : null
+                    }
+                    onRetry={onRetry}
+                    retryLabel={t("retryStatus")}
+                    status={runtimeComposerStatus}
+                    statusLabel={runtimeStatusLabel}
+                  />
                 )}
-              </div>
               <ConversationContextBar
                 hasExtraContent={hasImageAttachments}
                 scrollEndTrigger={attachments.length}

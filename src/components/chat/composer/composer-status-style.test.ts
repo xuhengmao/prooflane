@@ -12,6 +12,9 @@ const statusRules = globalsCss.slice(
 const reducedMotionRules = statusRules.slice(
   statusRules.indexOf("@media (prefers-reduced-motion: reduce)")
 )
+const runtimeBarRule =
+  statusRules.match(/\.prooflane-composer-runtime-bar\s*\{[\s\S]*?\n\}/)?.[0] ??
+  ""
 const hostStateRules = Array.from(
   statusRules.matchAll(
     /\.codeg-composer-chrome\[data-composer-state="[^"]+"\](?!::before)[\s\S]*?\n\}/g
@@ -60,5 +63,28 @@ describe("composer status styles", () => {
     expect(statusRules).not.toMatch(
       /data-composer-state="(?:generating|tool_running|waiting_for_user|failed)"[^}]*box-shadow/
     )
+  })
+
+  it("styles the runtime bar as an integrated header without a second frame", () => {
+    expect(statusRules).toContain(".prooflane-composer-runtime-bar")
+    expect(statusRules).toContain("--prooflane-composer-status: #38BF63")
+    expect(runtimeBarRule).toContain("border-bottom:")
+    expect(runtimeBarRule).toContain(
+      "border-start-start-radius: calc(var(--radius-xl) - 1px)"
+    )
+    expect(runtimeBarRule).toContain(
+      "border-start-end-radius: calc(var(--radius-xl) - 1px)"
+    )
+    expect(runtimeBarRule).not.toMatch(/\bmargin(?:-bottom)?:/)
+    expect(runtimeBarRule).not.toMatch(/\bborder:\s/)
+    expect(runtimeBarRule).not.toMatch(/\bborder-radius:/)
+    expect(statusRules).toContain(
+      '.prooflane-composer-runtime-bar[data-composer-runtime-state="failed"]'
+    )
+    expect(statusRules).toContain(
+      '.prooflane-composer-runtime-bar[data-composer-runtime-state="stopped"]'
+    )
+    expect(reducedMotionRules).toContain(".prooflane-composer-runtime-bar")
+    expect(reducedMotionRules).toContain("animation: none")
   })
 })

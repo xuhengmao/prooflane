@@ -99,6 +99,11 @@ interface MessageListViewProps {
    */
   showMessageNav?: boolean
   /**
+   * Keeps the legacy live-turn footer for views without a composer. The main
+   * conversation disables it because its composer renders the unified bar.
+   */
+  showLiveTurnStats?: boolean
+  /**
    * Optional phase label for a user turn (work-task transcripts label each
    * engine-dispatched round: work / retry / return / merge). Called at render
    * time per user-role turn; MUST be pure — the thread is virtualized, so
@@ -673,6 +678,7 @@ export function MessageListView({
   onReload,
   onNewSession,
   showMessageNav = true,
+  showLiveTurnStats = true,
   userTurnHeader = null,
 }: MessageListViewProps) {
   const t = useTranslations("Folder.chat.messageList")
@@ -1137,7 +1143,7 @@ export function MessageListView({
         />
         <MessageThreadScrollButton />
       </MessageThread>
-      {liveMessage && connStatus === "prompting" && (
+      {showLiveTurnStats && liveMessage && connStatus === "prompting" && (
         <LiveTurnStats
           message={liveMessage}
           agentType={agentType}

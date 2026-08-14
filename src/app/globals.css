@@ -2239,15 +2239,58 @@ div.monaco-diff-editor.side-by-side .editor.modified {
   animation: prooflane-composer-status-flow 2.6s linear infinite;
 }
 
+.prooflane-composer-runtime-bar {
+  --prooflane-composer-status: #38BF63;
+  width: 100%;
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--prooflane-composer-status) 38%, var(--border));
+  border-start-start-radius: calc(var(--radius-xl) - 1px);
+  border-start-end-radius: calc(var(--radius-xl) - 1px);
+  background: color-mix(
+    in oklab,
+    var(--prooflane-composer-status) 10%,
+    var(--background)
+  );
+  transition:
+    border-bottom-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.prooflane-composer-runtime-bar[data-composer-runtime-state="failed"] {
+  border-bottom-color: color-mix(
+    in oklab,
+    var(--destructive) 42%,
+    var(--border)
+  );
+  background: color-mix(in oklab, var(--destructive) 8%, var(--background));
+}
+
+.prooflane-composer-runtime-bar[data-composer-runtime-state="stopped"] {
+  border-bottom-color: color-mix(
+    in oklab,
+    var(--muted-foreground) 32%,
+    var(--border)
+  );
+  background: color-mix(
+    in oklab,
+    var(--muted-foreground) 6%,
+    var(--background)
+  );
+}
+
 .prooflane-composer-status-dot {
   background-color: var(--prooflane-composer-status);
 }
 
+.prooflane-composer-runtime-bar[data-composer-runtime-state="failed"]
+  .prooflane-composer-status-dot,
 .codeg-composer-chrome[data-composer-state="failed"]
   .prooflane-composer-status-dot {
   background-color: var(--destructive);
 }
 
+.prooflane-composer-runtime-bar[data-composer-runtime-state="stopped"]
+  .prooflane-composer-status-dot,
 .codeg-composer-chrome[data-composer-state="stopped"]
   .prooflane-composer-status-dot {
   background-color: var(--muted-foreground);
@@ -2284,6 +2327,12 @@ div.monaco-diff-editor.side-by-side .editor.modified {
   .codeg-composer-chrome[data-composer-state="generating"]::before,
   .codeg-composer-chrome[data-composer-state="tool_running"]::before {
     animation: none;
+  }
+
+  .prooflane-composer-runtime-bar,
+  .prooflane-composer-runtime-bar * {
+    animation: none !important;
+    transition-duration: 0s !important;
   }
 }
 

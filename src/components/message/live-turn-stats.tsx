@@ -27,8 +27,31 @@ interface LineChangeStats {
   deletions: number
 }
 
-interface LiveEditStats extends LineChangeStats {
+export interface LiveEditStats extends LineChangeStats {
   files: number
+}
+
+export type LiveTurnPhase = "thinking" | "streaming"
+
+export function resolveLiveTurnPhase(
+  message: LiveMessage,
+  isStreaming: boolean
+): LiveTurnPhase {
+  const lastBlock = message.content[message.content.length - 1]
+  const hasThinkingBlock = message.content.some(
+    (block) => block.type === "thinking"
+  )
+  const isThinking =
+    isStreaming &&
+    hasThinkingBlock &&
+    message.content.length <= 1 &&
+    lastBlock?.type === "thinking"
+
+  return isThinking ? "thinking" : "streaming"
+}
+
+export function countLiveToolCalls(message: LiveMessage): number {
+  return message.content.filter((block) => block.type === "tool_call").length
 }
 
 function formatCompactInt(n: number, formatter: Intl.NumberFormat): string {
@@ -331,25 +354,8 @@ export function LiveTurnStats({
     return () => clearInterval(timer)
   }, [message.startedAt])
 
-  // Count tool calls from live content
-  let toolCallCount = 0
-  let hasThinkingBlock = false
-
-  for (const block of message.content) {
-    if (block.type === "tool_call") {
-      toolCallCount++
-    } else if (block.type === "thinking") {
-      hasThinkingBlock = true
-    }
-  }
-
-  // Only active streams should show thinking/streaming state.
-  const lastBlock = message.content[message.content.length - 1]
-  const isThinking =
-    isStreaming &&
-    hasThinkingBlock &&
-    message.content.length <= 1 &&
-    lastBlock?.type === "thinking"
+  const toolCallCount = countLiveToolCalls(message)
+  const phase = resolveLiveTurnPhase(message, isStreaming)
 
   const elapsedLabel = formatElapsedLabel(elapsed, t)
 
@@ -360,7 +366,7 @@ export function LiveTurnStats({
           agentType={agentType}
           className="h-3.5 w-3.5 animate-pulse"
         />
-        {isThinking ? (
+        {phase === "thinking" ? (
           <span>{t("thinking")}</span>
         ) : (
           <span>{t("streaming")}</span>
