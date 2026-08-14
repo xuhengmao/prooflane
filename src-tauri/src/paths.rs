@@ -5,15 +5,113 @@
 //! user-scoped persistent directory should call into this module instead of
 //! re-deriving `dirs::home_dir().join(".codeg")` themselves.
 
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsStr,
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 const CODEG_DIR_NAME: &str = ".codeg";
+pub const PROOFLANE_DATA_DIR_NAME: &str = "prooflane";
+pub const LEGACY_DESKTOP_DATA_DIR_NAME: &str = "io.github.xuhengmao.prooflane";
 const PETS_DIR_NAME: &str = "pets";
 const UPLOADS_DIR_NAME: &str = "uploads";
 const LOGS_DIR_NAME: &str = "logs";
 const TURN_TIMINGS_DIR_NAME: &str = "turn-timings";
 const ACP_TRANSCRIPTS_DIR_NAME: &str = "acp-transcripts";
 const BACKGROUNDS_DIR_NAME: &str = "backgrounds";
+
+/// Replace Tauri's identifier-derived desktop data directory with the
+/// Prooflane-branded sibling while leaving every other fallback untouched.
+pub fn branded_desktop_data_dir(tauri_fallback: &Path) -> PathBuf {
+    if tauri_fallback.file_name() == Some(OsStr::new(LEGACY_DESKTOP_DATA_DIR_NAME)) {
+        return tauri_fallback.with_file_name(PROOFLANE_DATA_DIR_NAME);
+    }
+    tauri_fallback.to_path_buf()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataDirMigrationOutcome {
+    NotApplicable,
+    LegacyDirectoryMissing,
+    Migrated,
+    MigratedReplacingEmptyTarget,
+    SkippedTargetNotEmpty,
+}
+
+/// Atomically move Tauri's legacy identifier-derived directory to the
+/// Prooflane-branded sibling. Existing non-empty targets are never modified.
+pub fn migrate_legacy_desktop_data_dir(
+    tauri_fallback: &Path,
+) -> io::Result<DataDirMigrationOutcome> {
+    let branded_data_dir = branded_desktop_data_dir(tauri_fallback);
+    if branded_data_dir == tauri_fallback {
+        return Ok(DataDirMigrationOutcome::NotApplicable);
+    }
+
+    let legacy_exists = tauri_fallback.try_exists().map_err(|error| {
+        migration_io_error("inspect legacy data directory", tauri_fallback, error)
+    })?;
+    if !legacy_exists {
+        return Ok(DataDirMigrationOutcome::LegacyDirectoryMissing);
+    }
+
+    let target_exists = branded_data_dir.try_exists().map_err(|error| {
+        migration_io_error("inspect branded data directory", &branded_data_dir, error)
+    })?;
+    let mut replaced_empty_target = false;
+    if target_exists {
+        let target_metadata = fs::symlink_metadata(&branded_data_dir).map_err(|error| {
+            migration_io_error("inspect branded data directory", &branded_data_dir, error)
+        })?;
+        if !target_metadata.file_type().is_dir() {
+            return Ok(DataDirMigrationOutcome::SkippedTargetNotEmpty);
+        }
+
+        let mut entries = fs::read_dir(&branded_data_dir).map_err(|error| {
+            migration_io_error("read branded data directory", &branded_data_dir, error)
+        })?;
+        if let Some(entry) = entries.next() {
+            entry.map_err(|error| {
+                migration_io_error("read branded data directory", &branded_data_dir, error)
+            })?;
+            return Ok(DataDirMigrationOutcome::SkippedTargetNotEmpty);
+        }
+
+        fs::remove_dir(&branded_data_dir).map_err(|error| {
+            migration_io_error(
+                "remove empty branded data directory",
+                &branded_data_dir,
+                error,
+            )
+        })?;
+        replaced_empty_target = true;
+    }
+
+    fs::rename(tauri_fallback, &branded_data_dir).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "failed to migrate legacy data directory from {} to {}: {error}",
+                tauri_fallback.display(),
+                branded_data_dir.display()
+            ),
+        )
+    })?;
+
+    Ok(if replaced_empty_target {
+        DataDirMigrationOutcome::MigratedReplacingEmptyTarget
+    } else {
+        DataDirMigrationOutcome::Migrated
+    })
+}
+
+fn migration_io_error(operation: &str, path: &Path, error: io::Error) -> io::Error {
+    io::Error::new(
+        error.kind(),
+        format!("failed to {operation} at {}: {error}", path.display()),
+    )
+}
 
 /// `$CODEG_HOME` if set (and non-empty), else `~/.codeg/`.
 ///
@@ -176,9 +274,9 @@ pub fn codeg_acp_transcripts_root() -> PathBuf {
 /// 1. If `CODEG_DATA_DIR` is set and non-empty, return its absolutized
 ///    form. Honors the operator's choice even on desktop, where a
 ///    pre-set env var should override Tauri's identifier-derived path.
-/// 2. Otherwise return the absolutized form of `tauri_fallback` —
-///    typically `app.path().app_data_dir()` on desktop or the
-///    server's default data dir.
+/// 2. Otherwise map Tauri's legacy identifier-derived desktop directory to
+///    the Prooflane-branded sibling, then return its absolutized form. Every
+///    other fallback (including the server's default data dir) is unchanged.
 ///
 /// Always returns an absolute path (`absolutize` re-bases against the
 /// process CWD if needed). Callers should treat the result as
@@ -194,10 +292,43 @@ pub fn codeg_acp_transcripts_root() -> PathBuf {
 /// otherwise generate scripts pointing at an empty DB when the
 /// operator pre-set `CODEG_DATA_DIR` to a custom location.
 pub fn resolve_effective_data_dir(tauri_fallback: &Path) -> PathBuf {
-    if let Some(custom) = std::env::var_os("CODEG_DATA_DIR").filter(|s| !s.is_empty()) {
-        return crate::git_credential::absolutize(Path::new(&custom));
+    let custom = std::env::var_os("CODEG_DATA_DIR").filter(|value| !value.is_empty());
+    resolve_effective_data_dir_with_override(tauri_fallback, custom.as_deref())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedDesktopDataDir {
+    pub effective_data_dir: PathBuf,
+    pub migration_outcome: Option<DataDirMigrationOutcome>,
+}
+
+/// Resolve the desktop data root and, when no explicit override is present,
+/// migrate the legacy identifier-derived directory before database startup.
+pub fn prepare_desktop_data_dir(
+    tauri_fallback: &Path,
+    custom: Option<&OsStr>,
+) -> io::Result<PreparedDesktopDataDir> {
+    let effective_data_dir = resolve_effective_data_dir_with_override(tauri_fallback, custom);
+    let migration_outcome = if custom.is_some() {
+        None
+    } else {
+        Some(migrate_legacy_desktop_data_dir(tauri_fallback)?)
+    };
+
+    Ok(PreparedDesktopDataDir {
+        effective_data_dir,
+        migration_outcome,
+    })
+}
+
+fn resolve_effective_data_dir_with_override(
+    tauri_fallback: &Path,
+    custom: Option<&OsStr>,
+) -> PathBuf {
+    if let Some(custom) = custom {
+        return crate::git_credential::absolutize(Path::new(custom));
     }
-    crate::git_credential::absolutize(tauri_fallback)
+    crate::git_credential::absolutize(&branded_desktop_data_dir(tauri_fallback))
 }
 
 /// Drop the Windows extended-length ("verbatim") prefix from a path, so the
@@ -245,15 +376,198 @@ fn strip_prefix_ignore_ascii_case<'a>(text: &'a str, prefix: &str) -> Option<&'a
         .then(|| &text[prefix.len()..])
 }
 
-// The resolver functions above depend on global env vars (`CODEG_HOME`,
-// `CODEG_DATA_DIR`), so unit tests would need cross-test serialization to
-// avoid races. The behaviour is covered end-to-end by `pets::*` tests which
-// set `CODEG_HOME` inside a serialized test mutex; we deliberately don't
-// duplicate that here. `simplify_verbatim_path` reads no env, so it is
-// tested directly.
+// Environment-reading wrappers above still depend on process-global state.
+// Their path decisions are exercised through pure helpers so these tests can
+// run in parallel without mutating `CODEG_HOME` or `CODEG_DATA_DIR`.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn maps_legacy_desktop_data_dir_to_branded_sibling() {
+        let fallback = PathBuf::from("app-data").join("io.github.xuhengmao.prooflane");
+
+        assert_eq!(
+            branded_desktop_data_dir(&fallback),
+            PathBuf::from("app-data").join("prooflane")
+        );
+    }
+
+    #[test]
+    fn leaves_non_legacy_desktop_data_dir_unchanged() {
+        let fallback = PathBuf::from("app-data").join("custom-prooflane-data");
+
+        assert_eq!(branded_desktop_data_dir(&fallback), fallback);
+    }
+
+    #[test]
+    fn migrates_the_complete_legacy_desktop_data_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(LEGACY_DESKTOP_DATA_DIR_NAME);
+        let branded = temp.path().join(PROOFLANE_DATA_DIR_NAME);
+        std::fs::create_dir_all(legacy.join("chat-sessions").join("session-1")).unwrap();
+        std::fs::write(legacy.join("codeg.db"), b"database").unwrap();
+        std::fs::write(
+            legacy
+                .join("chat-sessions")
+                .join("session-1")
+                .join("messages.json"),
+            b"session",
+        )
+        .unwrap();
+
+        let outcome = migrate_legacy_desktop_data_dir(&legacy).unwrap();
+
+        assert_eq!(outcome, DataDirMigrationOutcome::Migrated);
+        assert!(!legacy.exists());
+        assert_eq!(
+            std::fs::read(branded.join("codeg.db")).unwrap(),
+            b"database"
+        );
+        assert_eq!(
+            std::fs::read(
+                branded
+                    .join("chat-sessions")
+                    .join("session-1")
+                    .join("messages.json")
+            )
+            .unwrap(),
+            b"session"
+        );
+    }
+
+    #[test]
+    fn replaces_an_empty_branded_directory_during_migration() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(LEGACY_DESKTOP_DATA_DIR_NAME);
+        let branded = temp.path().join(PROOFLANE_DATA_DIR_NAME);
+        std::fs::create_dir(&legacy).unwrap();
+        std::fs::write(legacy.join("codeg.db"), b"database").unwrap();
+        std::fs::create_dir(&branded).unwrap();
+
+        let outcome = migrate_legacy_desktop_data_dir(&legacy).unwrap();
+
+        assert_eq!(
+            outcome,
+            DataDirMigrationOutcome::MigratedReplacingEmptyTarget
+        );
+        assert!(!legacy.exists());
+        assert_eq!(
+            std::fs::read(branded.join("codeg.db")).unwrap(),
+            b"database"
+        );
+    }
+
+    #[test]
+    fn preserves_both_directories_when_the_branded_directory_is_not_empty() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(LEGACY_DESKTOP_DATA_DIR_NAME);
+        let branded = temp.path().join(PROOFLANE_DATA_DIR_NAME);
+        std::fs::create_dir(&legacy).unwrap();
+        std::fs::write(legacy.join("legacy.db"), b"legacy").unwrap();
+        std::fs::create_dir(&branded).unwrap();
+        std::fs::write(branded.join("current.db"), b"current").unwrap();
+
+        let outcome = migrate_legacy_desktop_data_dir(&legacy).unwrap();
+
+        assert_eq!(outcome, DataDirMigrationOutcome::SkippedTargetNotEmpty);
+        assert_eq!(std::fs::read(legacy.join("legacy.db")).unwrap(), b"legacy");
+        assert_eq!(
+            std::fs::read(branded.join("current.db")).unwrap(),
+            b"current"
+        );
+    }
+
+    #[test]
+    fn does_not_create_a_branded_directory_when_legacy_data_is_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(LEGACY_DESKTOP_DATA_DIR_NAME);
+        let branded = temp.path().join(PROOFLANE_DATA_DIR_NAME);
+
+        let outcome = migrate_legacy_desktop_data_dir(&legacy).unwrap();
+
+        assert_eq!(outcome, DataDirMigrationOutcome::LegacyDirectoryMissing);
+        assert!(!branded.exists());
+    }
+
+    #[test]
+    fn does_not_migrate_a_non_legacy_fallback() {
+        let temp = tempfile::tempdir().unwrap();
+        let fallback = temp.path().join("custom-prooflane-data");
+        std::fs::create_dir(&fallback).unwrap();
+        std::fs::write(fallback.join("current.db"), b"current").unwrap();
+
+        let outcome = migrate_legacy_desktop_data_dir(&fallback).unwrap();
+
+        assert_eq!(outcome, DataDirMigrationOutcome::NotApplicable);
+        assert_eq!(
+            std::fs::read(fallback.join("current.db")).unwrap(),
+            b"current"
+        );
+        assert!(!temp.path().join(PROOFLANE_DATA_DIR_NAME).exists());
+    }
+
+    #[test]
+    fn explicit_data_dir_override_wins_over_the_branded_default() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(LEGACY_DESKTOP_DATA_DIR_NAME);
+        let custom = temp.path().join("operator-data");
+
+        assert_eq!(
+            resolve_effective_data_dir_with_override(&legacy, Some(custom.as_os_str())),
+            custom
+        );
+    }
+
+    #[test]
+    fn resolves_the_branded_desktop_data_dir_without_an_override() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(LEGACY_DESKTOP_DATA_DIR_NAME);
+
+        assert_eq!(
+            resolve_effective_data_dir_with_override(&legacy, None),
+            temp.path().join(PROOFLANE_DATA_DIR_NAME)
+        );
+    }
+
+    #[test]
+    fn prepares_and_migrates_the_branded_directory_without_an_override() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(LEGACY_DESKTOP_DATA_DIR_NAME);
+        let branded = temp.path().join(PROOFLANE_DATA_DIR_NAME);
+        std::fs::create_dir(&legacy).unwrap();
+        std::fs::write(legacy.join("codeg.db"), b"database").unwrap();
+
+        let prepared = prepare_desktop_data_dir(&legacy, None).unwrap();
+
+        assert_eq!(prepared.effective_data_dir, branded);
+        assert_eq!(
+            prepared.migration_outcome,
+            Some(DataDirMigrationOutcome::Migrated)
+        );
+        assert!(!legacy.exists());
+        assert_eq!(
+            std::fs::read(prepared.effective_data_dir.join("codeg.db")).unwrap(),
+            b"database"
+        );
+    }
+
+    #[test]
+    fn explicit_override_prepares_custom_dir_without_migrating_legacy_data() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(LEGACY_DESKTOP_DATA_DIR_NAME);
+        let branded = temp.path().join(PROOFLANE_DATA_DIR_NAME);
+        let custom = temp.path().join("operator-data");
+        std::fs::create_dir(&legacy).unwrap();
+        std::fs::write(legacy.join("codeg.db"), b"database").unwrap();
+
+        let prepared = prepare_desktop_data_dir(&legacy, Some(custom.as_os_str())).unwrap();
+
+        assert_eq!(prepared.effective_data_dir, custom);
+        assert_eq!(prepared.migration_outcome, None);
+        assert_eq!(std::fs::read(legacy.join("codeg.db")).unwrap(), b"database");
+        assert!(!branded.exists());
+    }
 
     /// The shape `fs::canonicalize` hands back on Windows, and the one that
     /// broke image attachments in issue #392.

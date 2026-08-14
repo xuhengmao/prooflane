@@ -245,6 +245,8 @@ mod tauri_app {
             .manage(crate::update::new_update_state_handle())
             .setup(|app| {
                 let app_data_dir = app.path().app_data_dir()?;
+                let custom_data_dir =
+                    std::env::var_os("CODEG_DATA_DIR").filter(|value| !value.is_empty());
 
                 // Unify the data root across every consumer:
                 //   * SQLite database (initialised below)
@@ -261,6 +263,52 @@ mod tauri_app {
                 // to the same helper so a pre-set `CODEG_DATA_DIR` is
                 // honored end-to-end.
                 //
+                // Before pinning the env or opening SQLite, the desktop
+                // default is migrated from Tauri's legacy identifier-derived
+                // directory to the Prooflane-branded sibling. An explicit
+                // CODEG_DATA_DIR bypasses that default migration entirely.
+                // Migration errors abort setup so we never create an empty
+                // database that makes existing history appear to be lost.
+                let prepared_data_dir = paths::prepare_desktop_data_dir(
+                    &app_data_dir,
+                    custom_data_dir.as_deref(),
+                )
+                .map_err(|error| {
+                    format!(
+                        "failed to prepare Prooflane desktop data directory from {}: {error}",
+                        app_data_dir.display()
+                    )
+                })?;
+                let effective_data_dir = prepared_data_dir.effective_data_dir;
+
+                if let Some(outcome) = prepared_data_dir.migration_outcome {
+                    match outcome {
+                        paths::DataDirMigrationOutcome::Migrated => {
+                            tracing::info!(
+                                "[paths] Migrated desktop data directory from {} to {}.",
+                                app_data_dir.display(),
+                                effective_data_dir.display()
+                            );
+                        }
+                        paths::DataDirMigrationOutcome::MigratedReplacingEmptyTarget => {
+                            tracing::info!(
+                                "[paths] Replaced empty branded data directory and migrated {} to {}.",
+                                app_data_dir.display(),
+                                effective_data_dir.display()
+                            );
+                        }
+                        paths::DataDirMigrationOutcome::SkippedTargetNotEmpty => {
+                            tracing::warn!(
+                                "[paths][WARN] Legacy data remains at {} because branded data path {} already exists and is not an empty directory. Both paths were preserved; Prooflane will use the branded path.",
+                                app_data_dir.display(),
+                                effective_data_dir.display()
+                            );
+                        }
+                        paths::DataDirMigrationOutcome::LegacyDirectoryMissing
+                        | paths::DataDirMigrationOutcome::NotApplicable => {}
+                    }
+                }
+
                 // We also write the absolutized value back to the env,
                 // even when the operator pre-set it, so:
                 //   * subprocesses inherit an absolute path (a relative
@@ -279,7 +327,6 @@ mod tauri_app {
                 // notification) do not read `CODEG_DATA_DIR`, and the
                 // value is never mutated again for the lifetime of the
                 // process.
-                let effective_data_dir = paths::resolve_effective_data_dir(&app_data_dir);
                 // SAFETY: see the rationale block above — still
                 // single-threaded at setup; edition 2024 will require
                 // the `unsafe` block, mirroring the WebView2 rendering
