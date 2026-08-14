@@ -202,6 +202,8 @@ describe("MessageInput (RichComposer integration)", () => {
     const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
 
     expect(chrome).toHaveAttribute("data-composer-state", "new_empty")
+    expect(screen.queryByTestId("composer-runtime-bar")).toBeNull()
+    expect(chrome?.firstElementChild).toHaveAttribute("data-testid", "ctx-bar")
     fireEvent.focus(textbox)
     expect(chrome).toHaveAttribute("data-composer-state", "focused")
     fireEvent.blur(textbox)
@@ -346,6 +348,10 @@ describe("MessageInput (RichComposer integration)", () => {
 
     const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
     expect(chrome).toHaveAttribute("data-composer-state", "generating")
+    const runtimeBar = screen.getByTestId("composer-runtime-bar")
+    expect(chrome).not.toContainElement(runtimeBar)
+    expect(runtimeBar.nextElementSibling).toBe(chrome)
+    expect(screen.getAllByRole("status")).toHaveLength(1)
     const status = screen.getByRole("status")
     expect(status).toHaveAttribute("aria-live", "polite")
     expect(status).toHaveTextContent(
