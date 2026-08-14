@@ -28,6 +28,8 @@ tauri-runtime = [
     "dep:tauri-plugin-process",
     "dep:tauri-plugin-notification",
     "dep:tauri-plugin-single-instance",
+    "dep:tauri-winrt-notification",
+    "dep:windows",
     "dep:keyring",
 ]
 # Exposes test scaffolding (`AppState::new_for_test`, `EventEmitter::test_web_only`,
@@ -152,6 +154,8 @@ mac-notification-sys = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_Threading"] }
+windows = { version = "0.61", features = ["UI_Notifications"], optional = true }
+tauri-winrt-notification = { version = "0.7.2", optional = true }
 junction = "1"
 
 [target.'cfg(unix)'.dependencies]

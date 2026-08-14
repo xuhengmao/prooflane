@@ -1322,6 +1322,41 @@
     "agentsLoading": "جارٍ تحميل إعدادات الوكلاء...",
     "skillPacksLoading": "جارٍ تحميل حزم المهارات…"
   },
+  "ConversationNotifications": {
+    "title": "إشعارات اكتمال المحادثة",
+    "description": "يُعلمك عند اكتمال محادثة بينما يعمل Prooflane في الخلفية. انقر على الإشعار للعودة إلى المحادثة.",
+    "allow": "السماح بإشعارات النظام",
+    "openSettings": "فتح إعدادات النظام",
+    "browserSettingsHint": "اسمح بإشعارات Prooflane من إعدادات الموقع في المتصفح.",
+    "permissionCheckFailed": "تعذر التحقق من إذن الإشعارات: {message}",
+    "permissionRequestFailed": "تعذر طلب إذن الإشعارات: {message}",
+    "openSettingsFailed": "تعذر فتح إعدادات الإشعارات: {message}",
+    "permission": {
+      "checking": "جارٍ التحقق من إذن إشعارات النظام...",
+      "granted": "إشعارات النظام مسموح بها",
+      "prompt": "إذن الإشعارات مطلوب",
+      "promptHint": "لا يطلب Prooflane الإذن إلا بعد اختيارك السماح بالإشعارات هنا.",
+      "denied": "إذن إشعارات النظام متوقف",
+      "deniedHint": "فعّل إشعارات Prooflane من إعدادات نظام التشغيل أو المتصفح.",
+      "unsupported": "إشعارات النظام غير متاحة",
+      "unsupportedHint": "هذه البيئة لا تدعم إشعارات النظام. تستمر المحادثات بصورة طبيعية."
+    },
+    "notification": {
+      "fallbackConversationTitle": "محادثة",
+      "completedTitle": "اكتملت المحادثة",
+      "completedStatus": "أنشأت ردًا. انقر للعرض.",
+      "failedTitle": "فشلت المحادثة",
+      "failedStatus": "تعذر إكمالها. انقر للعرض.",
+      "actionRequiredTitle": "المحادثة تحتاج إلى إجراء منك",
+      "actionRequiredStatus": "تنتظر التأكيد. انقر للمتابعة."
+    },
+    "activation": {
+      "missingTitle": "المحادثة لم تعد متاحة",
+      "missingDetail": "ربما حُذفت المحادثة {id} أو نُقلت.",
+      "failedTitle": "تعذر فتح المحادثة",
+      "failedDetail": "فُتح الإشعار، لكن تعذر الانتقال: {message}"
+    }
+  },
   "GeneralSettings": {
     "loading": "جارٍ التحميل...",
     "sectionTitle": "عام",

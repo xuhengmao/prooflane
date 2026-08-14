@@ -103,6 +103,9 @@ vi.mock("@/lib/platform", () => ({
 }))
 vi.mock("@/lib/transport", () => ({
   getActiveRemoteConnectionId: () => null,
+  isDesktop: () => false,
+  getTransport: () => ({ call: vi.fn() }),
+  getShellTransport: () => ({ call: vi.fn() }),
 }))
 // Real classifier only recognizes actual backend NoActiveTurn payloads; the
 // steering tests flip this per-case to drive the enqueue fallback.

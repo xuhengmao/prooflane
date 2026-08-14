@@ -1,6 +1,14 @@
 "use client"
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 import {
   selectTimelineTurns,
   useConversationRuntimeActions,
@@ -72,6 +80,14 @@ import type { MessageScrollContextValue } from "@/components/message/message-scr
 import { extractSessionFilesGrouped } from "@/lib/session-files"
 import { unescapeComposerText } from "@/lib/composer-copy-text"
 import { useStickToBottomContext } from "use-stick-to-bottom"
+import {
+  consumeConversationNotificationLocation,
+  getConversationNotificationLocation,
+  getConversationNotificationLocationVersion,
+  resolveConversationNotificationLocationIndex,
+  subscribeConversationNotificationLocations,
+  type ConversationNotificationLocatableItem,
+} from "@/lib/conversation-notification-location"
 
 interface MessageListViewProps {
   conversationId: number
@@ -160,6 +176,21 @@ export type ThreadRenderItem =
       kind: "compaction"
       meta: Record<string, unknown> | null
     }
+
+export function toConversationNotificationLocatableItems(
+  items: readonly ThreadRenderItem[]
+): ConversationNotificationLocatableItem[] {
+  return items.map((item) =>
+    item.kind === "turn"
+      ? {
+          key: item.key,
+          messageIds: Array.from(
+            new Set([item.group.id, ...item.sourceTurns.map((turn) => turn.id)])
+          ),
+        }
+      : { key: item.key, messageIds: [] }
+  )
+}
 
 // Module-scope so the reference is stable across renders — lets the memoized
 // VirtualizedMessageThread bail out when `items` is unchanged.
@@ -986,6 +1017,29 @@ export function MessageListView({
   // Lifted scroll handle so the panel (which lives in the overlay stack, outside
   // the MessageScrollProvider subtree) can drive scrollToIndex.
   const scrollApiRef = useRef<MessageScrollContextValue | null>(null)
+  const notificationLocationVersion = useSyncExternalStore(
+    subscribeConversationNotificationLocations,
+    getConversationNotificationLocationVersion,
+    getConversationNotificationLocationVersion
+  )
+  const notificationLocatableItems = useMemo(
+    () => toConversationNotificationLocatableItems(threadItems),
+    [threadItems]
+  )
+  useEffect(() => {
+    const request = getConversationNotificationLocation(conversationId)
+    if (!request || notificationLocatableItems.length === 0) return
+    const scrollApi = scrollApiRef.current
+    if (!scrollApi) return
+
+    const targetIndex = resolveConversationNotificationLocationIndex(
+      notificationLocatableItems,
+      request.messageId
+    )
+    if (targetIndex < 0) return
+    scrollApi.scrollToIndex(targetIndex, { align: "center" })
+    consumeConversationNotificationLocation(conversationId, request.id)
+  }, [conversationId, notificationLocatableItems, notificationLocationVersion])
   // Collapse state is owned here (not in the panel) so the expensive per-file
   // `navEntries` is computed only while the panel is open.
   const [navExpanded, setNavExpanded] = useState(false)

@@ -1322,6 +1322,41 @@
     "agentsLoading": "Chargement des paramètres des agents...",
     "skillPacksLoading": "Chargement des packs de compétences…"
   },
+  "ConversationNotifications": {
+    "title": "Notifications de fin de conversation",
+    "description": "Vous avertit lorsqu'une conversation se termine pendant que Prooflane est en arrière-plan. Cliquez sur la notification pour revenir à cette conversation.",
+    "allow": "Autoriser les notifications système",
+    "openSettings": "Ouvrir les paramètres système",
+    "browserSettingsHint": "Autorisez les notifications de Prooflane dans les paramètres de site de votre navigateur.",
+    "permissionCheckFailed": "Impossible de vérifier l'autorisation des notifications : {message}",
+    "permissionRequestFailed": "Impossible de demander l'autorisation des notifications : {message}",
+    "openSettingsFailed": "Impossible d'ouvrir les paramètres de notification : {message}",
+    "permission": {
+      "checking": "Vérification de l'autorisation des notifications système...",
+      "granted": "Les notifications système sont autorisées",
+      "prompt": "L'autorisation des notifications est requise",
+      "promptHint": "Prooflane ne demande l'autorisation qu'après votre choix explicite ici.",
+      "denied": "L'autorisation des notifications système est désactivée",
+      "deniedHint": "Activez les notifications de Prooflane dans les paramètres du système d'exploitation ou du navigateur.",
+      "unsupported": "Les notifications système ne sont pas disponibles",
+      "unsupportedHint": "Cet environnement ne prend pas en charge les notifications système. Les conversations continuent normalement."
+    },
+    "notification": {
+      "fallbackConversationTitle": "Conversation",
+      "completedTitle": "Conversation terminée",
+      "completedStatus": "a généré une réponse. Cliquez pour l'afficher.",
+      "failedTitle": "Échec de la conversation",
+      "failedStatus": "n'a pas pu se terminer. Cliquez pour l'afficher.",
+      "actionRequiredTitle": "La conversation nécessite votre intervention",
+      "actionRequiredStatus": "attend une confirmation. Cliquez pour continuer."
+    },
+    "activation": {
+      "missingTitle": "La conversation n'est plus disponible",
+      "missingDetail": "La conversation {id} a peut-être été supprimée ou déplacée.",
+      "failedTitle": "Impossible d'ouvrir la conversation",
+      "failedDetail": "La notification a été ouverte, mais la navigation a échoué : {message}"
+    }
+  },
   "GeneralSettings": {
     "loading": "Chargement...",
     "sectionTitle": "Général",

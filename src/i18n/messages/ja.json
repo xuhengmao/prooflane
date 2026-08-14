@@ -1322,6 +1322,41 @@
     "agentsLoading": "エージェント設定を読み込み中...",
     "skillPacksLoading": "スキルパックを読み込み中…"
   },
+  "ConversationNotifications": {
+    "title": "会話完了通知",
+    "description": "Prooflane がバックグラウンドにある間に会話が完了したら通知します。通知をクリックすると該当する会話に戻ります。",
+    "allow": "システム通知を許可",
+    "openSettings": "システム設定を開く",
+    "browserSettingsHint": "ブラウザーのサイト設定で Prooflane の通知を許可してください。",
+    "permissionCheckFailed": "通知権限を確認できませんでした: {message}",
+    "permissionRequestFailed": "通知権限を要求できませんでした: {message}",
+    "openSettingsFailed": "通知設定を開けませんでした: {message}",
+    "permission": {
+      "checking": "システム通知の権限を確認しています...",
+      "granted": "システム通知は許可されています",
+      "prompt": "通知権限が必要です",
+      "promptHint": "ここで許可を選択した場合にのみ、Prooflane が通知権限を要求します。",
+      "denied": "システム通知の権限が無効です",
+      "deniedHint": "OS またはブラウザーの設定で Prooflane の通知を有効にしてください。",
+      "unsupported": "システム通知を利用できません",
+      "unsupportedHint": "この環境はシステム通知に対応していません。会話は通常どおり続行されます。"
+    },
+    "notification": {
+      "fallbackConversationTitle": "会話",
+      "completedTitle": "会話が完了しました",
+      "completedStatus": "応答を生成しました。クリックして表示します。",
+      "failedTitle": "会話に失敗しました",
+      "failedStatus": "完了できませんでした。クリックして確認します。",
+      "actionRequiredTitle": "会話で操作が必要です",
+      "actionRequiredStatus": "確認を待っています。クリックして続行します。"
+    },
+    "activation": {
+      "missingTitle": "会話を利用できません",
+      "missingDetail": "会話 {id} は削除または移動された可能性があります。",
+      "failedTitle": "会話を開けませんでした",
+      "failedDetail": "通知は開きましたが、移動に失敗しました: {message}"
+    }
+  },
   "GeneralSettings": {
     "loading": "読み込み中...",
     "sectionTitle": "一般",
