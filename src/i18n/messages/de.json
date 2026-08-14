@@ -2544,6 +2544,7 @@
       "chatInput": {
         "connecting": "Verbinden...",
         "agentResponding": "{agent} antwortet...",
+        "continueInputQueue": "Weiterschreiben, um zur Warteschlange hinzuzufügen",
         "sendMessage": "Nachricht senden..."
       },
       "messageInput": {
@@ -2576,6 +2577,14 @@
         "noModels": "Keine Modelle gefunden",
         "cancel": "Abbrechen",
         "send": "Senden",
+        "statusGenerating": "Denkt nach...",
+        "statusToolRunning": "{tool} wird ausgeführt...",
+        "statusWaitingPermission": "Wartet auf deine Berechtigung",
+        "statusWaitingQuestion": "Wartet auf deine Antwort",
+        "statusWaitingPlanApproval": "Wartet auf die Planfreigabe",
+        "statusFailed": "Generierung fehlgeschlagen",
+        "statusStopped": "Gestoppt",
+        "retryStatus": "Erneut versuchen",
         "optimizePrompt": "Prompt optimieren",
         "optimizingPrompt": "Prompt wird optimiert",
         "cancelPromptOptimization": "Prompt-Optimierung abbrechen",

@@ -1563,6 +1563,35 @@ describe("HYDRATE_FROM_SNAPSHOT last_error recovery", () => {
     return latestAttachHandlers()
   }
 
+  it("clears a connected connection error without changing its status", async () => {
+    const handlers = await connectOwner()
+    emitAcpEvent(handlers, {
+      seq: 1,
+      connection_id: "spawned-conn",
+      type: "status_changed",
+      status: "connected",
+    })
+    emitAcpEvent(handlers, {
+      seq: 2,
+      connection_id: "spawned-conn",
+      type: "error",
+      message: "Turn failed",
+      agent_type: "claude_code",
+      code: "runtime_failure",
+    })
+    expect(h.store!.getConnection(TAB)).toMatchObject({
+      status: "connected",
+      error: "Turn failed",
+    })
+
+    act(() => h.actions!.clearError(TAB))
+
+    expect(h.store!.getConnection(TAB)).toMatchObject({
+      status: "connected",
+      error: null,
+    })
+  })
+
   it("recovers last_error from a FRESH snapshot (client missed the live error)", async () => {
     const handlers = await connectOwner()
     // A freshly reconnected client (lastAppliedSeq=0) receives a snapshot ahead

@@ -146,6 +146,11 @@ import {
 import { composerActionState } from "@/components/chat/composer/smart-composer-state"
 import { SpeechTranscriptBuffer } from "@/components/chat/composer/speech-transcript"
 import { SpeechWaveform } from "@/components/chat/composer/speech-waveform"
+import {
+  formatComposerElapsed,
+  resolveComposerStatus,
+  type ComposerWaitingReason,
+} from "@/components/chat/composer/composer-status"
 
 /**
  * Payload pushed into the composer from outside (e.g. a welcome-page quick
@@ -226,6 +231,13 @@ interface MessageInputProps {
     "conversationHistory" | "relatedFiles"
   >
   conversationId?: number | null
+  isNewConversation?: boolean
+  promptStartedAt?: number | null
+  activeToolTitle?: string | null
+  waitingReason?: ComposerWaitingReason | null
+  hasError?: boolean
+  errorMessage?: string | null
+  onRetry?: () => void
 }
 
 const EMPTY_WAVEFORM_LEVELS = Array.from({ length: 28 }, () => 0.18)
@@ -348,6 +360,13 @@ export function MessageInput({
   promptOptimizationProvider,
   promptOptimizationContext,
   conversationId,
+  isNewConversation = false,
+  promptStartedAt = null,
+  activeToolTitle = null,
+  waitingReason = null,
+  hasError = false,
+  errorMessage = null,
+  onRetry,
 }: MessageInputProps) {
   const t = useTranslations("Folder.chat.messageInput")
   const tQueue = useTranslations("Folder.chat.messageQueue")
@@ -383,6 +402,20 @@ export function MessageInput({
   // send button and `hasSendableContent`.
   const [composerEmpty, setComposerEmpty] = useState(true)
   const [composerHasEditableText, setComposerHasEditableText] = useState(false)
+  const [composerFocused, setComposerFocused] = useState(false)
+  const composerScopeId = JSON.stringify([
+    attachmentTabId ?? null,
+    conversationId ?? null,
+  ])
+  const composerStateScopeRef = useRef(composerScopeId)
+  const composerStateMatchesScope =
+    composerStateScopeRef.current === composerScopeId
+  const interactedComposerScopesRef = useRef(new Set<string>())
+  const [stoppedScopeId, setStoppedScopeId] = useState<string | null>(null)
+  const stoppedVisible = stoppedScopeId === composerScopeId
+  const [elapsedMs, setElapsedMs] = useState(() =>
+    promptStartedAt === null ? 0 : Math.max(0, Date.now() - promptStartedAt)
+  )
   // Flips true once the RichComposer's async (immediatelyRender:false) editor has
   // mounted, so the hydration effect can use the imperative handle.
   const [composerReady, setComposerReady] = useState(false)
@@ -461,6 +494,8 @@ export function MessageInput({
   // menu takes focus.
   const [contextSelectionActive, setContextSelectionActive] = useState(false)
   const isPromptingRef = useRef(isPrompting)
+  const previousPromptingRef = useRef(isPrompting)
+  const cancelRequestedScopeRef = useRef<string | null>(null)
   const hydratedRef = useRef(false)
   // Tracks the last queue-item id hydrated, so a re-edit of the *same* item
   // doesn't clobber the user's in-progress changes — keyed on id, not display
@@ -473,6 +508,54 @@ export function MessageInput({
   useEffect(() => {
     isPromptingRef.current = isPrompting
   }, [isPrompting])
+
+  useEffect(() => {
+    const wasPrompting = previousPromptingRef.current
+    previousPromptingRef.current = isPrompting
+
+    if (isPrompting) {
+      cancelRequestedScopeRef.current = null
+      setStoppedScopeId(null)
+      return
+    }
+    if (wasPrompting && cancelRequestedScopeRef.current !== null) {
+      setStoppedScopeId(cancelRequestedScopeRef.current)
+      cancelRequestedScopeRef.current = null
+    }
+  }, [isPrompting])
+
+  useEffect(() => {
+    if (stoppedScopeId === null) return
+    const timer = window.setTimeout(() => setStoppedScopeId(null), 1_500)
+    return () => window.clearTimeout(timer)
+  }, [stoppedScopeId])
+
+  useEffect(() => {
+    cancelRequestedScopeRef.current = null
+    setStoppedScopeId(null)
+  }, [composerScopeId])
+
+  useEffect(() => {
+    if (composerStateScopeRef.current === composerScopeId) return
+    composerStateScopeRef.current = composerScopeId
+    setComposerEmpty(true)
+    setComposerHasEditableText(false)
+    setComposerFocused(false)
+    clearAttachments()
+  }, [clearAttachments, composerScopeId])
+
+  useEffect(() => {
+    if (!isPrompting || waitingReason !== null || promptStartedAt === null) {
+      setElapsedMs(0)
+      return
+    }
+
+    const updateElapsed = () =>
+      setElapsedMs(Math.max(0, Date.now() - promptStartedAt))
+    updateElapsed()
+    const timer = window.setInterval(updateElapsed, 100)
+    return () => window.clearInterval(timer)
+  }, [composerScopeId, isPrompting, promptStartedAt, waitingReason])
 
   useEffect(() => {
     // navigator.clipboard is undefined at runtime in non-secure contexts even
@@ -755,7 +838,58 @@ export function MessageInput({
   const folderBranchPickerAttached = hasFolderBranchPicker
   const imageAttachments = attach.imageAttachments
   const hasAttachments = attachments.length > 0
-  const hasSendableContent = !composerEmpty || hasAttachments
+  const hasSendableContent =
+    composerStateMatchesScope && (!composerEmpty || hasAttachments)
+  const hasVisibleInteraction = hasSendableContent || injectContent != null
+  const isPristineNewConversation =
+    isNewConversation &&
+    !hasVisibleInteraction &&
+    !interactedComposerScopesRef.current.has(composerScopeId)
+  useEffect(() => {
+    if (hasVisibleInteraction) {
+      interactedComposerScopesRef.current.add(composerScopeId)
+    }
+  }, [composerScopeId, hasVisibleInteraction])
+  const composerStatus = resolveComposerStatus({
+    waitingReason,
+    isPrompting,
+    activeToolTitle,
+    hasError,
+    wasStopped: stoppedVisible,
+    isFocused: composerStateMatchesScope && composerFocused,
+    isNewConversation: isPristineNewConversation,
+    isEmpty: !hasSendableContent,
+  })
+  const showRuntimeStatus =
+    composerStatus === "generating" ||
+    composerStatus === "tool_running" ||
+    composerStatus === "waiting_for_user" ||
+    composerStatus === "failed" ||
+    composerStatus === "stopped"
+  const runtimeStatusLabel = (() => {
+    switch (composerStatus) {
+      case "generating":
+        return t("statusGenerating")
+      case "tool_running":
+        return t("statusToolRunning", { tool: activeToolTitle ?? "" })
+      case "waiting_for_user":
+        switch (waitingReason) {
+          case "permission":
+            return t("statusWaitingPermission")
+          case "plan_approval":
+            return t("statusWaitingPlanApproval")
+          case "question":
+          default:
+            return t("statusWaitingQuestion")
+        }
+      case "failed":
+        return errorMessage?.trim() || t("statusFailed")
+      case "stopped":
+        return t("statusStopped")
+      default:
+        return null
+    }
+  })()
   const smartActionState = composerActionState({
     speechStatus,
     isOptimizing,
@@ -1524,6 +1658,12 @@ export function MessageInput({
     resetComposer,
   ])
 
+  const handleCancelGeneration = useCallback(() => {
+    if (!isPrompting || !onCancel) return
+    cancelRequestedScopeRef.current = composerScopeId
+    onCancel()
+  }, [composerScopeId, isPrompting, onCancel])
+
   const handleForkSendClick = useCallback(() => {
     if (!onForkSend) return
     // Same uploading gate as `handleSend`: a fork-send consumes the draft
@@ -1922,7 +2062,7 @@ export function MessageInput({
       // pixel-identical to the historical Stop-only form below.
       <div className="flex items-center gap-1">
         <Button
-          onClick={onCancel}
+          onClick={handleCancelGeneration}
           variant="destructive"
           size="icon"
           className="h-8 w-8"
@@ -1976,7 +2116,7 @@ export function MessageInput({
       </div>
     ) : (
       <Button
-        onClick={onCancel}
+        onClick={handleCancelGeneration}
         variant="destructive"
         size="icon"
         className="h-8 w-8"
@@ -2218,6 +2358,7 @@ export function MessageInput({
             <div
               onMouseDown={handleChromeMouseDown}
               aria-busy={isOptimizing}
+              data-composer-state={composerStatus}
               className={cn(
                 // `codeg-composer-chrome` paints the text I-beam across the box's
                 // blank areas (padding, the dead space below a short message, the
@@ -2248,7 +2389,9 @@ export function MessageInput({
                 // flow (globals.css) so the default focus ring above takes over.
                 // A lone/non-tiled session (showActiveFlow=false) and inactive
                 // tiles show the plain default border.
-                showActiveFlow && "codeg-composer-flow",
+                showActiveFlow &&
+                  composerStatus === "idle" &&
+                  "codeg-composer-flow",
                 isOptimizing && "prooflane-composer-optimizing",
                 !folderBranchPickerAttached &&
                   showDragActive &&
@@ -2256,6 +2399,45 @@ export function MessageInput({
                 className
               )}
             >
+              <div className="flex h-6 shrink-0 items-center px-3 pt-1">
+                {showRuntimeStatus && runtimeStatusLabel && (
+                  <div className="flex min-w-0 flex-1 items-center justify-between gap-3 text-[11px] text-muted-foreground">
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="flex min-w-0 flex-1 items-center gap-1.5"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="prooflane-composer-status-dot size-1.5 shrink-0 rounded-full"
+                      />
+                      <span className="truncate">{runtimeStatusLabel}</span>
+                    </div>
+                    {composerStatus === "failed" && onRetry ? (
+                      <button
+                        type="button"
+                        onClick={onRetry}
+                        className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        aria-label={t("retryStatus")}
+                      >
+                        <RotateCcw aria-hidden="true" className="size-3" />
+                        <span>{t("retryStatus")}</span>
+                      </button>
+                    ) : (
+                      (composerStatus === "generating" ||
+                        composerStatus === "tool_running") &&
+                      promptStartedAt !== null && (
+                        <span
+                          data-testid="composer-status-elapsed"
+                          className="shrink-0 font-mono tabular-nums"
+                        >
+                          {formatComposerElapsed(elapsedMs)}
+                        </span>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
               <ConversationContextBar
                 hasExtraContent={hasImageAttachments}
                 scrollEndTrigger={attachments.length}
@@ -2277,7 +2459,11 @@ export function MessageInput({
                 onChange={handleComposerChange}
                 onReady={handleComposerReady}
                 onSubmit={handleSend}
-                onFocus={onFocus}
+                onFocus={() => {
+                  setComposerFocused(true)
+                  onFocus?.()
+                }}
+                onBlur={() => setComposerFocused(false)}
                 onPasteFiles={attach.handlePasteFiles}
                 onDropFiles={attach.handleEditorDrop}
                 onPlainPaste={handlePlainPasteShortcut}

@@ -2544,6 +2544,7 @@
       "chatInput": {
         "connecting": "جارٍ الاتصال...",
         "agentResponding": "{agent} يرد...",
+        "continueInputQueue": "واصل الكتابة لإضافته إلى قائمة الانتظار",
         "sendMessage": "أرسل رسالة..."
       },
       "messageInput": {
@@ -2576,6 +2577,14 @@
         "noModels": "لم يتم العثور على نماذج",
         "cancel": "إلغاء",
         "send": "إرسال",
+        "statusGenerating": "جارٍ التفكير...",
+        "statusToolRunning": "جارٍ تشغيل {tool}...",
+        "statusWaitingPermission": "بانتظار إذنك",
+        "statusWaitingQuestion": "بانتظار إجابتك",
+        "statusWaitingPlanApproval": "بانتظار الموافقة على الخطة",
+        "statusFailed": "فشل الإنشاء",
+        "statusStopped": "تم الإيقاف",
+        "retryStatus": "إعادة المحاولة",
         "optimizePrompt": "تحسين الموجّه",
         "optimizingPrompt": "جارٍ تحسين الموجّه",
         "cancelPromptOptimization": "إلغاء تحسين الموجّه",

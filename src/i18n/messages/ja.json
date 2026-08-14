@@ -2544,6 +2544,7 @@
       "chatInput": {
         "connecting": "接続中...",
         "agentResponding": "{agent} が応答中...",
+        "continueInputQueue": "入力を続けるとキューに追加されます",
         "sendMessage": "メッセージを送信..."
       },
       "messageInput": {
@@ -2576,6 +2577,14 @@
         "noModels": "モデルが見つかりません",
         "cancel": "キャンセル",
         "send": "送信",
+        "statusGenerating": "考え中...",
+        "statusToolRunning": "{tool} を実行中...",
+        "statusWaitingPermission": "許可を待っています",
+        "statusWaitingQuestion": "回答を待っています",
+        "statusWaitingPlanApproval": "プランの承認を待っています",
+        "statusFailed": "生成に失敗しました",
+        "statusStopped": "停止しました",
+        "retryStatus": "再試行",
         "optimizePrompt": "プロンプトを最適化",
         "optimizingPrompt": "プロンプトを最適化中",
         "cancelPromptOptimization": "プロンプトの最適化をキャンセル",

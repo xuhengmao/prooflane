@@ -17,6 +17,7 @@ import {
   MessageInput,
   type ComposerInjectContent,
 } from "@/components/chat/message-input"
+import type { ComposerWaitingReason } from "@/components/chat/composer/composer-status"
 import { MessageQueueDisplay } from "@/components/chat/message-queue-display"
 import { cn } from "@/lib/utils"
 
@@ -82,13 +83,19 @@ interface ChatInputProps {
    *  historical conversations keep the compact default. */
   tall?: boolean
   conversationId?: number | null
+  isNewConversation?: boolean
+  promptStartedAt?: number | null
+  activeToolTitle?: string | null
+  waitingReason?: ComposerWaitingReason | null
+  hasError?: boolean
+  errorMessage?: string | null
+  onRetry?: () => void
 }
 
 export const ChatInput = memo(function ChatInput({
   status,
   promptCapabilities,
   defaultPath,
-  agentName,
   onFocus,
   onSend,
   onCancel,
@@ -127,6 +134,13 @@ export const ChatInput = memo(function ChatInput({
   flush = false,
   tall = false,
   conversationId,
+  isNewConversation = false,
+  promptStartedAt,
+  activeToolTitle,
+  waitingReason,
+  hasError = false,
+  errorMessage,
+  onRetry,
 }: ChatInputProps) {
   const t = useTranslations("Folder.chat.chatInput")
   const isConnected = status === "connected"
@@ -205,13 +219,20 @@ export const ChatInput = memo(function ChatInput({
         onAddFeedback={onAddFeedback}
         feedbackAddDisabled={feedbackAddDisabled}
         conversationId={conversationId}
+        isNewConversation={isNewConversation}
+        promptStartedAt={promptStartedAt}
+        activeToolTitle={activeToolTitle}
+        waitingReason={waitingReason}
+        hasError={hasError}
+        errorMessage={errorMessage}
+        onRetry={onRetry}
         injectContent={injectContent}
         onInjectConsumed={onInjectConsumed}
         placeholder={
           isConnecting
             ? t("connecting")
             : isPrompting
-              ? t("agentResponding", { agent: agentName ?? "Agent" })
+              ? t("continueInputQueue")
               : t("sendMessage")
         }
         className={cn(tall ? "min-h-30" : "min-h-24", "max-h-60")}

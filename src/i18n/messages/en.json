@@ -2544,6 +2544,7 @@
       "chatInput": {
         "connecting": "Connecting...",
         "agentResponding": "{agent} is responding...",
+        "continueInputQueue": "Continue typing to add to queue",
         "sendMessage": "Send a message..."
       },
       "messageInput": {
@@ -2578,6 +2579,14 @@
         "noModels": "No models found",
         "cancel": "Cancel",
         "send": "Send",
+        "statusGenerating": "Thinking...",
+        "statusToolRunning": "Running {tool}...",
+        "statusWaitingPermission": "Waiting for your permission",
+        "statusWaitingQuestion": "Waiting for your answer",
+        "statusWaitingPlanApproval": "Waiting for plan approval",
+        "statusFailed": "Generation failed",
+        "statusStopped": "Stopped",
+        "retryStatus": "Retry",
         "optimizePrompt": "Optimize prompt",
         "optimizingPrompt": "Optimizing prompt",
         "cancelPromptOptimization": "Cancel prompt optimization",

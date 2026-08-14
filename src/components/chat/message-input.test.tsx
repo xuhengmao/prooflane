@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { NextIntlClientProvider } from "next-intl"
-import type { ComponentProps } from "react"
+import { useLayoutEffect, useRef, useState, type ComponentProps } from "react"
 import type { Editor } from "@tiptap/core"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -23,6 +23,18 @@ const toastMock = vi.hoisted(() => ({
   info: vi.fn(),
 }))
 vi.mock("sonner", () => ({ toast: toastMock }))
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>()
+  return {
+    ...actual,
+    uploadAttachment: vi.fn(async (file: File) => ({
+      path: `/uploads/${file.name}`,
+      name: file.name,
+      size: file.size,
+      mimeType: file.type || null,
+    })),
+  }
+})
 
 // MessageInput holds its RichComposer handle internally and does not forward a
 // ref, so capture that handle through a partial mock that still renders the real
@@ -163,6 +175,7 @@ function renderInput(
 
 describe("MessageInput (RichComposer integration)", () => {
   afterEach(() => {
+    vi.useRealTimers()
     cleanup()
     toastMock.success.mockClear()
     toastMock.error.mockClear()
@@ -177,6 +190,397 @@ describe("MessageInput (RichComposer integration)", () => {
     )
     const textbox = container.querySelector('[role="textbox"]')
     expect(textbox).toHaveAttribute("aria-multiline", "true")
+  })
+
+  it("derives new-empty and focused states from the real editor", async () => {
+    const { container } = renderInput({ isNewConversation: true })
+    const textbox = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>('[role="textbox"]')
+      expect(element).not.toBeNull()
+      return element as HTMLElement
+    })
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
+
+    expect(chrome).toHaveAttribute("data-composer-state", "new_empty")
+    fireEvent.focus(textbox)
+    expect(chrome).toHaveAttribute("data-composer-state", "focused")
+    fireEvent.blur(textbox)
+    act(() => composerHandle.current?.setText("continue the task"))
+    expect(chrome).toHaveAttribute("data-composer-state", "idle")
+  })
+
+  it("stays idle after text interaction is cleared and the editor loses focus", async () => {
+    const { container } = renderInput({
+      isNewConversation: true,
+      conversationId: 101,
+    })
+    const textbox = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>('[role="textbox"]')
+      expect(element).not.toBeNull()
+      return element as HTMLElement
+    })
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
+
+    act(() => composerHandle.current?.setText("draft"))
+    expect(chrome).toHaveAttribute("data-composer-state", "idle")
+
+    act(() => composerHandle.current?.setText(""))
+    fireEvent.blur(textbox)
+
+    expect(chrome).toHaveAttribute("data-composer-state", "idle")
+  })
+
+  it("stays idle after an image attachment is removed from an empty editor", async () => {
+    const { container } = renderInput({
+      isNewConversation: true,
+      conversationId: 102,
+    })
+    const textbox = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>('[role="textbox"]')
+      expect(element).not.toBeNull()
+      return element as HTMLElement
+    })
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
+    const image = new File(["image-bytes"], "proof.png", {
+      type: "image/png",
+    })
+    fireEvent.paste(textbox, {
+      clipboardData: {
+        files: [image],
+        items: [{ kind: "file", getAsFile: () => image }],
+        types: ["Files"],
+        getData: () => "",
+      },
+    })
+    const removeButton = await screen.findByRole("button", {
+      name: "Remove proof.png",
+    })
+
+    fireEvent.blur(textbox as HTMLElement)
+    await waitFor(() =>
+      expect(chrome).toHaveAttribute("data-composer-state", "idle")
+    )
+    await userEvent.click(removeButton)
+    fireEvent.blur(textbox as HTMLElement)
+    act(() => composerHandle.current?.getEditor()?.commands.blur())
+
+    await waitFor(() => expect(removeButton).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(chrome).toHaveAttribute("data-composer-state", "idle")
+    )
+  })
+
+  it("isolates interaction history by composer scope without leaking the previous frame", async () => {
+    const committedStates: string[] = []
+
+    function ScopeHarness() {
+      const [conversationId, setConversationId] = useState(201)
+      const hostRef = useRef<HTMLDivElement>(null)
+
+      useLayoutEffect(() => {
+        committedStates.push(
+          hostRef.current?.querySelector<HTMLElement>("[data-composer-state]")
+            ?.dataset.composerState ?? "missing"
+        )
+      }, [conversationId])
+
+      return (
+        <div>
+          <button type="button" onClick={() => setConversationId(202)}>
+            New scope
+          </button>
+          <button type="button" onClick={() => setConversationId(201)}>
+            Old scope
+          </button>
+          <div ref={hostRef}>
+            <MessageInput
+              onSend={vi.fn()}
+              promptCapabilities={CAPS}
+              conversationId={conversationId}
+              isNewConversation
+            />
+          </div>
+        </div>
+      )
+    }
+
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ScopeHarness />
+      </NextIntlClientProvider>
+    )
+    const textbox = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>('[role="textbox"]')
+      expect(element).not.toBeNull()
+      return element as HTMLElement
+    })
+
+    act(() => composerHandle.current?.setText("draft"))
+    fireEvent.blur(textbox)
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "idle")
+
+    fireEvent.click(screen.getByRole("button", { name: "New scope" }))
+    expect(committedStates[committedStates.length - 1]).toBe("new_empty")
+
+    act(() => composerHandle.current?.setText(""))
+    fireEvent.blur(textbox)
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "new_empty")
+
+    fireEvent.click(screen.getByRole("button", { name: "Old scope" }))
+    expect(committedStates[committedStates.length - 1]).toBe("idle")
+  })
+
+  it("shows a single generating or active-tool status with elapsed time", async () => {
+    const startedAt = Date.now() - 1_250
+    const { container, rerender } = renderInput({
+      isPrompting: true,
+      promptStartedAt: startedAt,
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
+    expect(chrome).toHaveAttribute("data-composer-state", "generating")
+    const status = screen.getByRole("status")
+    expect(status).toHaveAttribute("aria-live", "polite")
+    expect(status).toHaveTextContent(
+      enMessages.Folder.chat.messageInput.statusGenerating
+    )
+    const elapsed = screen.getByTestId("composer-status-elapsed")
+    expect(elapsed).toHaveTextContent(/^1\.[0-9]s$/)
+    expect(status).not.toContainElement(elapsed)
+    expect(status).toHaveTextContent(
+      enMessages.Folder.chat.messageInput.statusGenerating
+    )
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput
+          onSend={vi.fn()}
+          promptCapabilities={CAPS}
+          isPrompting
+          promptStartedAt={startedAt}
+          activeToolTitle="Reading project files"
+        />
+      </NextIntlClientProvider>
+    )
+
+    expect(chrome).toHaveAttribute("data-composer-state", "tool_running")
+    expect(screen.getByRole("status")).toHaveTextContent(
+      enMessages.Folder.chat.messageInput.statusToolRunning.replace(
+        "{tool}",
+        "Reading project files"
+      )
+    )
+  })
+
+  it("gives waiting for user precedence and removes the flowing status", async () => {
+    const { container } = renderInput({
+      isPrompting: true,
+      activeToolTitle: "Apply changes",
+      waitingReason: "permission",
+      promptStartedAt: Date.now() - 2_000,
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
+    expect(chrome).toHaveAttribute("data-composer-state", "waiting_for_user")
+    expect(screen.getByRole("status")).toHaveTextContent(
+      enMessages.Folder.chat.messageInput.statusWaitingPermission
+    )
+    expect(screen.queryByTestId("composer-status-elapsed")).toBeNull()
+  })
+
+  it("clears the elapsed timer immediately when generation starts waiting for the user", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval")
+    const clearIntervalSpy = vi.spyOn(window, "clearInterval")
+    const startedAt = Date.now() - 1_000
+    const { container, rerender } = renderInput({
+      isPrompting: true,
+      promptStartedAt: startedAt,
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+    const timerCall = setIntervalSpy.mock.calls.find(
+      ([, delay]) => delay === 100
+    )
+    const timerIndex = timerCall
+      ? setIntervalSpy.mock.calls.indexOf(timerCall)
+      : -1
+    expect(timerIndex).toBeGreaterThanOrEqual(0)
+    const timerId = setIntervalSpy.mock.results[timerIndex]?.value
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput
+          onSend={vi.fn()}
+          promptCapabilities={CAPS}
+          isPrompting
+          promptStartedAt={startedAt}
+          waitingReason="permission"
+        />
+      </NextIntlClientProvider>
+    )
+
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "waiting_for_user")
+    await waitFor(() => expect(clearIntervalSpy).toHaveBeenCalledWith(timerId))
+    expect(screen.queryByTestId("composer-status-elapsed")).toBeNull()
+
+    setIntervalSpy.mockRestore()
+    clearIntervalSpy.mockRestore()
+  })
+
+  it("shows stopped briefly only after the user cancels an active turn", async () => {
+    const onCancel = vi.fn()
+    const { container, rerender } = renderInput({
+      isPrompting: true,
+      onCancel,
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    await userEvent.click(
+      screen.getByTitle(enMessages.Folder.chat.messageInput.cancel)
+    )
+    expect(onCancel).toHaveBeenCalledOnce()
+
+    vi.useFakeTimers()
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput onSend={vi.fn()} promptCapabilities={CAPS} />
+      </NextIntlClientProvider>
+    )
+
+    const chrome = container.querySelector<HTMLElement>("[data-composer-state]")
+    expect(chrome).toHaveAttribute("data-composer-state", "stopped")
+    expect(screen.getByRole("status")).toHaveTextContent(
+      enMessages.Folder.chat.messageInput.statusStopped
+    )
+
+    act(() => vi.advanceTimersByTime(1_500))
+    expect(chrome).toHaveAttribute("data-composer-state", "idle")
+    expect(screen.queryByRole("status")).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it("does not expose the previous stop feedback on the first frame of a new conversation", async () => {
+    const committedStates: string[] = []
+
+    function ScopeHarness() {
+      const [isPrompting, setIsPrompting] = useState(true)
+      const [conversationId, setConversationId] = useState(1)
+      const hostRef = useRef<HTMLDivElement>(null)
+
+      useLayoutEffect(() => {
+        if (conversationId !== 2) return
+        const chrome = hostRef.current?.querySelector<HTMLElement>(
+          "[data-composer-state]"
+        )
+        committedStates.push(chrome?.dataset.composerState ?? "missing")
+      }, [conversationId])
+
+      return (
+        <div>
+          <button type="button" onClick={() => setIsPrompting(false)}>
+            Finish old turn
+          </button>
+          <button type="button" onClick={() => setConversationId(2)}>
+            Switch conversation
+          </button>
+          <div ref={hostRef}>
+            <MessageInput
+              onSend={vi.fn()}
+              onCancel={vi.fn()}
+              promptCapabilities={CAPS}
+              isPrompting={isPrompting}
+              conversationId={conversationId}
+            />
+          </div>
+        </div>
+      )
+    }
+
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ScopeHarness />
+      </NextIntlClientProvider>
+    )
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    fireEvent.click(
+      screen.getByTitle(enMessages.Folder.chat.messageInput.cancel)
+    )
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByRole("button", { name: "Finish old turn" }))
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "stopped")
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch conversation" }))
+
+    expect(committedStates).toEqual(["idle"])
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "idle")
+
+    act(() => vi.advanceTimersByTime(1_500))
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "idle")
+  })
+
+  it("does not show stopped after an ordinary completed turn", async () => {
+    const { container, rerender } = renderInput({ isPrompting: true })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MessageInput onSend={vi.fn()} promptCapabilities={CAPS} />
+      </NextIntlClientProvider>
+    )
+
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "idle")
+    expect(screen.queryByRole("status")).toBeNull()
+  })
+
+  it("keeps a failed state visible and exposes the existing retry action", async () => {
+    const onRetry = vi.fn()
+    const { container } = renderInput({
+      hasError: true,
+      errorMessage: "Connection lost",
+      onRetry,
+    })
+    await waitFor(() =>
+      expect(container.querySelector('[role="textbox"]')).not.toBeNull()
+    )
+
+    expect(
+      container.querySelector<HTMLElement>("[data-composer-state]")
+    ).toHaveAttribute("data-composer-state", "failed")
+    expect(screen.getByRole("status")).toHaveTextContent("Connection lost")
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: enMessages.Folder.chat.messageInput.retryStatus,
+      })
+    )
+    expect(onRetry).toHaveBeenCalledOnce()
   })
 
   it("disables Send while the composer is empty and has no attachments", async () => {

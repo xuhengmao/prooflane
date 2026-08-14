@@ -26,6 +26,10 @@ import { PermissionDialog } from "@/components/chat/permission-dialog"
 import { QuestionDialog } from "@/components/chat/question-dialog"
 import { AskQuestionCard } from "@/components/chat/ask-question-card"
 import { PlanApprovalCard } from "@/components/chat/plan-approval-card"
+import {
+  resolveWaitingReason,
+  type ComposerWaitingReason,
+} from "@/components/chat/composer/composer-status"
 
 interface ConversationShellProps {
   status: ConnectionStatus | null
@@ -106,6 +110,12 @@ interface ConversationShellProps {
    *  omitted. */
   topBanner?: ReactNode
   conversationId?: number | null
+  promptStartedAt?: number | null
+  activeToolTitle?: string | null
+  hasError?: boolean
+  errorMessage?: string | null
+  onRetry?: () => void
+  isNewConversation?: boolean
 }
 
 export function ConversationShell({
@@ -161,6 +171,12 @@ export function ConversationShell({
   onSteer,
   topBanner,
   conversationId,
+  promptStartedAt,
+  activeToolTitle,
+  hasError = false,
+  errorMessage,
+  onRetry,
+  isNewConversation = false,
 }: ConversationShellProps) {
   const tAcp = useTranslations("Folder.chat.acpConnections")
   const retryLineText = useMemo(() => {
@@ -217,6 +233,12 @@ export function ConversationShell({
           retry: retryLabel,
         })
   }, [claudeApiRetry, tAcp])
+  const waitingReason: ComposerWaitingReason | null = resolveWaitingReason({
+    hasPermission: pendingPermission !== null,
+    hasQuestion: pendingQuestion !== null,
+    hasAskQuestion: pendingAskQuestion !== null,
+    hasPlanApproval: pendingPlanApproval !== null,
+  })
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -305,6 +327,13 @@ export function ConversationShell({
               onAddFeedback={onAddFeedback}
               feedbackAddDisabled={feedbackAddDisabled}
               conversationId={conversationId}
+              promptStartedAt={promptStartedAt}
+              activeToolTitle={activeToolTitle}
+              waitingReason={waitingReason}
+              hasError={hasError}
+              errorMessage={errorMessage}
+              onRetry={onRetry}
+              isNewConversation={isNewConversation}
             />
           </div>
         )}

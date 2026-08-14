@@ -58,6 +58,7 @@ import { ChatInput } from "@/components/chat/chat-input"
 import { WelcomeHero, WelcomeTip } from "@/components/chat/welcome-hero"
 import { QuickActions } from "@/components/chat/quick-actions"
 import type { ComposerInjectContent } from "@/components/chat/message-input"
+import { findActiveToolCall } from "@/components/chat/composer/composer-status"
 import { TileScrollContainer } from "@/components/conversations/tile-scroll-container"
 import { GroupSplitHandle } from "@/components/conversations/group-split-handle"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -141,6 +142,11 @@ import {
 } from "@/lib/export-conversation"
 import { useExportLabels } from "@/lib/use-export-labels"
 import { resolveActiveSessionDetails } from "./active-session-details"
+import {
+  resolveConversationComposerErrorState,
+  resolveConversationComposerState,
+  retryConversationComposerError,
+} from "./conversation-composer-state"
 import { ConversationDetailHeader } from "./conversation-detail-header"
 import { SessionDetailsDialog } from "./session-details-dialog"
 
@@ -453,26 +459,27 @@ const ConversationTabView = memo(function ConversationTabView({
     acpLoadError,
   } = useConversationDetail(effectiveConversationId)
 
-  // Subscribe to only the fields this panel actually reads from its runtime
-  // session — NOT the whole session object. The live-message sink rewrites the
-  // session object on every streaming batch (~60/s, via SET_LIVE_MESSAGE); a
-  // whole-object selector here would re-render this keep-alive panel (and the
-  // composer subtree it wraps) on every streaming token, even though neither of
-  // these two fields changes mid-stream. `useShallow` keeps the returned slice
-  // reference-stable across batches, so the panel re-renders only when one of
-  // them actually changes. (message-list-view subscribes to the session's
-  // liveMessage separately to render the live stream; the context indicator
-  // reads its own session stats from the runtime store directly.)
-  const { externalId: runtimeExternalId, syncState: runtimeSyncState } =
-    useConversationRuntimeStore(
-      useShallow((s) => {
-        const session = s.byConversationId.get(effectiveConversationId)
-        return {
-          externalId: session?.externalId ?? null,
-          syncState: session?.syncState ?? "idle",
-        }
-      })
-    )
+  // Subscribe only to stable session facts used outside the transcript. The
+  // streaming body stays owned by MessageListView, so token batches do not
+  // propagate through the composer subtree.
+  const {
+    externalId: runtimeExternalId,
+    syncState: runtimeSyncState,
+    liveStartedAt,
+    activeToolTitle,
+  } = useConversationRuntimeStore(
+    useShallow((s) => {
+      const session = s.byConversationId.get(effectiveConversationId)
+      const liveMessage = session?.liveMessage ?? null
+      return {
+        externalId: session?.externalId ?? null,
+        syncState: session?.syncState ?? "idle",
+        liveStartedAt: liveMessage?.startedAt ?? null,
+        activeToolTitle:
+          findActiveToolCall(liveMessage?.content)?.title ?? null,
+      }
+    })
+  )
 
   // Two-source resolution for the session id passed to acp_connect:
   //   1. detail.summary.external_id — DB value, available for tabs opened
@@ -1521,6 +1528,19 @@ const ConversationTabView = memo(function ConversationTabView({
 
   const showDraftHeader = !hasPersistedConversation && !hasSentMessage
   const isWelcomeMode = showDraftHeader
+  const composerState = resolveConversationComposerState(isWelcomeMode)
+  const handleComposerRetry = useCallback(() => {
+    retryConversationComposerError(
+      connStatus,
+      () => acpActions.clearError(tabId),
+      handleFocus
+    )
+  }, [acpActions, connStatus, handleFocus, tabId])
+  const composerErrorState = resolveConversationComposerErrorState(
+    connStatus,
+    conn.error,
+    handleComposerRetry
+  )
 
   const handleQuickAction = useCallback((payload: ComposerInjectContent) => {
     setQuickActionInject(payload)
@@ -1757,6 +1777,10 @@ const ConversationTabView = memo(function ConversationTabView({
           ? handleSteer
           : undefined
       }
+      promptStartedAt={liveStartedAt}
+      activeToolTitle={activeToolTitle}
+      {...composerErrorState}
+      isNewConversation={composerState.isNewConversation}
     >
       {isWelcomeMode ? (
         // Same overlay scrollbar as the sidebar / file lists (os-theme-codeg)
@@ -1814,6 +1838,7 @@ const ConversationTabView = memo(function ConversationTabView({
                 </div>
               ) : null}
               <ChatInput
+                {...composerErrorState}
                 // composerConnStatus (not connStatus): a chat draft mid-reconnect
                 // reads "connecting" until the connection's cwd matches, so the
                 // send affordance stays disabled until handleSend would accept it.
@@ -1844,6 +1869,7 @@ const ConversationTabView = memo(function ConversationTabView({
                 feedbackAddDisabled={!feedback.canSubmit}
                 injectContent={quickActionInject}
                 onInjectConsumed={handleQuickActionConsumed}
+                isNewConversation={composerState.isNewConversation}
                 flush
                 tall
               />

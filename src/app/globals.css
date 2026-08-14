@@ -2154,6 +2154,139 @@ div.monaco-diff-editor.side-by-side .editor.modified {
   }
 }
 
+/* P1-02A composer status feedback. The status controller owns the single
+   `data-composer-state` value; these rules only paint it and never affect the
+   composer's dimensions or action-bar layout. */
+.codeg-composer-chrome[data-composer-state] {
+  --prooflane-composer-status: #38BF63;
+  --prooflane-composer-status-soft: color-mix(
+    in oklab,
+    var(--prooflane-composer-status) 26%,
+    transparent
+  );
+}
+
+.codeg-composer-chrome[data-composer-state="new_empty"] {
+  border-color: color-mix(
+    in oklab,
+    var(--prooflane-composer-status) 58%,
+    var(--border)
+  );
+}
+
+.codeg-composer-chrome[data-composer-state="focused"] {
+  border-color: var(--prooflane-composer-status);
+  box-shadow: 0 0 0 3px var(--prooflane-composer-status-soft);
+}
+
+.codeg-composer-chrome[data-composer-state="generating"],
+.codeg-composer-chrome[data-composer-state="tool_running"] {
+  border-color: var(--prooflane-composer-status);
+}
+
+.codeg-composer-chrome[data-composer-state="waiting_for_user"] {
+  border-color: color-mix(
+    in oklab,
+    var(--prooflane-composer-status) 78%,
+    var(--border)
+  );
+}
+
+.codeg-composer-chrome[data-composer-state="failed"] {
+  border-color: color-mix(in oklab, var(--destructive) 78%, var(--border));
+}
+
+.codeg-composer-chrome[data-composer-state="stopped"] {
+  border-color: color-mix(
+    in oklab,
+    var(--muted-foreground) 62%,
+    var(--border)
+  );
+}
+
+.codeg-composer-chrome[data-composer-state="new_empty"]::before,
+.codeg-composer-chrome[data-composer-state="generating"]::before,
+.codeg-composer-chrome[data-composer-state="tool_running"]::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--prooflane-composer-status-angle, 0deg),
+    transparent,
+    var(--prooflane-composer-status),
+    transparent 42%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+.codeg-composer-chrome[data-composer-state="new_empty"]::before {
+  animation: prooflane-composer-status-breathe 2.2s ease-in-out infinite;
+}
+
+.codeg-composer-chrome[data-composer-state="generating"]::before,
+.codeg-composer-chrome[data-composer-state="tool_running"]::before {
+  animation: prooflane-composer-status-flow 2.6s linear infinite;
+}
+
+.prooflane-composer-status-dot {
+  background-color: var(--prooflane-composer-status);
+}
+
+.codeg-composer-chrome[data-composer-state="failed"]
+  .prooflane-composer-status-dot {
+  background-color: var(--destructive);
+}
+
+.codeg-composer-chrome[data-composer-state="stopped"]
+  .prooflane-composer-status-dot {
+  background-color: var(--muted-foreground);
+}
+
+@property --prooflane-composer-status-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes prooflane-composer-status-breathe {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+@keyframes prooflane-composer-status-flow {
+  to {
+    --prooflane-composer-status-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codeg-composer-chrome[data-composer-state] {
+    transition: none;
+  }
+
+  .codeg-composer-chrome[data-composer-state="new_empty"]::before,
+  .codeg-composer-chrome[data-composer-state="generating"]::before,
+  .codeg-composer-chrome[data-composer-state="tool_running"]::before {
+    animation: none;
+  }
+}
+
 .codeg-composer .ProseMirror {
   outline: none;
   white-space: pre-wrap;
