@@ -9,6 +9,7 @@ use crate::db::service::conversation_notification_service;
 
 const MAX_RUN_ID_BYTES: usize = 256;
 const MAX_MESSAGE_ID_BYTES: usize = 512;
+const WINDOWS_ELEMENT_NOT_FOUND_HRESULT: i32 = 0x80070490u32 as i32;
 #[cfg(feature = "tauri-runtime")]
 const MAX_NOTIFICATION_TITLE_BYTES: usize = 256;
 #[cfg(feature = "tauri-runtime")]
@@ -107,6 +108,17 @@ pub fn conversation_notification_block_reason(
     }
 }
 
+pub fn conversation_notification_permission_from_windows_error(
+    error_code: i32,
+) -> ConversationNotificationPermission {
+    if error_code == WINDOWS_ELEMENT_NOT_FOUND_HRESULT {
+        // Windows creates this app-specific setting only after the first toast.
+        ConversationNotificationPermission::Granted
+    } else {
+        ConversationNotificationPermission::Unsupported
+    }
+}
+
 impl ConversationNotificationType {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -175,11 +187,14 @@ fn native_notification_permission(app: &AppHandle) -> ConversationNotificationPe
     };
 
     let app_id = HSTRING::from(app.config().identifier.as_str());
-    match ToastNotificationManager::CreateToastNotifierWithId(&app_id)
-        .and_then(|notifier| notifier.Setting())
-    {
-        Ok(NotificationSetting::Enabled) => ConversationNotificationPermission::Granted,
-        Ok(_) => ConversationNotificationPermission::Denied,
+    match ToastNotificationManager::CreateToastNotifierWithId(&app_id) {
+        Ok(notifier) => match notifier.Setting() {
+            Ok(NotificationSetting::Enabled) => ConversationNotificationPermission::Granted,
+            Ok(_) => ConversationNotificationPermission::Denied,
+            Err(error) => {
+                conversation_notification_permission_from_windows_error(error.code().0)
+            }
+        },
         Err(_) => ConversationNotificationPermission::Unsupported,
     }
 }

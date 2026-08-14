@@ -4,10 +4,11 @@ use codeg_lib::db::service::conversation_notification_service;
 use codeg_lib::models::agent::AgentType;
 use codeg_lib::commands::conversation_notification::{
     claim_conversation_notification_core, conversation_notification_app_focused,
-    conversation_notification_block_reason, ConversationNotificationPermission,
-    ConversationNotificationActivationPayload, ConversationNotificationSendReason,
-    ConversationNotificationSendResult, ConversationNotificationType,
-    ConversationNotificationWindowState,
+    conversation_notification_block_reason,
+    conversation_notification_permission_from_windows_error,
+    ConversationNotificationPermission, ConversationNotificationActivationPayload,
+    ConversationNotificationSendReason, ConversationNotificationSendResult,
+    ConversationNotificationType, ConversationNotificationWindowState,
 };
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 
@@ -81,6 +82,14 @@ fn delivery_gate_prioritizes_foreground_then_permission() {
             ConversationNotificationPermission::Granted,
         ),
         None
+    );
+}
+
+#[test]
+fn missing_windows_notification_registration_allows_the_first_delivery() {
+    assert_eq!(
+        conversation_notification_permission_from_windows_error(0x80070490u32 as i32),
+        ConversationNotificationPermission::Granted
     );
 }
 
