@@ -397,11 +397,37 @@ fn collect_snapshot_files(rounds: &[RelayRound]) -> Vec<RelayFileReference> {
 }
 
 fn is_explicit_todo_tool(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.contains("todo")
-        || name
-            .split(|character: char| !character.is_ascii_alphanumeric())
-            .any(|part| matches!(part, "plan" | "planning"))
+    ["todo", "plan", "planning"]
+        .into_iter()
+        .any(|token| has_tool_name_token(name, token))
+}
+
+fn has_tool_name_token(name: &str, token: &str) -> bool {
+    let lowercase_name = name.to_ascii_lowercase();
+
+    lowercase_name.match_indices(token).any(|(start, matched)| {
+        let end = start + matched.len();
+        let starts_at_boundary = start == 0
+            || !name[..start]
+                .chars()
+                .next_back()
+                .is_some_and(|character| character.is_ascii_alphanumeric())
+            || name[start..]
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_uppercase());
+        let ends_at_boundary = end == name.len()
+            || !name[end..]
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_alphanumeric())
+            || name[end..]
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_uppercase());
+
+        starts_at_boundary && ends_at_boundary
+    })
 }
 
 fn build_canonical_context(
@@ -469,7 +495,8 @@ mod tests {
     };
 
     use super::{
-        build_relay_snapshot, fingerprint_rounds, normalize_relay_rounds, select_relay_rounds,
+        build_relay_snapshot, fingerprint_rounds, is_explicit_todo_tool, normalize_relay_rounds,
+        select_relay_rounds,
     };
 
     fn turn(id: &str, role: TurnRole, blocks: Vec<ContentBlock>) -> MessageTurn {
@@ -875,6 +902,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(snapshot.stats.todo_count, 0);
+    }
+
+    #[test]
+    fn recognizes_only_explicit_todo_or_plan_tool_name_tokens() {
+        assert!(!is_explicit_todo_tool("AutoDocument"));
+        assert!(is_explicit_todo_tool("TodoWrite"));
+        assert!(is_explicit_todo_tool("PlanTasks"));
     }
 
     #[test]
