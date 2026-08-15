@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import { extractAppCommandError } from "@/lib/app-error"
 import {
   getRelayContextByDraft,
   previewRelayContext,
   removeRelayContext,
   updateRelayContext,
 } from "@/lib/conversation-relay"
-import { extractAppCommandError } from "@/lib/app-error"
 import { onTransportReconnect, subscribe } from "@/lib/platform"
 import {
   CONVERSATION_CAPABILITIES_CHANGED_EVENT,
@@ -29,14 +29,32 @@ const DEFAULT_SCOPE: RelayScopeSelection = {
 
 interface RelayDraftOptions {
   targetDraftId: string
-  targetFolderId: number
+  targetFolderId: number | null
   targetAgentType: AgentType
   targetModel: string | null
   enabled: boolean
 }
 
+type RetryOperation =
+  | { kind: "restore" }
+  | {
+      kind: "preview"
+      sourceConversationId: number
+      scope: RelayScopeSelection
+    }
+  | { kind: "update"; scope: RelayScopeSelection }
+
+interface LocalRemoval {
+  relayId: number
+  targetDraftId: string
+}
+
 function isBudgetExceeded(error: unknown): boolean {
-  if (extractAppCommandError(error)?.code === RELAY_BUDGET_EXCEEDED) {
+  const appError = extractAppCommandError(error)
+  if (
+    appError?.code === RELAY_BUDGET_EXCEEDED ||
+    appError?.message === RELAY_BUDGET_EXCEEDED
+  ) {
     return true
   }
   if (!error || typeof error !== "object") {
@@ -47,6 +65,16 @@ function isBudgetExceeded(error: unknown): boolean {
     value.code === RELAY_BUDGET_EXCEEDED ||
     value.message === RELAY_BUDGET_EXCEEDED
   )
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError"
+}
+
+function targetSignature(agentType: AgentType, model: string | null): string {
+  return `${agentType}\u0000${model ?? ""}`
 }
 
 export function useRelayDraft({
@@ -77,77 +105,93 @@ export function useRelayDraft({
     targetModel,
     enabled,
   })
-  const generationRef = useRef(0)
-  const abortRef = useRef<AbortController | null>(null)
+  latestRef.current = {
+    targetDraftId,
+    targetFolderId,
+    targetAgentType,
+    targetModel,
+    enabled,
+  }
+
+  const operationGenerationRef = useRef(0)
+  const lifecycleGenerationRef = useRef(0)
+  const previewAbortRef = useRef<AbortController | null>(null)
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const mountedRef = useRef(true)
+  const mountedRef = useRef(false)
+  const subscriptionsReadyRef = useRef(false)
   const allowedRef = useRef(enabled)
+  const localRemovalRef = useRef<LocalRemoval | null>(null)
+  const retryOperationRef = useRef<RetryOperation | null>(null)
   const targetSignatureRef = useRef<string | null>(null)
-  const locallyRemovedIdRef = useRef<number | null>(null)
+  const configurationRefreshPendingRef = useRef(false)
 
   const commitRelay = useCallback((next: RelayContextPack | null) => {
     relayRef.current = next
     setRelay(next)
   }, [])
 
-  const abortPending = useCallback(() => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    generationRef.current += 1
+  const clearUndoTimer = useCallback(() => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    undoTimerRef.current = null
   }, [])
 
+  const invalidatePending = useCallback(() => {
+    previewAbortRef.current?.abort()
+    previewAbortRef.current = null
+    operationGenerationRef.current += 1
+    return operationGenerationRef.current
+  }, [])
+
+  const isCurrent = useCallback(
+    (generation: number, draftId: string, lifecycle: number) =>
+      mountedRef.current &&
+      operationGenerationRef.current === generation &&
+      lifecycleGenerationRef.current === lifecycle &&
+      latestRef.current.targetDraftId === draftId,
+    []
+  )
+
   const loadExisting = useCallback(async () => {
-    const requestGeneration = ++generationRef.current
+    if (!allowedRef.current || !subscriptionsReadyRef.current) return
+    const current = latestRef.current
+    const draftId = current.targetDraftId
+    const lifecycle = lifecycleGenerationRef.current
+    const generation = invalidatePending()
+    retryOperationRef.current = null
     setLoading(true)
     try {
-      const existing = await getRelayContextByDraft(
-        latestRef.current.targetDraftId
-      )
-      if (mountedRef.current && requestGeneration === generationRef.current) {
-        commitRelay(existing)
+      const existing = await getRelayContextByDraft(draftId)
+      if (isCurrent(generation, draftId, lifecycle)) commitRelay(existing)
+    } catch (error) {
+      if (isCurrent(generation, draftId, lifecycle)) {
+        retryOperationRef.current = { kind: "restore" }
       }
+      throw error
     } finally {
-      if (mountedRef.current && requestGeneration === generationRef.current) {
-        setLoading(false)
-      }
+      if (isCurrent(generation, draftId, lifecycle)) setLoading(false)
     }
-  }, [commitRelay])
+  }, [commitRelay, invalidatePending, isCurrent])
 
-  useEffect(() => {
-    latestRef.current = {
-      targetDraftId,
-      targetFolderId,
-      targetAgentType,
-      targetModel,
-      enabled,
-    }
-  }, [targetAgentType, targetDraftId, targetFolderId, targetModel, enabled])
-
-  useEffect(() => {
-    allowedRef.current = enabled
-    if (!enabled) {
-      abortPending()
-      commitRelay(null)
-      setLoading(false)
-      return
-    }
-    void loadExisting().catch(() => {})
-  }, [abortPending, commitRelay, enabled, loadExisting, targetDraftId])
-
-  const preview = useCallback(
-    async (sourceConversationId: number, scope?: RelayScopeSelection) => {
+  const runPreview = useCallback(
+    async (
+      sourceConversationId: number,
+      requestedScope?: RelayScopeSelection
+    ) => {
       if (!allowedRef.current) return
-      abortPending()
-      const controller = new AbortController()
-      abortRef.current = controller
-      const requestGeneration = ++generationRef.current
       const current = latestRef.current
-      const selectedScope = scope ?? relayRef.current?.scope ?? DEFAULT_SCOPE
+      const draftId = current.targetDraftId
+      const lifecycle = lifecycleGenerationRef.current
+      const selectedScope =
+        requestedScope ?? relayRef.current?.scope ?? DEFAULT_SCOPE
+      const generation = invalidatePending()
+      const controller = new AbortController()
+      previewAbortRef.current = controller
+      retryOperationRef.current = null
       setLoading(true)
       try {
         const next = await previewRelayContext(
           {
-            targetDraftId: current.targetDraftId,
+            targetDraftId: draftId,
             sourceConversationId,
             targetFolderId: current.targetFolderId,
             targetAgentType: current.targetAgentType,
@@ -156,17 +200,34 @@ export function useRelayDraft({
           },
           controller.signal
         )
-        if (mountedRef.current && requestGeneration === generationRef.current) {
+        if (isCurrent(generation, draftId, lifecycle)) {
+          clearUndoTimer()
+          localRemovalRef.current = null
           commitRelay(next)
         }
+      } catch (error) {
+        if (isCurrent(generation, draftId, lifecycle) && !isAbortError(error)) {
+          retryOperationRef.current = {
+            kind: "preview",
+            sourceConversationId,
+            scope: selectedScope,
+          }
+        }
+        throw error
       } finally {
-        if (mountedRef.current && requestGeneration === generationRef.current) {
-          abortRef.current = null
+        if (isCurrent(generation, draftId, lifecycle)) {
+          previewAbortRef.current = null
           setLoading(false)
         }
       }
     },
-    [abortPending, commitRelay]
+    [clearUndoTimer, commitRelay, invalidatePending, isCurrent]
+  )
+
+  const preview = useCallback(
+    (sourceConversationId: number, scope?: RelayScopeSelection) =>
+      runPreview(sourceConversationId, scope),
+    [runPreview]
   )
 
   const updateScope = useCallback(
@@ -176,128 +237,298 @@ export function useRelayDraft({
         !allowedRef.current ||
         !currentRelay ||
         currentRelay.status === "removed"
-      )
+      ) {
         return
-      const requestGeneration = ++generationRef.current
+      }
+      const current = latestRef.current
+      const draftId = current.targetDraftId
+      const lifecycle = lifecycleGenerationRef.current
+      const generation = invalidatePending()
+      retryOperationRef.current = null
       setLoading(true)
       try {
-        const current = latestRef.current
         const next = await updateRelayContext(currentRelay.id, {
           scope,
           targetAgentType: current.targetAgentType,
           targetModel: current.targetModel,
         })
-        if (mountedRef.current && requestGeneration === generationRef.current) {
-          commitRelay(next)
-        }
+        if (isCurrent(generation, draftId, lifecycle)) commitRelay(next)
       } catch (error) {
-        if (
-          mountedRef.current &&
-          requestGeneration === generationRef.current &&
-          isBudgetExceeded(error)
-        ) {
-          commitRelay({ ...currentRelay, invalidReason: RELAY_BUDGET_EXCEEDED })
-          return
+        if (isCurrent(generation, draftId, lifecycle)) {
+          retryOperationRef.current = { kind: "update", scope }
+          if (isBudgetExceeded(error)) {
+            commitRelay({
+              ...currentRelay,
+              invalidReason: RELAY_BUDGET_EXCEEDED,
+            })
+            return
+          }
         }
         throw error
       } finally {
-        if (mountedRef.current && requestGeneration === generationRef.current) {
-          setLoading(false)
-        }
+        if (isCurrent(generation, draftId, lifecycle)) setLoading(false)
       }
     },
-    [commitRelay]
+    [commitRelay, invalidatePending, isCurrent]
   )
 
-  useEffect(() => {
-    const signature = `${targetAgentType}\u0000${targetModel ?? ""}`
-    if (targetSignatureRef.current === null) {
-      targetSignatureRef.current = signature
-      return
-    }
-    if (targetSignatureRef.current === signature || !relayRef.current) return
-    targetSignatureRef.current = signature
-    void updateScope(relayRef.current.scope).catch(() => {})
-  }, [targetAgentType, targetModel, updateScope])
+  const scheduleUndoExpiry = useCallback(
+    (removed: RelayContextPack) => {
+      clearUndoTimer()
+      undoTimerRef.current = setTimeout(() => {
+        undoTimerRef.current = null
+        if (
+          mountedRef.current &&
+          latestRef.current.targetDraftId === removed.targetDraftId &&
+          relayRef.current?.id === removed.id &&
+          relayRef.current.status === "removed"
+        ) {
+          commitRelay(null)
+        }
+        if (localRemovalRef.current?.relayId === removed.id) {
+          localRemovalRef.current = null
+        }
+      }, UNDO_REMOVE_WINDOW_MS)
+    },
+    [clearUndoTimer, commitRelay]
+  )
 
   const remove = useCallback(async () => {
     const currentRelay = relayRef.current
     if (!currentRelay || currentRelay.status === "removed") return
-    abortPending()
-    const removed = await removeRelayContext(currentRelay.id)
-    if (!mountedRef.current) return
-    locallyRemovedIdRef.current = removed.id
-    commitRelay(removed)
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    undoTimerRef.current = setTimeout(() => {
-      if (mountedRef.current && relayRef.current?.id === removed.id) {
-        locallyRemovedIdRef.current = null
-        commitRelay(null)
+    const current = latestRef.current
+    const draftId = current.targetDraftId
+    const lifecycle = lifecycleGenerationRef.current
+    const generation = invalidatePending()
+    localRemovalRef.current = {
+      relayId: currentRelay.id,
+      targetDraftId: draftId,
+    }
+    retryOperationRef.current = null
+    setLoading(true)
+    try {
+      const removed = await removeRelayContext(currentRelay.id)
+      if (
+        isCurrent(generation, draftId, lifecycle) &&
+        relayRef.current?.id === currentRelay.id
+      ) {
+        commitRelay(removed)
+        scheduleUndoExpiry(removed)
       }
-    }, UNDO_REMOVE_WINDOW_MS)
-  }, [abortPending, commitRelay])
+    } catch (error) {
+      if (
+        localRemovalRef.current?.relayId === currentRelay.id &&
+        localRemovalRef.current.targetDraftId === draftId
+      ) {
+        localRemovalRef.current = null
+      }
+      throw error
+    } finally {
+      if (isCurrent(generation, draftId, lifecycle)) setLoading(false)
+    }
+  }, [commitRelay, invalidatePending, isCurrent, scheduleUndoExpiry])
 
   const undoRemove = useCallback(async () => {
     const removed = relayRef.current
     if (!removed || removed.status !== "removed") return
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    locallyRemovedIdRef.current = null
-    await preview(removed.sourceConversationId, removed.scope)
-  }, [preview])
+    await runPreview(removed.sourceConversationId, removed.scope)
+  }, [runPreview])
 
   const retry = useCallback(async () => {
+    const operation = retryOperationRef.current
+    if (operation?.kind === "restore") {
+      await loadExisting()
+      return
+    }
+    if (operation?.kind === "preview") {
+      await runPreview(operation.sourceConversationId, operation.scope)
+      return
+    }
+    if (operation?.kind === "update") {
+      await updateScope(operation.scope)
+      return
+    }
     const currentRelay = relayRef.current
-    if (!currentRelay) return
-    await updateScope(currentRelay.scope)
-  }, [updateScope])
+    if (currentRelay && currentRelay.status !== "removed") {
+      await updateScope(currentRelay.scope)
+    }
+  }, [loadExisting, runPreview, updateScope])
 
   useEffect(() => {
+    const lifecycle = ++lifecycleGenerationRef.current
     let disposed = false
-    void subscribe<ConversationCapabilitySettings>(
-      CONVERSATION_CAPABILITIES_CHANGED_EVENT,
-      (settings) => {
-        allowedRef.current = settings.relayEnabled
-        if (!settings.relayEnabled) {
-          abortPending()
-          commitRelay(null)
-          setLoading(false)
-        }
+    let subscriptionsPending = 2
+    let reconnectBeforeReady = false
+    const unsubscribers: Array<() => void> = []
+
+    mountedRef.current = true
+    subscriptionsReadyRef.current = false
+    allowedRef.current = latestRef.current.enabled
+    targetSignatureRef.current = targetSignature(
+      latestRef.current.targetAgentType,
+      latestRef.current.targetModel
+    )
+    configurationRefreshPendingRef.current = false
+    invalidatePending()
+    clearUndoTimer()
+    localRemovalRef.current = null
+    retryOperationRef.current = null
+    commitRelay(null)
+    setLoading(allowedRef.current)
+
+    const finishSubscription = () => {
+      subscriptionsPending -= 1
+      if (
+        subscriptionsPending !== 0 ||
+        disposed ||
+        lifecycleGenerationRef.current !== lifecycle
+      ) {
+        return
       }
-    ).catch(() => {})
-    void subscribe<ConversationRelayChange>(
-      CONVERSATION_RELAY_CHANGED_EVENT,
-      (change) => {
-        if (
-          change.targetDraftId !== latestRef.current.targetDraftId ||
-          disposed
-        )
-          return
-        if (
-          change.status === "removed" &&
-          locallyRemovedIdRef.current !== change.relayId
-        ) {
-          commitRelay(null)
-          return
-        }
-        if (allowedRef.current) void loadExisting().catch(() => {})
+      subscriptionsReadyRef.current = true
+      if (allowedRef.current) {
+        void loadExisting().catch(() => {})
+      } else {
+        setLoading(false)
       }
-    ).catch(() => {})
+      if (reconnectBeforeReady && allowedRef.current) {
+        void loadExisting().catch(() => {})
+      }
+    }
+
+    const retainSubscription = (subscription: Promise<() => void>) => {
+      void subscription
+        .then((unsubscribe) => {
+          if (disposed) unsubscribe()
+          else unsubscribers.push(unsubscribe)
+        })
+        .catch(() => {})
+        .finally(finishSubscription)
+    }
+
+    retainSubscription(
+      subscribe<ConversationCapabilitySettings>(
+        CONVERSATION_CAPABILITIES_CHANGED_EVENT,
+        (settings) => {
+          if (disposed || lifecycleGenerationRef.current !== lifecycle) return
+          allowedRef.current = settings.relayEnabled
+          if (!settings.relayEnabled) {
+            invalidatePending()
+            clearUndoTimer()
+            localRemovalRef.current = null
+            retryOperationRef.current = null
+            commitRelay(null)
+            setLoading(false)
+          } else if (subscriptionsReadyRef.current) {
+            void loadExisting().catch(() => {})
+          }
+        }
+      )
+    )
+
+    retainSubscription(
+      subscribe<ConversationRelayChange>(
+        CONVERSATION_RELAY_CHANGED_EVENT,
+        (change) => {
+          if (
+            disposed ||
+            lifecycleGenerationRef.current !== lifecycle ||
+            change.targetDraftId !== latestRef.current.targetDraftId
+          ) {
+            return
+          }
+          if (change.status === "removed") {
+            if (
+              localRemovalRef.current?.relayId === change.relayId &&
+              localRemovalRef.current.targetDraftId === change.targetDraftId
+            ) {
+              return
+            }
+            if (relayRef.current && relayRef.current.id !== change.relayId) {
+              return
+            }
+            invalidatePending()
+            clearUndoTimer()
+            localRemovalRef.current = null
+            retryOperationRef.current = null
+            commitRelay(null)
+            setLoading(false)
+            return
+          }
+          if (allowedRef.current && subscriptionsReadyRef.current) {
+            void loadExisting().catch(() => {})
+          }
+        }
+      )
+    )
+
     const offReconnect = onTransportReconnect(() => {
-      if (allowedRef.current) void loadExisting().catch(() => {})
+      if (
+        disposed ||
+        lifecycleGenerationRef.current !== lifecycle ||
+        !allowedRef.current
+      ) {
+        return
+      }
+      if (subscriptionsReadyRef.current) void loadExisting().catch(() => {})
+      else reconnectBeforeReady = true
     })
+
     return () => {
       disposed = true
+      if (lifecycleGenerationRef.current === lifecycle) {
+        lifecycleGenerationRef.current += 1
+      }
+      mountedRef.current = false
+      subscriptionsReadyRef.current = false
+      invalidatePending()
+      clearUndoTimer()
+      localRemovalRef.current = null
+      for (const unsubscribe of unsubscribers.splice(0)) unsubscribe()
       offReconnect?.()
     }
-  }, [abortPending, commitRelay, loadExisting])
+  }, [
+    clearUndoTimer,
+    commitRelay,
+    invalidatePending,
+    loadExisting,
+    targetDraftId,
+  ])
 
   useEffect(() => {
-    return () => {
-      mountedRef.current = false
-      abortPending()
-      if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    allowedRef.current = enabled
+    if (!enabled) {
+      invalidatePending()
+      clearUndoTimer()
+      localRemovalRef.current = null
+      retryOperationRef.current = null
+      commitRelay(null)
+      setLoading(false)
+    } else if (subscriptionsReadyRef.current) {
+      void loadExisting().catch(() => {})
     }
-  }, [abortPending])
+  }, [clearUndoTimer, commitRelay, enabled, invalidatePending, loadExisting])
+
+  useEffect(() => {
+    const signature = targetSignature(targetAgentType, targetModel)
+    if (targetSignatureRef.current === null) {
+      targetSignatureRef.current = signature
+      return
+    }
+    if (targetSignatureRef.current !== signature) {
+      targetSignatureRef.current = signature
+      configurationRefreshPendingRef.current = true
+    }
+    const currentRelay = relayRef.current
+    if (
+      configurationRefreshPendingRef.current &&
+      currentRelay &&
+      currentRelay.status !== "removed"
+    ) {
+      configurationRefreshPendingRef.current = false
+      void updateScope(currentRelay.scope).catch(() => {})
+    }
+  }, [relay, targetAgentType, targetModel, updateScope])
 
   return { relay, loading, preview, updateScope, remove, undoRemove, retry }
 }

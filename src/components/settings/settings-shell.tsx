@@ -72,7 +72,7 @@ const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   {
     href: "/settings/conversation-capabilities",
     icon: MessagesSquare,
-    label: "会话接力",
+    label: "会话能力",
   },
   {
     href: "/settings/mcp",
