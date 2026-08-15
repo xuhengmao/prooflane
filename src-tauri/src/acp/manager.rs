@@ -699,6 +699,7 @@ impl ConnectionManager {
         blocks: Vec<PromptInputBlock>,
         persisted_blocks: Vec<PromptInputBlock>,
         user_message: Option<(String, Vec<crate::acp::UserMessageBlock>)>,
+        relay_preflight: Option<crate::acp::connection::RelayPromptPreflight>,
         relay_outcome: Option<tokio::sync::oneshot::Sender<crate::acp::connection::RelayPromptOutcome>>,
     ) -> Result<(), AcpError> {
         // Reject an empty prompt BEFORE touching the concurrency gate. An empty
@@ -756,6 +757,7 @@ impl ConnectionManager {
             blocks,
             persisted_blocks,
             user_message,
+            relay_preflight,
             relay_outcome,
         });
         Ok(())
@@ -782,7 +784,8 @@ impl ConnectionManager {
     ) -> Result<(), AcpError> {
         let prompt_lock = self.clone_prompt_lock(conn_id).await?;
         let _guard = prompt_lock.lock_owned().await;
-        self.send_prompt_inner(conn_id, blocks.clone(), blocks, None, None).await
+        self.send_prompt_inner(conn_id, blocks.clone(), blocks, None, None, None)
+            .await
     }
 
     /// Send a prompt while ensuring a `Conversation` DB row is bound to this
@@ -878,6 +881,7 @@ impl ConnectionManager {
             client_message_id,
             expected_relay_marker,
             None,
+            None,
         )
         .await
     }
@@ -893,6 +897,7 @@ impl ConnectionManager {
         delegation: Option<crate::acp::delegation::spawner::DelegationLink>,
         client_message_id: Option<String>,
         expected_relay_marker: Option<crate::conversation_relay::context::RelayContextMarker>,
+        relay_preflight: crate::acp::connection::RelayPromptPreflight,
     ) -> Result<(
         Option<i32>,
         tokio::sync::oneshot::Receiver<crate::acp::connection::RelayPromptOutcome>,
@@ -908,6 +913,7 @@ impl ConnectionManager {
                 delegation,
                 client_message_id,
                 expected_relay_marker,
+                Some(relay_preflight),
                 Some(sender),
             )
             .await?;
@@ -925,6 +931,7 @@ impl ConnectionManager {
         delegation: Option<crate::acp::delegation::spawner::DelegationLink>,
         client_message_id: Option<String>,
         expected_relay_marker: Option<crate::conversation_relay::context::RelayContextMarker>,
+        relay_preflight: Option<crate::acp::connection::RelayPromptPreflight>,
         relay_outcome: Option<tokio::sync::oneshot::Sender<crate::acp::connection::RelayPromptOutcome>>,
     ) -> Result<Option<i32>, AcpError> {
         // Reject an empty prompt up front, BEFORE any side effects: linking /
@@ -1242,7 +1249,14 @@ impl ConnectionManager {
         // lifecycle subscriber's PendingReview write also never fires and the
         // row would be stuck until a follow-up `send_prompt_linked` re-flipped it.
         match self
-            .send_prompt_inner(conn_id, blocks, display_blocks, user_message, relay_outcome)
+            .send_prompt_inner(
+                conn_id,
+                blocks,
+                display_blocks,
+                user_message,
+                relay_preflight,
+                relay_outcome,
+            )
             .await
         {
             Ok(()) => {
@@ -4030,6 +4044,7 @@ mod tests {
                     text: "filler".into(),
                 }],
                 user_message: None,
+                relay_preflight: None,
                 relay_outcome: None,
             })
             .await
@@ -4045,6 +4060,7 @@ mod tests {
             vec![PromptInputBlock::Text {
                 text: "blocked".into(),
             }],
+            None,
             None,
             None,
         );

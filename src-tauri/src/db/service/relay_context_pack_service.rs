@@ -129,6 +129,7 @@ pub async fn get_active_by_draft(
     Ok(relay_context_pack::Entity::find()
         .filter(relay_context_pack::Column::TargetDraftId.eq(target_draft_id))
         .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
+        .filter(relay_context_pack::Column::InvalidReason.is_null())
         .one(conn)
         .await?)
 }
@@ -184,6 +185,7 @@ pub async fn claim_consume(
         .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(now))
         .filter(relay_context_pack::Column::Id.eq(relay_id))
         .filter(relay_context_pack::Column::Status.eq(STATUS_ATTACHED))
+        .filter(relay_context_pack::Column::InvalidReason.is_null())
         .filter(relay_context_pack::Column::ConsumeClientMessageId.is_null())
         .exec(&txn)
         .await
@@ -227,6 +229,10 @@ pub async fn mark_consumed(
             relay_context_pack::Column::ConsumedAt,
             Expr::value(Some(now)),
         )
+        .col_expr(
+            relay_context_pack::Column::InvalidReason,
+            Expr::value(Option::<String>::None),
+        )
         .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(now))
         .filter(relay_context_pack::Column::Id.eq(relay_id))
         .filter(relay_context_pack::Column::Status.eq(STATUS_ATTACHED))
@@ -259,6 +265,15 @@ pub async fn release_claim(
 ) -> Result<relay_context_pack::Model, RelayError> {
     let txn = conn.begin().await.map_err(relay_db_error)?;
     let updated = relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::Status,
+            Expr::case(
+                relay_context_pack::Column::InvalidReason.is_not_null(),
+                STATUS_INVALID,
+            )
+            .finally(STATUS_ATTACHED)
+            .into(),
+        )
         .col_expr(
             relay_context_pack::Column::ConsumeClientMessageId,
             Expr::value(Option::<String>::None),
@@ -377,7 +392,20 @@ pub async fn invalidate_unconsumed_by_source_on<C>(
 where
     C: ConnectionTrait,
 {
-    let result = relay_context_pack::Entity::update_many()
+    let marked = relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::InvalidReason,
+            Expr::value(Some(reason.to_owned())),
+        )
+        .col_expr(
+            relay_context_pack::Column::UpdatedAt,
+            Expr::value(Utc::now()),
+        )
+        .filter(relay_context_pack::Column::SourceConversationId.eq(source_conversation_id))
+        .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
+        .exec(conn)
+        .await?;
+    relay_context_pack::Entity::update_many()
         .col_expr(
             relay_context_pack::Column::Status,
             Expr::value(STATUS_INVALID),
@@ -395,7 +423,7 @@ where
         .filter(consume_not_claimed())
         .exec(conn)
         .await?;
-    Ok(result.rows_affected)
+    Ok(marked.rows_affected)
 }
 
 pub async fn list_unconsumed_by_source(
@@ -415,7 +443,6 @@ where
     Ok(relay_context_pack::Entity::find()
         .filter(relay_context_pack::Column::SourceConversationId.eq(source_conversation_id))
         .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
-        .filter(consume_not_claimed())
         .all(conn)
         .await?)
 }

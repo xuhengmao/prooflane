@@ -264,6 +264,9 @@ pub enum ConnectionCommand {
         /// prompt actually being processed. `None` for delegation children,
         /// empty prompts, unbound conversations, and non-linked senders.
         user_message: Option<(String, Vec<UserMessageBlock>)>,
+        /// Relay-only admission snapshot. The connection actor evaluates this
+        /// after all earlier config commands and before any prompt side effect.
+        relay_preflight: Option<RelayPromptPreflight>,
         /// Resolves only after the session/prompt RPC has produced an explicit
         /// response. A transport failure after dispatch is deliberately
         /// `Uncertain`, since the agent may already have accepted the prompt.
@@ -307,6 +310,20 @@ pub enum ConnectionCommand {
 pub enum RelayPromptOutcome {
     Accepted,
     Uncertain,
+    Rejected(RelayPromptRejection),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelayPromptRejection {
+    ModelChanged,
+    BudgetExceeded,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelayPromptPreflight {
+    pub expected_model: Option<String>,
+    pub expected_context_window_tokens: Option<u32>,
+    pub estimated_tokens: u32,
 }
 
 fn report_relay_prompt_accepted(
@@ -645,6 +662,44 @@ fn current_model_id_from_opts(opts: &[SessionConfigOptionInfo]) -> Option<String
 async fn current_session_model_id(state: &Arc<RwLock<SessionState>>) -> Option<String> {
     let opts = state.read().await.config_options.clone()?;
     current_model_id_from_opts(&opts)
+}
+
+fn normalized_relay_model(model: Option<&str>) -> Option<&str> {
+    model.map(str::trim).filter(|model| !model.is_empty())
+}
+
+async fn admit_relay_prompt(
+    state: &Arc<RwLock<SessionState>>,
+    preflight: Option<&RelayPromptPreflight>,
+    outcome: &mut Option<tokio::sync::oneshot::Sender<RelayPromptOutcome>>,
+) -> bool {
+    let Some(preflight) = preflight else {
+        return true;
+    };
+    let current_model = current_session_model_id(state).await;
+    let current_window = current_model
+        .as_deref()
+        .and_then(|model| crate::parsers::infer_context_window_max_tokens(Some(model)))
+        .and_then(|tokens| u32::try_from(tokens).ok());
+    let rejection = if normalized_relay_model(preflight.expected_model.as_deref())
+        != normalized_relay_model(current_model.as_deref())
+        || preflight.expected_context_window_tokens != current_window
+    {
+        Some(RelayPromptRejection::ModelChanged)
+    } else if preflight.estimated_tokens > crate::conversation_relay::relay_budget(current_window) {
+        Some(RelayPromptRejection::BudgetExceeded)
+    } else {
+        None
+    };
+    let Some(rejection) = rejection else {
+        return true;
+    };
+
+    state.write().await.turn_in_flight = false;
+    if let Some(reply) = outcome.take() {
+        let _ = reply.send(RelayPromptOutcome::Rejected(rejection));
+    }
+    false
 }
 
 /// Queue one raw `session/update` for a custom agent, handing back the ack so
@@ -6592,8 +6647,13 @@ async fn run_conversation_loop<'a>(
                 blocks,
                 persisted_blocks,
                 user_message,
+                relay_preflight,
                 relay_outcome,
             }) => {
+                let mut relay_outcome = relay_outcome;
+                if !admit_relay_prompt(state, relay_preflight.as_ref(), &mut relay_outcome).await {
+                    continue;
+                }
                 // Fingerprint the outgoing prompt for the background watcher's
                 // foreground/out-of-turn classifier BEFORE the blocks are
                 // consumed: the transcript record this prompt becomes must
@@ -6703,7 +6763,6 @@ async fn run_conversation_loop<'a>(
                 let stderr_mark = stderr_tail.mark();
                 // Use Box::pin (heap) instead of tokio::pin! (stack) so the
                 // future can be moved into a background task on cancel.
-                let mut relay_outcome = relay_outcome;
                 let mut prompt_response = Box::pin(
                     cx.clone()
                         .send_request_to(Agent, prompt_request)
@@ -14061,5 +14120,98 @@ mod tests {
 
         assert_eq!(receiver.await.unwrap(), RelayPromptOutcome::Accepted);
         assert!(pending.is_none());
+    }
+
+    #[tokio::test]
+    async fn relay_preflight_uses_the_actor_model_and_releases_the_prompt_gate() {
+        let mut session = SessionState::new(
+            "relay-model-race".to_owned(),
+            AgentType::Codex,
+            None,
+            "test-window".to_owned(),
+            None,
+        );
+        session.turn_in_flight = true;
+        session.config_options = Some(vec![SessionConfigOptionInfo {
+            id: "model".to_owned(),
+            name: "Model".to_owned(),
+            description: None,
+            category: Some("model".to_owned()),
+            kind: SessionConfigKindInfo::Select(SessionConfigSelectInfo {
+                current_value: "gpt-4o-mini".to_owned(),
+                options: Vec::new(),
+                groups: Vec::new(),
+            }),
+        }]);
+        let state = Arc::new(RwLock::new(session));
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let mut pending = Some(sender);
+        let expected_window = crate::parsers::infer_context_window_max_tokens(Some("gpt-4o"))
+            .and_then(|tokens| u32::try_from(tokens).ok());
+
+        let admitted = admit_relay_prompt(
+            &state,
+            Some(&RelayPromptPreflight {
+                expected_model: Some("gpt-4o".to_owned()),
+                expected_context_window_tokens: expected_window,
+                estimated_tokens: 1,
+            }),
+            &mut pending,
+        )
+        .await;
+
+        assert!(!admitted, "the queued model switch must reject this relay");
+        assert_eq!(
+            receiver.await.unwrap(),
+            RelayPromptOutcome::Rejected(RelayPromptRejection::ModelChanged)
+        );
+        assert!(!state.read().await.turn_in_flight);
+    }
+
+    #[tokio::test]
+    async fn relay_preflight_rejects_content_over_the_actor_budget() {
+        let model = "gpt-4o";
+        let current_window = crate::parsers::infer_context_window_max_tokens(Some(model))
+            .and_then(|tokens| u32::try_from(tokens).ok());
+        let mut session = SessionState::new(
+            "relay-budget-race".to_owned(),
+            AgentType::Codex,
+            None,
+            "test-window".to_owned(),
+            None,
+        );
+        session.turn_in_flight = true;
+        session.config_options = Some(vec![SessionConfigOptionInfo {
+            id: "model".to_owned(),
+            name: "Model".to_owned(),
+            description: None,
+            category: Some("model".to_owned()),
+            kind: SessionConfigKindInfo::Select(SessionConfigSelectInfo {
+                current_value: model.to_owned(),
+                options: Vec::new(),
+                groups: Vec::new(),
+            }),
+        }]);
+        let state = Arc::new(RwLock::new(session));
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let mut pending = Some(sender);
+
+        let admitted = admit_relay_prompt(
+            &state,
+            Some(&RelayPromptPreflight {
+                expected_model: Some(model.to_owned()),
+                expected_context_window_tokens: current_window,
+                estimated_tokens: crate::conversation_relay::relay_budget(current_window) + 1,
+            }),
+            &mut pending,
+        )
+        .await;
+
+        assert!(!admitted, "an over-budget relay must not reach the ACP wire");
+        assert_eq!(
+            receiver.await.unwrap(),
+            RelayPromptOutcome::Rejected(RelayPromptRejection::BudgetExceeded)
+        );
+        assert!(!state.read().await.turn_in_flight);
     }
 }

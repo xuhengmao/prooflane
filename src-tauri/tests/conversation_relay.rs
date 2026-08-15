@@ -1,13 +1,14 @@
+use codeg_lib::acp::connection::{ConnectionCommand, RelayPromptOutcome, RelayPromptRejection};
 use codeg_lib::acp::manager::ConnectionManager;
 use codeg_lib::acp::types::PromptInputBlock;
 use codeg_lib::commands::acp::{send_prompt_with_relay_core, AcpPromptRequest};
 use codeg_lib::commands::conversations::{
-    create_conversation_with_relay_core, relay_binding_from_parts, RelayBindingInput,
+    create_conversation_with_relay_core, get_folder_conversation_core, relay_binding_from_parts,
+    RelayBindingInput,
 };
 use codeg_lib::conversation_relay::context::{
     build_hidden_relay_block, marker_for_snapshot, strip_hidden_relay_context, RelayContextMarker,
 };
-use codeg_lib::conversation_relay::fingerprint_rounds;
 use codeg_lib::conversation_relay::service::{
     cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
     get_relay_context_by_draft_core, preview_relay_context_core,
@@ -20,10 +21,14 @@ use codeg_lib::conversation_relay::summarizer::{
     summarize_with_runner, RelayStructuredSummary, RelaySummarizer, RelaySummaryItem,
     RelaySummaryRunner,
 };
-use codeg_lib::db::entities::{conversation_capability_setting, relay_context_pack};
+use codeg_lib::conversation_relay::{
+    build_relay_snapshot, fingerprint_rounds, normalize_relay_rounds,
+};
+use codeg_lib::db::entities::{conversation, conversation_capability_setting, relay_context_pack};
 use codeg_lib::db::service::conversation_capability_service::{
     get_capabilities, set_relay_enabled,
 };
+use codeg_lib::db::service::conversation_service::update_external_id;
 use codeg_lib::db::service::relay_context_pack_service::{
     bind_to_conversation, claim_consume, create_or_replace_draft, get_active_by_draft,
     invalidate_unconsumed_by_source, mark_consumed, mark_uncertain, release_claim,
@@ -779,15 +784,56 @@ async fn invalidating_a_source_does_not_interrupt_a_claimed_relay_finalizer() {
         .await
         .unwrap();
 
-    assert_eq!(invalidated, 0);
+    assert_eq!(invalidated, 1);
+    let marked = relay_context_pack::Entity::find_by_id(1)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(marked.status, "attached");
+    assert_eq!(
+        marked.invalid_reason.as_deref(),
+        Some("relay_source_not_found")
+    );
     let consumed = mark_consumed(&db.conn, 1, "message-in-flight", "{\"immutable\":true}")
         .await
         .unwrap();
     assert_eq!(consumed.status, "consumed");
+    assert!(consumed.invalid_reason.is_none());
     assert_eq!(
         consumed.consumed_snapshot_json.as_deref(),
         Some("{\"immutable\":true}")
     );
+}
+
+#[tokio::test]
+async fn releasing_a_claim_after_source_invalidation_cannot_restore_attached() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-source-deleted")
+        .await
+        .unwrap();
+    invalidate_unconsumed_by_source(&db.conn, 1, "relay_source_not_found")
+        .await
+        .unwrap();
+
+    let released = release_claim(&db.conn, 1, "message-source-deleted")
+        .await
+        .unwrap();
+
+    assert_eq!(released.status, "invalid");
+    assert_eq!(
+        released.invalid_reason.as_deref(),
+        Some("relay_source_not_found")
+    );
+    assert!(released.consume_client_message_id.is_none());
+    assert!(get_active_by_draft(&db.conn, "draft-claim")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(matches!(
+        claim_consume(&db.conn, 1, "message-after-delete").await,
+        Err(error) if error.code == RelayErrorCode::RelayConsumeConflict
+    ));
 }
 
 #[tokio::test]
@@ -1537,6 +1583,329 @@ async fn consumed_retry_is_idempotent_after_the_connection_is_gone() {
         result.is_ok(),
         "same-id consumed retry must be a no-op: {result:?}"
     );
+}
+
+struct RelaySendCoreTranscriptFixture {
+    transcript_dir: std::path::PathBuf,
+}
+
+impl Drop for RelaySendCoreTranscriptFixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.transcript_dir);
+    }
+}
+
+async fn seed_relay_send_core_source(
+    db: &codeg_lib::db::AppDatabase,
+    folder_id: i32,
+    agent_id: &'static str,
+    session_id: &str,
+    folder_path: &str,
+) -> (i32, RelaySnapshot, RelaySendCoreTranscriptFixture) {
+    let agent_type = AgentType::Custom(agent_id);
+    let agent_dir = codeg_lib::acp::registry::registry_id_for(agent_type);
+    let transcript_dir = codeg_lib::paths::codeg_acp_transcripts_root().join(agent_dir);
+    let _ = std::fs::remove_dir_all(&transcript_dir);
+
+    codeg_lib::acp_transcript::record_header(
+        agent_dir,
+        &codeg_lib::acp_transcript::TranscriptHeader::new(
+            &agent_type.as_wire(),
+            session_id,
+            folder_path,
+            codeg_lib::acp_transcript::now_epoch_ms(),
+        ),
+    )
+    .await
+    .unwrap();
+    codeg_lib::acp_transcript::record_entry(
+        agent_dir,
+        session_id,
+        codeg_lib::acp_transcript::EntryKind::Prompt,
+        serde_json::json!([{ "type": "text", "text": "inspect the source history" }]),
+    )
+    .await
+    .unwrap();
+    let update = codeg_lib::acp_transcript::record_entry(
+        agent_dir,
+        session_id,
+        codeg_lib::acp_transcript::EntryKind::Update,
+        serde_json::json!({
+            "sessionUpdate": "agent_message_chunk",
+            "content": { "type": "text", "text": "source history inspected" }
+        }),
+    );
+    codeg_lib::acp_transcript::record_entry(
+        agent_dir,
+        session_id,
+        codeg_lib::acp_transcript::EntryKind::TurnEnd,
+        serde_json::json!({ "stopReason": "end_turn" }),
+    )
+    .await
+    .unwrap();
+    update.await.unwrap();
+
+    let source = seed_conversation(&db, folder_id, agent_type).await;
+    update_external_id(&db.conn, source, session_id.to_owned())
+        .await
+        .unwrap();
+    let (source_detail, _) = get_folder_conversation_core(&db.conn, source)
+        .await
+        .unwrap();
+    let available_rounds = normalize_relay_rounds(&source_detail.turns);
+    let scope = RelayScopeSelection {
+        scope_type: RelayScopeType::Summary,
+        selected_round_ids: vec![available_rounds[0].id.clone()],
+    };
+    let snapshot = build_relay_snapshot(
+        RelaySnapshotSource {
+            conversation_id: source,
+            folder_id,
+        },
+        scope,
+        available_rounds,
+        None,
+    )
+    .unwrap();
+
+    (
+        source,
+        snapshot,
+        RelaySendCoreTranscriptFixture { transcript_dir },
+    )
+}
+
+#[tokio::test]
+async fn relay_send_core_claims_splits_wire_content_and_persists_the_actor_outcome() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-send-core").await;
+    let (source, snapshot, _fixture) = seed_relay_send_core_source(
+        &db,
+        folder_id,
+        "relay-core-test-accepted",
+        "relay-core-test-accepted-session",
+        "C:/workspace/relay-send-core",
+    )
+    .await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let snapshot_json = serde_json::to_string(&snapshot).unwrap();
+    let estimated_tokens =
+        codeg_lib::conversation_relay::estimate_relay_tokens(&snapshot.canonical_context);
+    let pack = create_or_replace_draft(
+        &db.conn,
+        NewRelayPack {
+            target_draft_id: "draft-send-core".to_owned(),
+            source_conversation_id: source,
+            source_folder_id: folder_id,
+            scope_type: "summary".to_owned(),
+            selected_round_ids_json: serde_json::to_string(&snapshot.scope.selected_round_ids)
+                .unwrap(),
+            snapshot_json: snapshot_json.clone(),
+            source_fingerprint: fingerprint_rounds(&snapshot.included_rounds),
+            estimated_tokens: i32::try_from(estimated_tokens).unwrap(),
+            context_window_tokens: None,
+            target_model: None,
+            allowed_tokens: 4_000,
+        },
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, pack.id, "draft-send-core", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    let manager = ConnectionManager::new();
+    let mut commands = manager
+        .insert_test_connection_live(
+            "relay-send-core",
+            AgentType::Codex,
+            Some("C:/workspace/relay-send-core".into()),
+            EventEmitter::Noop,
+        )
+        .await;
+    let user_blocks = vec![PromptInputBlock::Text {
+        text: "continue the task".to_owned(),
+    }];
+    let mut send = Box::pin(send_prompt_with_relay_core(
+        &manager,
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "relay-send-core".to_owned(),
+            blocks: user_blocks.clone(),
+            folder_id: Some(folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-send-core".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some("draft-send-core".to_owned()),
+        },
+    ));
+    let command = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::select! {
+            result = &mut send => panic!("send finished before actor outcome: {result:?}"),
+            command = commands.recv() => command.expect("prompt command"),
+        }
+    })
+    .await
+    .expect("prompt must reach the connection actor");
+    let ConnectionCommand::Prompt {
+        blocks,
+        persisted_blocks,
+        user_message,
+        relay_preflight,
+        relay_outcome,
+    } = command
+    else {
+        panic!("expected prompt command")
+    };
+
+    let marker = marker_for_snapshot(pack.id, &snapshot.canonical_context);
+    assert_eq!(
+        serde_json::to_value(strip_hidden_relay_context(&blocks, Some(&marker))).unwrap(),
+        serde_json::to_value(&user_blocks).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&persisted_blocks).unwrap(),
+        serde_json::to_value(&user_blocks).unwrap()
+    );
+    assert!(user_message.is_some());
+    let preflight = relay_preflight.expect("relay preflight");
+    assert_eq!(preflight.expected_model, None);
+    assert_eq!(preflight.expected_context_window_tokens, None);
+    assert_eq!(preflight.estimated_tokens, estimated_tokens);
+    relay_outcome
+        .expect("relay outcome sender")
+        .send(RelayPromptOutcome::Accepted)
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(2), &mut send)
+        .await
+        .expect("core must finalize the actor outcome")
+        .unwrap();
+    let consumed = relay_context_pack::Entity::find_by_id(pack.id)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(consumed.status, "consumed");
+    assert_eq!(
+        consumed.consumed_snapshot_json.as_deref(),
+        Some(snapshot_json.as_str())
+    );
+    assert_eq!(
+        consumed.consume_client_message_id.as_deref(),
+        Some("message-send-core")
+    );
+}
+
+#[tokio::test]
+async fn relay_send_core_releases_claim_and_cancels_target_when_actor_rejects_model_change() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-send-model-rejected").await;
+    let (source, snapshot, _fixture) = seed_relay_send_core_source(
+        &db,
+        folder_id,
+        "relay-core-test-model-rejected",
+        "relay-core-test-model-rejected-session",
+        "C:/workspace/relay-send-model-rejected",
+    )
+    .await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let snapshot_json = serde_json::to_string(&snapshot).unwrap();
+    let pack = create_or_replace_draft(
+        &db.conn,
+        NewRelayPack {
+            target_draft_id: "draft-send-model-rejected".to_owned(),
+            source_conversation_id: source,
+            source_folder_id: folder_id,
+            scope_type: "summary".to_owned(),
+            selected_round_ids_json: serde_json::to_string(&snapshot.scope.selected_round_ids)
+                .unwrap(),
+            snapshot_json,
+            source_fingerprint: fingerprint_rounds(&snapshot.included_rounds),
+            estimated_tokens: i32::try_from(codeg_lib::conversation_relay::estimate_relay_tokens(
+                &snapshot.canonical_context,
+            ))
+            .unwrap(),
+            context_window_tokens: None,
+            target_model: None,
+            allowed_tokens: 4_000,
+        },
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, pack.id, "draft-send-model-rejected", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    let manager = ConnectionManager::new();
+    let mut commands = manager
+        .insert_test_connection_live(
+            "relay-send-model-rejected",
+            AgentType::Codex,
+            Some("C:/workspace/relay-send-model-rejected".into()),
+            EventEmitter::Noop,
+        )
+        .await;
+    let mut send = Box::pin(send_prompt_with_relay_core(
+        &manager,
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "relay-send-model-rejected".to_owned(),
+            blocks: vec![PromptInputBlock::Text {
+                text: "continue the task".to_owned(),
+            }],
+            folder_id: Some(folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-send-model-rejected".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some("draft-send-model-rejected".to_owned()),
+        },
+    ));
+    let command = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::select! {
+            result = &mut send => panic!("send finished before actor outcome: {result:?}"),
+            command = commands.recv() => command.expect("prompt command"),
+        }
+    })
+    .await
+    .expect("prompt must reach the connection actor");
+    let ConnectionCommand::Prompt { relay_outcome, .. } = command else {
+        panic!("expected prompt command")
+    };
+    relay_outcome
+        .expect("relay outcome sender")
+        .send(RelayPromptOutcome::Rejected(
+            RelayPromptRejection::ModelChanged,
+        ))
+        .unwrap();
+
+    let error = tokio::time::timeout(Duration::from_secs(2), &mut send)
+        .await
+        .expect("core must finalize the actor rejection")
+        .unwrap_err();
+    assert_eq!(error.message, "relay_model_changed");
+
+    let released = relay_context_pack::Entity::find_by_id(pack.id)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(released.status, "attached");
+    assert!(released.consume_client_message_id.is_none());
+    assert!(released.consume_attempt_state.is_none());
+
+    let target = conversation::Entity::find_by_id(target)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(target.status, conversation::ConversationStatus::Cancelled);
 }
 
 #[tokio::test]

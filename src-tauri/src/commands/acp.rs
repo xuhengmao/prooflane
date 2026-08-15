@@ -8873,8 +8873,6 @@ async fn release_relay_claim_or_uncertain(
         .map_err(|_| relay_command_error("relay_send_uncertain"))
 }
 
-const RELAY_PROMPT_OUTCOME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
-
 fn spawn_relay_outcome_finalizer(
     conn: sea_orm::DatabaseConnection,
     relay_id: i32,
@@ -8884,8 +8882,8 @@ fn spawn_relay_outcome_finalizer(
     outcome: tokio::sync::oneshot::Receiver<crate::acp::connection::RelayPromptOutcome>,
 ) -> tokio::task::JoinHandle<Result<(), AppCommandError>> {
     tokio::spawn(async move {
-        match tokio::time::timeout(RELAY_PROMPT_OUTCOME_TIMEOUT, outcome).await {
-            Ok(Ok(crate::acp::connection::RelayPromptOutcome::Accepted)) => {
+        match outcome.await {
+            Ok(crate::acp::connection::RelayPromptOutcome::Accepted) => {
                 let consumed = relay_context_pack_service::mark_consumed(
                     &conn,
                     relay_id,
@@ -8897,7 +8895,49 @@ fn spawn_relay_outcome_finalizer(
                 emit_relay_outcome(&emitter, &consumed, None);
                 Ok(())
             }
-            Ok(Ok(crate::acp::connection::RelayPromptOutcome::Uncertain)) | Ok(Err(_)) | Err(_) => {
+            Ok(crate::acp::connection::RelayPromptOutcome::Rejected(rejection)) => {
+                let released = relay_context_pack_service::release_claim(
+                    &conn,
+                    relay_id,
+                    &client_message_id,
+                )
+                .await
+                .map_err(|_| relay_command_error("relay_send_uncertain"))?;
+                if let Some(conversation_id) = released.target_conversation_id {
+                    match crate::db::service::conversation_service::update_status(
+                        &conn,
+                        conversation_id,
+                        crate::db::entities::conversation::ConversationStatus::Cancelled,
+                    )
+                    .await
+                    {
+                        Ok(_) => {
+                            crate::commands::conversations::emit_conversation_upsert(
+                                &emitter,
+                                &conn,
+                                conversation_id,
+                            )
+                            .await;
+                        }
+                        Err(error) => tracing::error!(
+                            "failed to roll back conversation {conversation_id} after relay rejection: {error}"
+                        ),
+                    }
+                }
+                let (code, error_code) = match rejection {
+                    crate::acp::connection::RelayPromptRejection::ModelChanged => (
+                        "relay_model_changed",
+                        crate::models::conversation_relay::RelayErrorCode::RelayModelChanged,
+                    ),
+                    crate::acp::connection::RelayPromptRejection::BudgetExceeded => (
+                        "relay_budget_exceeded",
+                        crate::models::conversation_relay::RelayErrorCode::RelayBudgetExceeded,
+                    ),
+                };
+                emit_relay_outcome(&emitter, &released, Some(error_code));
+                Err(relay_command_error(code))
+            }
+            Ok(crate::acp::connection::RelayPromptOutcome::Uncertain) | Err(_) => {
                 let uncertain =
                     relay_context_pack_service::mark_uncertain(&conn, relay_id, &client_message_id)
                         .await
@@ -9011,7 +9051,6 @@ pub async fn send_prompt_with_relay_core(
             };
         }
     }
-    let current_model = current_relay_target_model(manager, &request.connection_id).await?;
     let claim = relay_context_pack_service::claim_consume(&db.conn, relay_id, &client_message_id)
         .await
         .map_err(|error| relay_command_error(error.code))?;
@@ -9022,6 +9061,13 @@ pub async fn send_prompt_with_relay_core(
         // again; the persisted claim remains the recovery anchor.
         relay_context_pack_service::ConsumeClaim::AlreadyClaimed { .. } => {
             return Err(relay_command_error("relay_send_uncertain"));
+        }
+    };
+    let current_model = match current_relay_target_model(manager, &request.connection_id).await {
+        Ok(model) => model,
+        Err(error) => {
+            release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+            return Err(error);
         }
     };
     if pack.target_conversation_id != Some(conversation_id)
@@ -9058,6 +9104,13 @@ pub async fn send_prompt_with_relay_core(
         release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
         return Err(relay_command_error("relay_budget_exceeded"));
     }
+    let relay_preflight = crate::acp::connection::RelayPromptPreflight {
+        expected_model: pack.target_model.clone(),
+        expected_context_window_tokens: pack
+            .context_window_tokens
+            .and_then(|tokens| u32::try_from(tokens).ok()),
+        estimated_tokens,
+    };
     // Re-read only the round ids frozen at preview time. Newly appended source
     // turns are intentionally irrelevant; a selected turn that changed or
     // disappeared invalidates the pending relay instead of silently sending a
@@ -9111,6 +9164,7 @@ pub async fn send_prompt_with_relay_core(
             None,
             Some(client_message_id.clone()),
             Some(marker),
+            relay_preflight,
         )
         .await;
     match sent {
@@ -16088,6 +16142,7 @@ model = "gpt"
         claim_consume(&db.conn, pack.id, "message-finalizer")
             .await
             .unwrap();
+        tokio::time::pause();
 
         let broadcaster = std::sync::Arc::new(crate::web::event_bridge::WebEventBroadcaster::new());
         let mut events = broadcaster.subscribe();
@@ -16102,9 +16157,19 @@ model = "gpt"
             receiver,
         );
         drop(finalizer);
+        tokio::time::advance(std::time::Duration::from_secs(46)).await;
+        tokio::task::yield_now().await;
+        let still_claimed = get_by_id(&db.conn, pack.id).await.unwrap();
+        assert_eq!(still_claimed.status, "attached");
+        assert_eq!(
+            still_claimed.consume_attempt_state.as_deref(),
+            Some("claimed"),
+            "a slow prompt must remain pending after the old fixed timeout"
+        );
         sender
             .send(crate::acp::connection::RelayPromptOutcome::Accepted)
             .unwrap();
+        tokio::time::resume();
 
         let consumed = tokio::time::timeout(std::time::Duration::from_secs(2), async {
             loop {

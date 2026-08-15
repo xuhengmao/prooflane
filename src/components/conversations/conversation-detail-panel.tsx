@@ -149,6 +149,7 @@ import {
   resolveConversationComposerState,
   retryConversationComposerError,
 } from "./conversation-composer-state"
+import { createRelaySendAttempt } from "./relay-send-attempt"
 import { ConversationDetailHeader } from "./conversation-detail-header"
 import { SessionDetailsDialog } from "./session-details-dialog"
 import { RelayContextCard } from "./relay/relay-context-card"
@@ -1040,24 +1041,22 @@ const ConversationTabView = memo(function ConversationTabView({
       // conversation drops out of `awaiting_persist` so queue auto-flush
       // isn't blocked forever. The draft is NOT re-queued (unlike the busy
       // bounce): a deterministic failure would retry — and toast — forever.
-      const onSendFailed = () => {
-        removeOptimisticTurn(effectiveConversationId, optimisticTurn.id)
-        if (relayBindingForAttempt) {
-          setRelaySendPending(false)
-          const draftText = draft.displayText.trim()
-          if (draftText) {
-            const recoveryKey =
-              dbConvIdRef.current != null
-                ? buildConversationDraftStorageKey(dbConvIdRef.current)
-                : buildNewConversationDraftStorageKey(tabId)
-            saveMessageInputDraft(recoveryKey, draftText)
-            // MessageInput clears itself synchronously on submit. Remount its
-            // small composer surface so the saved draft is hydrated into the
-            // currently mounted input, not merely persisted for a later tab.
-            setComposerRestoreNonce((value) => value + 1)
-          }
-        }
-      }
+      const relayAttempt = createRelaySendAttempt({
+        binding: relayBindingForAttempt,
+        draftText: draft.displayText,
+        getDraftStorageKey: () =>
+          dbConvIdRef.current != null
+            ? buildConversationDraftStorageKey(dbConvIdRef.current)
+            : buildNewConversationDraftStorageKey(tabId),
+        removeOptimisticTurn: () =>
+          removeOptimisticTurn(effectiveConversationId, optimisticTurn.id),
+        setPending: setRelaySendPending,
+        saveDraft: saveMessageInputDraft,
+        restoreComposer: () => setComposerRestoreNonce((value) => value + 1),
+        clearDraft: clearMessageInputDraft,
+        clearRelay: () => clearRelayRef.current(),
+      })
+      const onSendFailed = relayAttempt.onSendFailed
 
       // Pin the tab if it was a temporary preview (single-click opened)
       if (ownTab && !ownTab.isPinned) {
@@ -1076,19 +1075,11 @@ const ConversationTabView = memo(function ConversationTabView({
           // so viewers' synthesized user turn dedups against our own optimistic
           // turn by exact id (and never suppresses a different sender's prompt).
           clientMessageId: optimisticTurn.id,
-          relayId: relayBindingForAttempt?.relayId,
-          targetDraftId: relayBindingForAttempt?.targetDraftId,
+          relayId: relayAttempt.relayId,
+          targetDraftId: relayAttempt.targetDraftId,
           onTurnInProgress,
           onSendFailed,
-          onSendSucceeded: relayBindingForAttempt
-            ? () => {
-                setRelaySendPending(false)
-                clearMessageInputDraft(
-                  buildConversationDraftStorageKey(persistedId)
-                )
-                clearRelayRef.current()
-              }
-            : undefined,
+          onSendSucceeded: relayAttempt.onSendSucceeded,
         })
         return
       }
@@ -1195,8 +1186,8 @@ const ConversationTabView = memo(function ConversationTabView({
             folderId: sendFolderId,
             conversationId: newConversationId,
             clientMessageId: optimisticTurn.id,
-            relayId: relayBinding?.relayId,
-            targetDraftId: relayBinding?.targetDraftId,
+            relayId: relayAttempt.relayId,
+            targetDraftId: relayAttempt.targetDraftId,
             onTurnInProgress,
             onSendFailed,
             onSendSucceeded: () => {
