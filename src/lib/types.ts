@@ -375,6 +375,19 @@ export interface ConversationCapabilitySettings {
   relayEnabled: boolean
 }
 
+export const CONVERSATION_CAPABILITIES_CHANGED_EVENT =
+  "conversation-capabilities://changed"
+export const CONVERSATION_RELAY_CHANGED_EVENT = "conversation-relay://changed"
+export const RELAY_BUDGET_EXCEEDED = "relay_budget_exceeded"
+
+/** Safe cross-window relay change notification. It deliberately omits context. */
+export interface ConversationRelayChange {
+  relayId: number
+  targetDraftId: string
+  status: string
+  errorCode?: string
+}
+
 export interface RelayPreviewInput {
   targetDraftId: string
   sourceConversationId: number
