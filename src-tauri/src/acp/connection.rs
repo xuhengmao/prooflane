@@ -250,6 +250,10 @@ pub enum SteerOutcome {
 pub enum ConnectionCommand {
     Prompt {
         blocks: Vec<PromptInputBlock>,
+        /// Blocks safe to persist in codeg's transcript. Relay requests retain
+        /// their complete `blocks` on the ACP wire but provide this projection
+        /// with the authenticated hidden context removed.
+        persisted_blocks: Vec<PromptInputBlock>,
         /// Pre-projected cross-client user-message broadcast (`message_id` +
         /// user blocks), computed by the manager under the prompt lock. The
         /// loop emits it as `AcpEvent::UserMessage` right before issuing the
@@ -258,6 +262,10 @@ pub enum ConnectionCommand {
         /// prompt actually being processed. `None` for delegation children,
         /// empty prompts, unbound conversations, and non-linked senders.
         user_message: Option<(String, Vec<UserMessageBlock>)>,
+        /// Resolves only after the session/prompt RPC has produced an explicit
+        /// response. A transport failure after dispatch is deliberately
+        /// `Uncertain`, since the agent may already have accepted the prompt.
+        relay_outcome: Option<tokio::sync::oneshot::Sender<RelayPromptOutcome>>,
     },
     SetMode {
         mode_id: String,
@@ -291,6 +299,12 @@ pub enum ConnectionCommand {
         reply: tokio::sync::oneshot::Sender<Result<SteerOutcome, AcpError>>,
     },
     Disconnect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelayPromptOutcome {
+    Accepted,
+    Uncertain,
 }
 
 /// Sentinel string embedded in a `sacp::Error` when the Initialize
@@ -6571,13 +6585,15 @@ async fn run_conversation_loop<'a>(
         match cmd {
             Some(ConnectionCommand::Prompt {
                 blocks,
+                persisted_blocks,
                 user_message,
+                relay_outcome,
             }) => {
                 // Fingerprint the outgoing prompt for the background watcher's
                 // foreground/out-of-turn classifier BEFORE the blocks are
                 // consumed: the transcript record this prompt becomes must
                 // classify as wire-rendered foreground, not overlay.
-                prompt_ledger.record_prompt_blocks(&blocks);
+                prompt_ledger.record_prompt_blocks(&persisted_blocks);
                 // Cursor's ACP store carries no per-turn timestamps at all
                 // (see `crate::turn_timings`), so codeg journals its own
                 // observation of the turn span: hash + ordinal here (before
@@ -6589,7 +6605,7 @@ async fn run_conversation_loop<'a>(
                 // or not).
                 let turn_timing_prep = matches!(agent_type, AgentType::Cursor).then(|| {
                     cursor_turn_ord += 1;
-                    let text: String = blocks
+                    let text: String = persisted_blocks
                         .iter()
                         .filter_map(|b| match b {
                             PromptInputBlock::Text { text } => Some(text.as_str()),
@@ -6599,6 +6615,7 @@ async fn run_conversation_loop<'a>(
                     (crate::turn_timings::prompt_hash(&text), cursor_turn_ord)
                 });
                 let prompt_blocks = map_prompt_blocks(blocks);
+                let persisted_prompt_blocks = map_prompt_blocks(persisted_blocks);
                 if prompt_blocks.is_empty() {
                     // Defensive: the manager rejects empty prompts before the
                     // concurrency gate is set / the command is enqueued (see
@@ -6669,7 +6686,7 @@ async fn run_conversation_loop<'a>(
                 // order matches the wire order even if the agent replies
                 // instantly — and awaited, so the replay gate can never see
                 // this conversation as transcript-less (see `record_prompt`).
-                record_prompt(agent_type, &sid.0, &prompt_blocks).await;
+                record_prompt(agent_type, &sid.0, &persisted_prompt_blocks).await;
                 let turn_started_at_ms = crate::acp_transcript::now_epoch_ms();
                 let prompt_request = PromptRequest::new(sid.clone(), prompt_blocks);
                 // Snapshot the stderr write position BEFORE the request is
@@ -6681,6 +6698,7 @@ async fn run_conversation_loop<'a>(
                 let stderr_mark = stderr_tail.mark();
                 // Use Box::pin (heap) instead of tokio::pin! (stack) so the
                 // future can be moved into a background task on cancel.
+                let mut relay_outcome = relay_outcome;
                 let mut prompt_response = Box::pin(
                     cx.clone()
                         .send_request_to(Agent, prompt_request)
@@ -6919,7 +6937,19 @@ async fn run_conversation_loop<'a>(
                             }
                         }
                         prompt_result = &mut prompt_response => {
-                            let reason = prompt_result?.stop_reason;
+                            let prompt_result = match prompt_result {
+                                Ok(result) => result,
+                                Err(error) => {
+                                    if let Some(reply) = relay_outcome.take() {
+                                        let _ = reply.send(RelayPromptOutcome::Uncertain);
+                                    }
+                                    return Err(error.into());
+                                }
+                            };
+                            if let Some(reply) = relay_outcome.take() {
+                                let _ = reply.send(RelayPromptOutcome::Accepted);
+                            }
+                            let reason = prompt_result.stop_reason;
                             if !tracked_terminal_tool_calls.is_empty() {
                                 poll_tracked_terminal_tool_calls(
                                     terminal_runtime.as_ref(),
@@ -7130,6 +7160,9 @@ async fn run_conversation_loop<'a>(
                                     let _ = reply.send(outcome);
                                 }
                                 Some(ConnectionCommand::Cancel) => {
+                                    if let Some(reply) = relay_outcome.take() {
+                                        let _ = reply.send(RelayPromptOutcome::Uncertain);
+                                    }
                                     // Send CancelNotification to agent to stop the current turn
                                     let _ = cx.send_notification_to(
                                         Agent,
@@ -7222,6 +7255,9 @@ async fn run_conversation_loop<'a>(
                                     break;
                                 }
                                 Some(ConnectionCommand::Disconnect) | None => {
+                                    if let Some(reply) = relay_outcome.take() {
+                                        let _ = reply.send(RelayPromptOutcome::Uncertain);
+                                    }
                                     tracing::info!(
                                         "[ACP] disconnect requested during prompting; connection_id={conn_id}"
                                     );

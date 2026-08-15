@@ -24,7 +24,7 @@ use crate::acp::types::{
 };
 #[cfg(feature = "tauri-runtime")]
 use crate::acp::types::{ConnectionInfo, ForkResultInfo};
-use crate::app_error::AppCommandError;
+use crate::app_error::{AppCommandError, AppErrorCode};
 use crate::conversation_relay::context::{build_hidden_relay_block, marker_for_snapshot};
 use crate::db::service::{conversation_capability_service, relay_context_pack_service};
 use crate::db::service::agent_setting_service;
@@ -8654,6 +8654,47 @@ fn relay_command_error(code: impl ToString) -> AppCommandError {
     AppCommandError::invalid_input(code.to_string())
 }
 
+fn acp_prompt_command_error(error: AcpError) -> AppCommandError {
+    if matches!(error, AcpError::TurnInProgress) {
+        AppCommandError::new(AppErrorCode::TurnInProgress, error.to_string())
+    } else {
+        AppCommandError::task_execution_failed(error.to_string())
+    }
+}
+
+async fn release_relay_claim_or_uncertain(
+    db: &AppDatabase,
+    relay_id: i32,
+    client_message_id: &str,
+) -> Result<(), AppCommandError> {
+    relay_context_pack_service::release_claim(&db.conn, relay_id, client_message_id)
+        .await
+        .map(|_| ())
+        .map_err(|_| relay_command_error("relay_send_uncertain"))
+}
+
+async fn current_relay_target_model(
+    manager: &ConnectionManager,
+    connection_id: &str,
+) -> Result<Option<String>, AppCommandError> {
+    let state = manager
+        .get_state(connection_id)
+        .await
+        .ok_or_else(|| relay_command_error("relay_consume_conflict"))?;
+    let options = state.read().await.config_options.clone();
+    Ok(options.and_then(|options| {
+        options.into_iter().find_map(|option| {
+            (option.category.as_deref() == Some("model")).then_some(option)
+        })
+        .and_then(|option| match option.kind {
+            crate::acp::types::SessionConfigKindInfo::Select(select) => {
+                (!select.current_value.is_empty()).then_some(select.current_value)
+            }
+            _ => None,
+        })
+    }))
+}
+
 pub async fn send_prompt_with_relay_core(
     manager: &ConnectionManager,
     db: &AppDatabase,
@@ -8672,7 +8713,7 @@ pub async fn send_prompt_with_relay_core(
             )
             .await
             .map(|_| ())
-            .map_err(|error| AppCommandError::task_execution_failed(error.to_string()));
+            .map_err(acp_prompt_command_error);
     };
     let client_message_id = request
         .client_message_id
@@ -8691,6 +8732,14 @@ pub async fn send_prompt_with_relay_core(
     if !settings.relay_enabled {
         return Err(relay_command_error("relay_disabled"));
     }
+    let current_model = current_relay_target_model(manager, &request.connection_id).await?;
+    if let Ok(existing) = relay_context_pack_service::get_by_id(&db.conn, relay_id).await {
+        if existing.status == "consumed"
+            && existing.consume_client_message_id.as_deref() == Some(client_message_id.as_str())
+        {
+            return Ok(());
+        }
+    }
     let claim = relay_context_pack_service::claim_consume(&db.conn, relay_id, &client_message_id)
         .await
         .map_err(|error| relay_command_error(error.code))?;
@@ -8704,11 +8753,30 @@ pub async fn send_prompt_with_relay_core(
         }
     };
     if pack.target_conversation_id != Some(conversation_id) || pack.target_draft_id != target_draft_id {
-        let _ = relay_context_pack_service::release_claim(&db.conn, relay_id, &client_message_id).await;
+        release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
         return Err(relay_command_error("relay_consume_conflict"));
     }
-    let snapshot: crate::models::conversation_relay::RelaySnapshot = serde_json::from_str(&pack.snapshot_json)
-        .map_err(|_| relay_command_error("relay_source_unavailable"))?;
+    let snapshot: crate::models::conversation_relay::RelaySnapshot = match serde_json::from_str(&pack.snapshot_json) {
+        Ok(snapshot) => snapshot,
+        Err(_) => {
+            release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+            return Err(relay_command_error("relay_source_unavailable"));
+        }
+    };
+    let current_window = current_model
+        .as_deref()
+        .and_then(|model| crate::parsers::infer_context_window_max_tokens(Some(model)))
+        .and_then(|tokens| u32::try_from(tokens).ok());
+    if pack.context_window_tokens.and_then(|tokens| u32::try_from(tokens).ok()) != current_window {
+        release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+        return Err(relay_command_error("relay_model_changed"));
+    }
+    let allowed_tokens = crate::conversation_relay::relay_budget(current_window);
+    let estimated_tokens = crate::conversation_relay::estimate_relay_tokens(&snapshot.canonical_context);
+    if estimated_tokens > allowed_tokens {
+        release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+        return Err(relay_command_error("relay_budget_exceeded"));
+    }
     // Re-read only the round ids frozen at preview time. Newly appended source
     // turns are intentionally irrelevant; a selected turn that changed or
     // disappeared invalidates the pending relay instead of silently sending a
@@ -8720,8 +8788,8 @@ pub async fn send_prompt_with_relay_core(
     .await {
         Ok((detail, _)) => detail,
         Err(_) => {
-            let _ = relay_context_pack_service::release_claim(&db.conn, relay_id, &client_message_id).await;
-            return Err(relay_command_error("relay_source_unavailable"));
+            release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+            return Err(relay_command_error("relay_source_not_found"));
         }
     };
     let current_rounds = crate::conversation_relay::normalize_relay_rounds(&source_detail.turns);
@@ -8738,14 +8806,14 @@ pub async fn send_prompt_with_relay_core(
     let (current_selected, original_selected) = match (current_selected, original_selected) {
         (Ok(current), Ok(original)) => (current, original),
         (Err(error), _) | (_, Err(error)) => {
-            let _ = relay_context_pack_service::release_claim(&db.conn, relay_id, &client_message_id).await;
+            release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
             return Err(error);
         }
     };
     if crate::conversation_relay::fingerprint_rounds(&current_selected)
         != crate::conversation_relay::fingerprint_rounds(&original_selected)
     {
-        let _ = relay_context_pack_service::release_claim(&db.conn, relay_id, &client_message_id).await;
+        release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
         return Err(relay_command_error("relay_rounds_changed"));
     }
     let marker = marker_for_snapshot(relay_id, &snapshot.canonical_context);
@@ -8753,7 +8821,7 @@ pub async fn send_prompt_with_relay_core(
     wire_blocks.push(build_hidden_relay_block(&marker, &snapshot.canonical_context));
     wire_blocks.extend(request.blocks);
     let sent = manager
-        .send_prompt_linked_with_message_id_and_relay_marker(
+        .send_prompt_linked_with_message_id_and_relay_marker_with_outcome(
             db,
             &request.connection_id,
             wire_blocks,
@@ -8765,17 +8833,28 @@ pub async fn send_prompt_with_relay_core(
         )
         .await;
     match sent {
-        Ok(_) => {
-            // Queue admission is not an ACP acknowledgement. Persist the
-            // uncertain outcome so automatic retries cannot duplicate context.
-            relay_context_pack_service::mark_uncertain(&db.conn, relay_id, &client_message_id)
+        Ok((_, outcome)) => match outcome.await {
+            Ok(crate::acp::connection::RelayPromptOutcome::Accepted) => {
+                relay_context_pack_service::mark_consumed(
+                    &db.conn,
+                    relay_id,
+                    &client_message_id,
+                    &pack.snapshot_json,
+                )
                 .await
                 .map_err(|_| relay_command_error("relay_send_uncertain"))?;
-            Ok(())
+                Ok(())
+            }
+            Ok(crate::acp::connection::RelayPromptOutcome::Uncertain) | Err(_) => {
+                relay_context_pack_service::mark_uncertain(&db.conn, relay_id, &client_message_id)
+                    .await
+                    .map_err(|_| relay_command_error("relay_send_uncertain"))?;
+                Err(relay_command_error("relay_send_uncertain"))
+            }
         }
         Err(error) => {
-            let _ = relay_context_pack_service::release_claim(&db.conn, relay_id, &client_message_id).await;
-            Err(AppCommandError::task_execution_failed(error.to_string()))
+            release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+            Err(acp_prompt_command_error(error))
         }
     }
 }

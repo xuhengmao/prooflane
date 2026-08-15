@@ -349,7 +349,10 @@ pub async fn reparent_folder_conversations(
     Ok(res.rows_affected)
 }
 
-pub async fn soft_delete(conn: &DatabaseConnection, conversation_id: i32) -> Result<(), DbError> {
+pub async fn soft_delete<C>(conn: &C, conversation_id: i32) -> Result<(), DbError>
+where
+    C: ConnectionTrait,
+{
     let conv = conversation::Entity::find_by_id(conversation_id)
         .filter(conversation::Column::DeletedAt.is_null())
         .one(conn)

@@ -383,6 +383,7 @@ const ConversationTabView = memo(function ConversationTabView({
   const mountedRef = useRef(true)
   const selectedAgentRef = useRef(selectedAgent)
   const createConversationPendingRef = useRef(false)
+  const [composerRestoreNonce, setComposerRestoreNonce] = useState(0)
   const relayForSendRef = useRef<{
     relayId: number
     targetDraftId: string
@@ -1038,6 +1039,23 @@ const ConversationTabView = memo(function ConversationTabView({
       // bounce): a deterministic failure would retry — and toast — forever.
       const onSendFailed = () => {
         removeOptimisticTurn(effectiveConversationId, optimisticTurn.id)
+        if (relayForSendRef.current) {
+          const draftText = draft.displayText.trim()
+          if (draftText) {
+            const recoveryKey =
+              dbConvIdRef.current != null
+                ? buildConversationDraftStorageKey(dbConvIdRef.current)
+                : buildNewConversationDraftStorageKey(tabId)
+            saveMessageInputDraft(
+              recoveryKey,
+              draftText
+            )
+            // MessageInput clears itself synchronously on submit. Remount its
+            // small composer surface so the saved draft is hydrated into the
+            // currently mounted input, not merely persisted for a later tab.
+            setComposerRestoreNonce((value) => value + 1)
+          }
+        }
       }
 
       // Pin the tab if it was a temporary preview (single-click opened)
@@ -1156,8 +1174,6 @@ const ConversationTabView = memo(function ConversationTabView({
               effectiveConversationId
             )
           }
-          clearMessageInputDraft(buildNewConversationDraftStorageKey(tabId))
-          if (relayBinding) clearRelayRef.current()
           refreshConversations()
 
           // Now that the row exists, kick off the actual prompt with the
@@ -1171,6 +1187,10 @@ const ConversationTabView = memo(function ConversationTabView({
             targetDraftId: relayBinding?.targetDraftId,
             onTurnInProgress,
             onSendFailed,
+            onSendSucceeded: () => {
+              clearMessageInputDraft(buildNewConversationDraftStorageKey(tabId))
+              if (relayBinding) clearRelayRef.current()
+            },
           })
         } catch (e) {
           console.error("[ConversationTabView] create conversation:", e)
@@ -1793,6 +1813,7 @@ const ConversationTabView = memo(function ConversationTabView({
 
   return (
     <ConversationShell
+      key={`composer-${composerRestoreNonce}`}
       topBanner={
         <>
           <SessionConfigStaleBanner contextKey={tabId} />
@@ -1937,6 +1958,7 @@ const ConversationTabView = memo(function ConversationTabView({
                   </div>
                 )}
                 <ChatInput
+                  key={`composer-${composerRestoreNonce}`}
                   {...composerErrorState}
                   // composerConnStatus (not connStatus): a chat draft mid-reconnect
                   // reads "connecting" until the connection's cwd matches, so the

@@ -251,9 +251,7 @@ pub async fn create_conversation(
     Json(params): Json<CreateConversationParams>,
 ) -> Result<Json<i32>, AppCommandError> {
     let db = &state.db;
-    let relay = params.relay_id.zip(params.target_draft_id).map(|(relay_id, target_draft_id)| {
-        conv_commands::RelayBindingInput { relay_id, target_draft_id }
-    });
+    let relay = conv_commands::relay_binding_from_parts(params.relay_id, params.target_draft_id)?;
     let result = conv_commands::create_conversation_with_relay_core(
         &db.conn,
         params.folder_id,
@@ -282,9 +280,7 @@ pub async fn create_chat_conversation(
     Extension(state): Extension<Arc<AppState>>,
     Json(params): Json<CreateChatConversationParams>,
 ) -> Result<Json<conv_commands::CreateChatConversationResult>, AppCommandError> {
-    let relay = params.relay_id.zip(params.target_draft_id).map(|(relay_id, target_draft_id)| {
-        conv_commands::RelayBindingInput { relay_id, target_draft_id }
-    });
+    let relay = conv_commands::relay_binding_from_parts(params.relay_id, params.target_draft_id)?;
     let result = conv_commands::create_chat_conversation_with_relay_core(
         &state.db.conn,
         &state.data_dir,

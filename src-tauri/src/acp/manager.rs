@@ -697,7 +697,9 @@ impl ConnectionManager {
         &self,
         conn_id: &str,
         blocks: Vec<PromptInputBlock>,
+        persisted_blocks: Vec<PromptInputBlock>,
         user_message: Option<(String, Vec<crate::acp::UserMessageBlock>)>,
+        relay_outcome: Option<tokio::sync::oneshot::Sender<crate::acp::connection::RelayPromptOutcome>>,
     ) -> Result<(), AcpError> {
         // Reject an empty prompt BEFORE touching the concurrency gate. An empty
         // prompt produces no turn — and thus no `TurnComplete` to clear the gate
@@ -752,7 +754,9 @@ impl ConnectionManager {
         }
         permit.send(ConnectionCommand::Prompt {
             blocks,
+            persisted_blocks,
             user_message,
+            relay_outcome,
         });
         Ok(())
     }
@@ -778,7 +782,7 @@ impl ConnectionManager {
     ) -> Result<(), AcpError> {
         let prompt_lock = self.clone_prompt_lock(conn_id).await?;
         let _guard = prompt_lock.lock_owned().await;
-        self.send_prompt_inner(conn_id, blocks, None).await
+        self.send_prompt_inner(conn_id, blocks.clone(), blocks, None, None).await
     }
 
     /// Send a prompt while ensuring a `Conversation` DB row is bound to this
@@ -857,12 +861,71 @@ impl ConnectionManager {
         &self,
         db: &AppDatabase,
         conn_id: &str,
+        blocks: Vec<PromptInputBlock>,
+        folder_id: Option<i32>,
+        conversation_id: Option<i32>,
+        delegation: Option<crate::acp::delegation::spawner::DelegationLink>,
+        client_message_id: Option<String>,
+        expected_relay_marker: Option<crate::conversation_relay::context::RelayContextMarker>,
+    ) -> Result<Option<i32>, AcpError> {
+        self.send_prompt_linked_with_message_id_and_relay_marker_inner(
+            db,
+            conn_id,
+            blocks,
+            folder_id,
+            conversation_id,
+            delegation,
+            client_message_id,
+            expected_relay_marker,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_prompt_linked_with_message_id_and_relay_marker_with_outcome(
+        &self,
+        db: &AppDatabase,
+        conn_id: &str,
+        blocks: Vec<PromptInputBlock>,
+        folder_id: Option<i32>,
+        conversation_id: Option<i32>,
+        delegation: Option<crate::acp::delegation::spawner::DelegationLink>,
+        client_message_id: Option<String>,
+        expected_relay_marker: Option<crate::conversation_relay::context::RelayContextMarker>,
+    ) -> Result<(
+        Option<i32>,
+        tokio::sync::oneshot::Receiver<crate::acp::connection::RelayPromptOutcome>,
+    ), AcpError> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let conversation_id = self
+            .send_prompt_linked_with_message_id_and_relay_marker_inner(
+                db,
+                conn_id,
+                blocks,
+                folder_id,
+                conversation_id,
+                delegation,
+                client_message_id,
+                expected_relay_marker,
+                Some(sender),
+            )
+            .await?;
+        Ok((conversation_id, receiver))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn send_prompt_linked_with_message_id_and_relay_marker_inner(
+        &self,
+        db: &AppDatabase,
+        conn_id: &str,
         mut blocks: Vec<PromptInputBlock>,
         folder_id: Option<i32>,
         conversation_id: Option<i32>,
         delegation: Option<crate::acp::delegation::spawner::DelegationLink>,
         client_message_id: Option<String>,
         expected_relay_marker: Option<crate::conversation_relay::context::RelayContextMarker>,
+        relay_outcome: Option<tokio::sync::oneshot::Sender<crate::acp::connection::RelayPromptOutcome>>,
     ) -> Result<Option<i32>, AcpError> {
         // Reject an empty prompt up front, BEFORE any side effects: linking /
         // creating the conversation row, flipping it to InProgress, or emitting
@@ -1178,7 +1241,10 @@ impl ConnectionManager {
         // for a prompt that never reached the agent, so without this the
         // lifecycle subscriber's PendingReview write also never fires and the
         // row would be stuck until a follow-up `send_prompt_linked` re-flipped it.
-        match self.send_prompt_inner(conn_id, blocks, user_message).await {
+        match self
+            .send_prompt_inner(conn_id, blocks, display_blocks, user_message, relay_outcome)
+            .await
+        {
             Ok(()) => {
                 // The prompt reached the agent: surface it to the chat-channel
                 // "user message" event feed. Notification-only — never gates the
@@ -3960,7 +4026,11 @@ mod tests {
                 blocks: vec![PromptInputBlock::Text {
                     text: "filler".into(),
                 }],
+                persisted_blocks: vec![PromptInputBlock::Text {
+                    text: "filler".into(),
+                }],
                 user_message: None,
+                relay_outcome: None,
             })
             .await
             .unwrap();
@@ -3972,6 +4042,10 @@ mod tests {
             vec![PromptInputBlock::Text {
                 text: "blocked".into(),
             }],
+            vec![PromptInputBlock::Text {
+                text: "blocked".into(),
+            }],
+            None,
             None,
         );
         let res = tokio::time::timeout(std::time::Duration::from_millis(50), fut).await;

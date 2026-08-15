@@ -24,7 +24,7 @@ use codeg_lib::db::service::relay_context_pack_service::{
 };
 use codeg_lib::db::test_helpers::{fresh_in_memory_db, seed_conversation, seed_folder};
 use codeg_lib::commands::conversations::{
-    create_conversation_with_relay_core, RelayBindingInput,
+    create_conversation_with_relay_core, relay_binding_from_parts, RelayBindingInput,
 };
 use codeg_lib::acp::types::PromptInputBlock;
 use codeg_lib::models::agent::AgentType;
@@ -1286,4 +1286,18 @@ async fn restore_remove_and_consumed_provenance_use_stable_views() {
         .await
         .unwrap()
         .is_none());
+}
+
+#[test]
+fn relay_binding_rejects_single_sided_request_fields() {
+    assert!(relay_binding_from_parts(Some(1), None).is_err());
+    assert!(relay_binding_from_parts(None, Some("draft-1".to_owned())).is_err());
+    assert!(relay_binding_from_parts(None, None).unwrap().is_none());
+    assert_eq!(
+        relay_binding_from_parts(Some(1), Some("draft-1".to_owned()))
+            .unwrap()
+            .unwrap()
+            .relay_id,
+        1
+    );
 }

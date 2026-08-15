@@ -2,7 +2,7 @@ use chrono::Utc;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, DatabaseConnection, DatabaseTransaction,
-    EntityTrait, QueryFilter, Set, TransactionTrait,
+    ConnectionTrait, EntityTrait, QueryFilter, Set, TransactionTrait,
 };
 
 use crate::db::entities::relay_context_pack;
@@ -57,6 +57,13 @@ where
         .await
         .map_err(relay_db_error)?
         .ok_or_else(|| relay_error(RelayErrorCode::RelaySourceNotFound))
+}
+
+pub async fn get_by_id(
+    conn: &DatabaseConnection,
+    relay_id: i32,
+) -> Result<relay_context_pack::Model, RelayError> {
+    find_pack(conn, relay_id).await
 }
 
 pub async fn create_or_replace_draft(
@@ -307,6 +314,19 @@ pub async fn invalidate_unconsumed_by_source(
     reason: &str,
 ) -> Result<u64, DbError> {
     let txn = conn.begin().await?;
+    let result = invalidate_unconsumed_by_source_on(&txn, source_conversation_id, reason).await?;
+    txn.commit().await?;
+    Ok(result)
+}
+
+pub async fn invalidate_unconsumed_by_source_on<C>(
+    conn: &C,
+    source_conversation_id: i32,
+    reason: &str,
+) -> Result<u64, DbError>
+where
+    C: ConnectionTrait,
+{
     let result = relay_context_pack::Entity::update_many()
         .col_expr(
             relay_context_pack::Column::Status,
@@ -322,8 +342,28 @@ pub async fn invalidate_unconsumed_by_source(
         )
         .filter(relay_context_pack::Column::SourceConversationId.eq(source_conversation_id))
         .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
-        .exec(&txn)
+        .exec(conn)
         .await?;
-    txn.commit().await?;
     Ok(result.rows_affected)
+}
+
+pub async fn list_unconsumed_by_source(
+    conn: &DatabaseConnection,
+    source_conversation_id: i32,
+) -> Result<Vec<relay_context_pack::Model>, DbError> {
+    list_unconsumed_by_source_on(conn, source_conversation_id).await
+}
+
+pub async fn list_unconsumed_by_source_on<C>(
+    conn: &C,
+    source_conversation_id: i32,
+) -> Result<Vec<relay_context_pack::Model>, DbError>
+where
+    C: ConnectionTrait,
+{
+    Ok(relay_context_pack::Entity::find()
+        .filter(relay_context_pack::Column::SourceConversationId.eq(source_conversation_id))
+        .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
+        .all(conn)
+        .await?)
 }

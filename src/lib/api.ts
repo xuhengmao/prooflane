@@ -263,7 +263,7 @@ export async function acpPrompt(
   targetDraftId: string | null = null
 ): Promise<void> {
   try {
-    await getTransport().call("acp_prompt", {
+    const payload: Record<string, unknown> = {
       connectionId,
       // Strip in every mode where the prompt leaves through an HTTP body:
       // pure web (`!isDesktop`) and desktop-attached-to-remote-workspace.
@@ -274,9 +274,12 @@ export async function acpPrompt(
       folderId,
       conversationId,
       clientMessageId,
-      relayId,
-      targetDraftId,
-    })
+    }
+    if (relayId !== null && targetDraftId !== null) {
+      payload.relayId = relayId
+      payload.targetDraftId = targetDraftId
+    }
+    await getTransport().call("acp_prompt", payload)
   } catch (e) {
     if (isTurnInProgressRejection(e)) throw new TurnBusyError()
     throw e

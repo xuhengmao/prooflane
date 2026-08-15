@@ -57,6 +57,7 @@ export interface SendOptions {
   clientMessageId?: string | null
   relayId?: number
   targetDraftId?: string
+  onSendSucceeded?: () => void
   onTurnInProgress?: () => void
   onSendFailed?: (error: unknown) => void
 }
@@ -406,6 +407,7 @@ export function useConnectionLifecycle({
       touchActivity(contextKey)
       const onTurnInProgress = opts?.onTurnInProgress
       const onSendFailed = opts?.onSendFailed
+      const onSendSucceeded = opts?.onSendSucceeded
       void (async () => {
         const currentModeId = modeIdRef.current
         if (modeId && modeId !== currentModeId) {
@@ -415,13 +417,18 @@ export function useConnectionLifecycle({
           modeIdRef.current = modeId
         }
         await sendPrompt(draft.blocks, opts)
+        onSendSucceeded?.()
       })().catch((e: unknown) => {
         if (e instanceof TurnBusyError) {
           // A turn was already in flight on the connection (another
           // co-controlling client, or a "prompting" status this client hadn't
           // observed yet). Not an error — the draft is re-queued by the caller
           // so it auto-sends when the current turn finishes.
-          onTurnInProgress?.()
+          if (opts?.relayId !== undefined) {
+            onSendFailed?.(e)
+          } else {
+            onTurnInProgress?.()
+          }
           return
         }
         console.error("[ConnLifecycle] sendPrompt:", e)

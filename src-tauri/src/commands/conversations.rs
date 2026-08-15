@@ -27,9 +27,9 @@ use crate::parsers::{
     ParseError,
 };
 use crate::web::event_bridge::{
-    emit_event, ConversationChange, ConversationsBulkChanged, EventEmitter, ImportScanProgress,
+    emit_event, ConversationChange, ConversationRelayChange, ConversationsBulkChanged, EventEmitter, ImportScanProgress,
     TabsChanged, CONVERSATIONS_BULK_CHANGED_EVENT, CONVERSATION_CHANGED_EVENT,
-    IMPORT_SCAN_PROGRESS_EVENT, TABS_CHANGED_EVENT,
+    CONVERSATION_RELAY_CHANGED_EVENT, IMPORT_SCAN_PROGRESS_EVENT, TABS_CHANGED_EVENT,
 };
 
 pub async fn list_all_conversations_core(
@@ -1584,6 +1584,20 @@ pub struct RelayBindingInput {
     pub target_draft_id: String,
 }
 
+pub fn relay_binding_from_parts(
+    relay_id: Option<i32>,
+    target_draft_id: Option<String>,
+) -> Result<Option<RelayBindingInput>, AppCommandError> {
+    match (relay_id, target_draft_id) {
+        (Some(relay_id), Some(target_draft_id)) if !target_draft_id.trim().is_empty() => {
+            Ok(Some(RelayBindingInput { relay_id, target_draft_id }))
+        }
+        (None, None) => Ok(None),
+        _ => Err(AppCommandError::invalid_input("relay_consume_conflict".to_owned())),
+    }
+}
+
+
 pub async fn create_conversation_with_relay_core(
     conn: &sea_orm::DatabaseConnection,
     folder_id: i32,
@@ -1633,10 +1647,7 @@ pub async fn create_conversation(
     relay_id: Option<i32>,
     target_draft_id: Option<String>,
 ) -> Result<i32, AppCommandError> {
-    let relay = relay_id.zip(target_draft_id).map(|(relay_id, target_draft_id)| RelayBindingInput {
-        relay_id,
-        target_draft_id,
-    });
+    let relay = relay_binding_from_parts(relay_id, target_draft_id)?;
     let id = create_conversation_with_relay_core(&db.conn, folder_id, agent_type, title, relay).await?;
     emit_conversation_upsert(&EventEmitter::Tauri(app), &db.conn, id).await;
     Ok(id)
@@ -1920,10 +1931,7 @@ pub async fn create_chat_conversation(
         .app_data_dir()
         .map(|p| crate::paths::resolve_effective_data_dir(&p))
         .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let relay = relay_id.zip(target_draft_id).map(|(relay_id, target_draft_id)| RelayBindingInput {
-        relay_id,
-        target_draft_id,
-    });
+    let relay = relay_binding_from_parts(relay_id, target_draft_id)?;
     let result = create_chat_conversation_with_relay_core(
         &db.conn,
         &data_dir,
@@ -2070,17 +2078,35 @@ pub async fn delete_conversation_core(
     conn: &sea_orm::DatabaseConnection,
     conversation_id: i32,
 ) -> Result<(), AppCommandError> {
-    conversation_service::soft_delete(conn, conversation_id)
+    delete_conversation_and_invalidate_core(conn, conversation_id)
+        .await
+        .map(|_| ())
+}
+
+async fn delete_conversation_and_invalidate_core(
+    conn: &sea_orm::DatabaseConnection,
+    conversation_id: i32,
+) -> Result<Vec<crate::db::entities::relay_context_pack::Model>, AppCommandError> {
+    let txn = sea_orm::TransactionTrait::begin(conn)
+        .await
+        .map_err(|error| AppCommandError::database_error(error.to_string()))?;
+    let invalidated = relay_context_pack_service::list_unconsumed_by_source_on(&txn, conversation_id)
         .await
         .map_err(AppCommandError::from)?;
-    relay_context_pack_service::invalidate_unconsumed_by_source(
-        conn,
+    conversation_service::soft_delete(&txn, conversation_id)
+        .await
+        .map_err(AppCommandError::from)?;
+    relay_context_pack_service::invalidate_unconsumed_by_source_on(
+        &txn,
         conversation_id,
-        "relay_source_deleted",
+        "relay_source_not_found",
     )
     .await
     .map_err(AppCommandError::from)?;
-    Ok(())
+    txn.commit()
+        .await
+        .map_err(|error| AppCommandError::database_error(error.to_string()))?;
+    Ok(invalidated)
 }
 
 /// When the deleted conversation was backed by a dedicated hidden chat folder,
@@ -2142,8 +2168,20 @@ pub async fn delete_conversation_with_cleanup_core(
         .ok();
     let folder_id = pre.as_ref().map(|c| c.folder_id);
     let parent_id = pre.as_ref().and_then(|c| c.parent_id);
-    delete_conversation_core(conn, conversation_id).await?;
+    let invalidated = delete_conversation_and_invalidate_core(conn, conversation_id).await?;
     emit_conversation_deleted(emitter, conversation_id);
+    for pack in invalidated {
+        emit_event(
+            emitter,
+            CONVERSATION_RELAY_CHANGED_EVENT,
+            ConversationRelayChange {
+                relay_id: pack.id,
+                target_draft_id: pack.target_draft_id,
+                status: "invalid".to_owned(),
+                error_code: Some(crate::models::conversation_relay::RelayErrorCode::RelaySourceNotFound),
+            },
+        );
+    }
     // A removed delegation child drops its parent's child_count (→ 0 hides the
     // chevron). Re-emit the parent from the authoritative aggregate so every
     // client converges — symmetric with the create-time parent re-emit.
