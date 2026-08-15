@@ -114,6 +114,7 @@ export function useRelayDraft({
   }
 
   const operationGenerationRef = useRef(0)
+  const restoreGenerationRef = useRef<number | null>(null)
   const lifecycleGenerationRef = useRef(0)
   const previewAbortRef = useRef<AbortController | null>(null)
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -157,6 +158,7 @@ export function useRelayDraft({
     const draftId = current.targetDraftId
     const lifecycle = lifecycleGenerationRef.current
     const generation = invalidatePending()
+    restoreGenerationRef.current = generation
     retryOperationRef.current = null
     setLoading(true)
     try {
@@ -168,6 +170,9 @@ export function useRelayDraft({
       }
       throw error
     } finally {
+      if (restoreGenerationRef.current === generation) {
+        restoreGenerationRef.current = null
+      }
       if (isCurrent(generation, draftId, lifecycle)) setLoading(false)
     }
   }, [commitRelay, invalidatePending, isCurrent])
@@ -445,6 +450,14 @@ export function useRelayDraft({
               return
             }
             if (relayRef.current && relayRef.current.id !== change.relayId) {
+              if (
+                restoreGenerationRef.current === operationGenerationRef.current
+              ) {
+                invalidatePending()
+                restoreGenerationRef.current = null
+                retryOperationRef.current = null
+                setLoading(false)
+              }
               return
             }
             invalidatePending()

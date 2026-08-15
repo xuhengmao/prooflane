@@ -208,6 +208,24 @@ describe("useRelayDraft", () => {
     expect(api.getRelayContextByDraft).not.toHaveBeenCalled()
   })
 
+  it("ignores a draft recovery that resolves after unmount", async () => {
+    const { api, useRelayDraft } = await setup()
+    const recovery = deferred<RelayContextPack | null>()
+    vi.mocked(api.getRelayContextByDraft).mockReturnValue(recovery.promise)
+    const view = renderHook(() => useRelayDraft(defaultOptions))
+
+    await waitFor(() => expect(api.getRelayContextByDraft).toHaveBeenCalled())
+    expect(view.result.current.loading).toBe(true)
+    view.unmount()
+
+    await act(async () => {
+      recovery.resolve(pack)
+      await recovery.promise
+    })
+
+    expect(view.result.current.relay).toBeNull()
+  })
+
   it("recalculates an existing pack when the target model changes", async () => {
     const { api, useRelayDraft } = await setup()
     vi.mocked(api.getRelayContextByDraft).mockResolvedValue(pack)
@@ -403,6 +421,39 @@ describe("useRelayDraft", () => {
 
     await act(async () => Promise.resolve())
     expect(result.current.relay).toBeNull()
+  })
+
+  it("invalidates recovery when the removed relay differs from the rendered relay", async () => {
+    const { api, useRelayDraft } = await setup()
+    const recovery = deferred<RelayContextPack | null>()
+    const recoveredPack = makePack({ id: 8 })
+    vi.mocked(api.getRelayContextByDraft)
+      .mockResolvedValueOnce(pack)
+      .mockReturnValueOnce(recovery.promise)
+    const { result } = renderHook(() => useRelayDraft(defaultOptions))
+    await waitFor(() => expect(result.current.relay).toEqual(pack))
+
+    act(() => {
+      for (const handler of [...reconnectHandlers]) handler()
+    })
+    await waitFor(() =>
+      expect(api.getRelayContextByDraft).toHaveBeenCalledTimes(2)
+    )
+
+    act(() =>
+      emitRelay({
+        relayId: recoveredPack.id,
+        targetDraftId: "draft-1",
+        status: "removed",
+      })
+    )
+    await act(async () => {
+      recovery.resolve(recoveredPack)
+      await recovery.promise
+    })
+
+    expect(result.current.relay).toEqual(pack)
+    expect(result.current.loading).toBe(false)
   })
 
   it("undoes removal by previewing a new active pack instead of restoring the removed row", async () => {
