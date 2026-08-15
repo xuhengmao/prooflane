@@ -699,6 +699,7 @@ impl ConnectionManager {
         blocks: Vec<PromptInputBlock>,
         persisted_blocks: Vec<PromptInputBlock>,
         user_message: Option<(String, Vec<crate::acp::UserMessageBlock>)>,
+        deferred_user_prompt_preview: Option<String>,
         relay_preflight: Option<crate::acp::connection::RelayPromptPreflight>,
         relay_outcome: Option<tokio::sync::oneshot::Sender<crate::acp::connection::RelayPromptOutcome>>,
     ) -> Result<(), AcpError> {
@@ -757,6 +758,7 @@ impl ConnectionManager {
             blocks,
             persisted_blocks,
             user_message,
+            deferred_user_prompt_preview,
             relay_preflight,
             relay_outcome,
         });
@@ -784,7 +786,7 @@ impl ConnectionManager {
     ) -> Result<(), AcpError> {
         let prompt_lock = self.clone_prompt_lock(conn_id).await?;
         let _guard = prompt_lock.lock_owned().await;
-        self.send_prompt_inner(conn_id, blocks.clone(), blocks, None, None, None)
+        self.send_prompt_inner(conn_id, blocks.clone(), blocks, None, None, None, None)
             .await
     }
 
@@ -1248,12 +1250,17 @@ impl ConnectionManager {
         // for a prompt that never reached the agent, so without this the
         // lifecycle subscriber's PendingReview write also never fires and the
         // row would be stuck until a follow-up `send_prompt_linked` re-flipped it.
+        let defer_user_prompt_notification = relay_preflight.is_some();
+        let deferred_user_prompt_preview = defer_user_prompt_notification
+            .then(|| user_prompt_preview.clone())
+            .flatten();
         match self
             .send_prompt_inner(
                 conn_id,
                 blocks,
                 display_blocks,
                 user_message,
+                deferred_user_prompt_preview,
                 relay_preflight,
                 relay_outcome,
             )
@@ -1263,13 +1270,15 @@ impl ConnectionManager {
                 // The prompt reached the agent: surface it to the chat-channel
                 // "user message" event feed. Notification-only — never gates the
                 // send result.
-                if let Some(text_preview) = user_prompt_preview {
-                    emit_with_state(
-                        &state_arc,
-                        &emitter,
-                        AcpEvent::UserPromptSent { text_preview },
-                    )
-                    .await;
+                if !defer_user_prompt_notification {
+                    if let Some(text_preview) = user_prompt_preview {
+                        emit_with_state(
+                            &state_arc,
+                            &emitter,
+                            AcpEvent::UserPromptSent { text_preview },
+                        )
+                        .await;
+                    }
                 }
                 Ok(conversation_id_for_status)
             }
@@ -4044,6 +4053,7 @@ mod tests {
                     text: "filler".into(),
                 }],
                 user_message: None,
+                deferred_user_prompt_preview: None,
                 relay_preflight: None,
                 relay_outcome: None,
             })
@@ -4060,6 +4070,7 @@ mod tests {
             vec![PromptInputBlock::Text {
                 text: "blocked".into(),
             }],
+            None,
             None,
             None,
             None,

@@ -264,6 +264,10 @@ pub enum ConnectionCommand {
         /// prompt actually being processed. `None` for delegation children,
         /// empty prompts, unbound conversations, and non-linked senders.
         user_message: Option<(String, Vec<UserMessageBlock>)>,
+        /// Relay-only bounded text preview. The actor emits `UserPromptSent`
+        /// after relay admission succeeds so a rejected prompt cannot notify
+        /// chat-channel subscribers as though it reached the agent.
+        deferred_user_prompt_preview: Option<String>,
         /// Relay-only admission snapshot. The connection actor evaluates this
         /// after all earlier config commands and before any prompt side effect.
         relay_preflight: Option<RelayPromptPreflight>,
@@ -700,6 +704,22 @@ async fn admit_relay_prompt(
         let _ = reply.send(RelayPromptOutcome::Rejected(rejection));
     }
     false
+}
+
+async fn admit_relay_prompt_and_notify(
+    state: &Arc<RwLock<SessionState>>,
+    emitter: &EventEmitter,
+    preflight: Option<&RelayPromptPreflight>,
+    outcome: &mut Option<tokio::sync::oneshot::Sender<RelayPromptOutcome>>,
+    user_prompt_preview: Option<String>,
+) -> bool {
+    if !admit_relay_prompt(state, preflight, outcome).await {
+        return false;
+    }
+    if let Some(text_preview) = user_prompt_preview {
+        emit_with_state(state, emitter, AcpEvent::UserPromptSent { text_preview }).await;
+    }
+    true
 }
 
 /// Queue one raw `session/update` for a custom agent, handing back the ack so
@@ -6647,11 +6667,20 @@ async fn run_conversation_loop<'a>(
                 blocks,
                 persisted_blocks,
                 user_message,
+                deferred_user_prompt_preview,
                 relay_preflight,
                 relay_outcome,
             }) => {
                 let mut relay_outcome = relay_outcome;
-                if !admit_relay_prompt(state, relay_preflight.as_ref(), &mut relay_outcome).await {
+                if !admit_relay_prompt_and_notify(
+                    state,
+                    emitter,
+                    relay_preflight.as_ref(),
+                    &mut relay_outcome,
+                    deferred_user_prompt_preview,
+                )
+                .await
+                {
                     continue;
                 }
                 // Fingerprint the outgoing prompt for the background watcher's
@@ -14149,14 +14178,16 @@ mod tests {
         let expected_window = crate::parsers::infer_context_window_max_tokens(Some("gpt-4o"))
             .and_then(|tokens| u32::try_from(tokens).ok());
 
-        let admitted = admit_relay_prompt(
+        let admitted = admit_relay_prompt_and_notify(
             &state,
+            &EventEmitter::Noop,
             Some(&RelayPromptPreflight {
                 expected_model: Some("gpt-4o".to_owned()),
                 expected_context_window_tokens: expected_window,
                 estimated_tokens: 1,
             }),
             &mut pending,
+            Some("must not be announced".to_owned()),
         )
         .await;
 
@@ -14166,6 +14197,49 @@ mod tests {
             RelayPromptOutcome::Rejected(RelayPromptRejection::ModelChanged)
         );
         assert!(!state.read().await.turn_in_flight);
+        assert!(state
+            .read()
+            .await
+            .recent_events_after(0)
+            .map_or(true, |events| events.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn admitted_relay_prompt_announces_the_user_message_once() {
+        let state = Arc::new(RwLock::new(SessionState::new(
+            "relay-notification".to_owned(),
+            AgentType::Codex,
+            None,
+            "test-window".to_owned(),
+            None,
+        )));
+        let mut pending = None;
+
+        let admitted = admit_relay_prompt_and_notify(
+            &state,
+            &EventEmitter::Noop,
+            Some(&RelayPromptPreflight {
+                expected_model: None,
+                expected_context_window_tokens: None,
+                estimated_tokens: 1,
+            }),
+            &mut pending,
+            Some("continue the relay".to_owned()),
+        )
+        .await;
+
+        assert!(admitted);
+        let events = state
+            .read()
+            .await
+            .recent_events_after(0)
+            .expect("fresh event buffer");
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0].payload,
+            AcpEvent::UserPromptSent { text_preview }
+                if text_preview == "continue the relay"
+        ));
     }
 
     #[tokio::test]

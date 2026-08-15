@@ -1754,6 +1754,7 @@ async fn relay_send_core_claims_splits_wire_content_and_persists_the_actor_outco
         blocks,
         persisted_blocks,
         user_message,
+        deferred_user_prompt_preview,
         relay_preflight,
         relay_outcome,
     } = command
@@ -1771,6 +1772,10 @@ async fn relay_send_core_claims_splits_wire_content_and_persists_the_actor_outco
         serde_json::to_value(&user_blocks).unwrap()
     );
     assert!(user_message.is_some());
+    assert_eq!(
+        deferred_user_prompt_preview.as_deref(),
+        Some("continue the task")
+    );
     let preflight = relay_preflight.expect("relay preflight");
     assert_eq!(preflight.expected_model, None);
     assert_eq!(preflight.expected_context_window_tokens, None);

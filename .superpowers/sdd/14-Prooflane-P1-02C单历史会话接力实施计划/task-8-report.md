@@ -105,3 +105,22 @@
 - `codeg_lib-d4c17b9a89e6b336.exe relay_model_identity_detects`：1/1 通过。
 - `pnpm exec vitest run src/components/conversations/conversation-detail-panel-layout.test.ts src/components/conversations/relay-send-attempt.test.ts src/hooks/use-connection-lifecycle.send-failure.test.ts src/lib/acp-prompt.test.ts`：4 文件、41 测试通过。
 - `CARGO_INCREMENTAL=0 cargo check --features test-utils`：通过。
+
+## 修复轮次 3
+
+### RED/GREEN
+
+- 根因：relay prompt 入 actor 队后，manager 立即广播 `UserPromptSent`；若队列前的模型切换导致 actor preflight 拒绝，ACP wire 虽不会发送，但聊天渠道已收到不可撤销的虚假“已发送”通知。
+- RED：新增“preflight 拒绝不通知”和“admission 通过只通知一次”用例后，`cargo test --features test-utils --lib admitted_relay_prompt_announces_the_user_message_once --no-run` 因缺少 `admit_relay_prompt_and_notify` 正确编译失败。
+- GREEN：relay 的 bounded 文本预览随 `ConnectionCommand::Prompt` 进入 actor；actor 在模型/窗口/预算 admission 通过后、prompt ledger 与 ACP wire 之前广播。普通 prompt 仍由 manager 的既有路径广播。
+
+### 验证
+
+- `codeg_lib-1fdf2072ec4f359d.exe relay_preflight`：2/2 通过。
+- `codeg_lib-1fdf2072ec4f359d.exe admitted_relay_prompt_announces_the_user_message_once`：1/1 通过。
+- `codeg_lib-1fdf2072ec4f359d.exe send_prompt_linked_emits_user_prompt_sent_on_success`：1/1 通过，普通发送通知未回归。
+- `conversation_relay-7525ad37dc077742.exe --test-threads=1`：45/45 通过。
+- `cargo check --features test-utils`：通过。
+- `cargo check --no-default-features`：通过。
+- `pnpm exec vitest run src/components/conversations/relay-send-attempt.test.ts src/components/conversations/conversation-detail-panel-layout.test.ts src/hooks/use-connection-lifecycle.send-failure.test.ts src/lib/acp-prompt.test.ts`：4 文件、41/41 通过。
+- `git diff --check`：通过。文件级 `rustfmt --check` 仍报告两个大型既有文件的基线格式差异，未执行全文件格式化以避免无关 churn；本轮新增块已按其建议手工对齐。
