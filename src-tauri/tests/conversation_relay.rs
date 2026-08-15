@@ -1,9 +1,14 @@
 use codeg_lib::conversation_relay::fingerprint_rounds;
 use codeg_lib::conversation_relay::service::{
-    get_conversation_capabilities_core, get_conversation_relay_core,
-    get_relay_context_by_draft_core, preview_relay_context_core, remove_relay_context_core,
-    update_conversation_capabilities_core, update_relay_context_core, RelayPatchRequest,
-    RelayPreviewRequest, UpdateConversationCapabilitiesInput,
+    cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
+    get_relay_context_by_draft_core, preview_relay_context_core,
+    preview_relay_context_from_rounds_with_summarizer_core, remove_relay_context_core,
+    update_conversation_capabilities_core, update_relay_context_with_summarizer_core,
+    RelayPatchRequest, RelayPreviewRequest, UpdateConversationCapabilitiesInput,
+};
+use codeg_lib::conversation_relay::summarizer::{
+    summarize_with_runner, RelayStructuredSummary, RelaySummarizer, RelaySummaryItem,
+    RelaySummaryRunner,
 };
 use codeg_lib::db::entities::{conversation_capability_setting, relay_context_pack};
 use codeg_lib::db::service::conversation_capability_service::{
@@ -16,14 +21,87 @@ use codeg_lib::db::service::relay_context_pack_service::{
 use codeg_lib::db::test_helpers::{fresh_in_memory_db, seed_conversation, seed_folder};
 use codeg_lib::models::agent::AgentType;
 use codeg_lib::models::conversation_relay::{
-    RelayErrorCode, RelayFileReference, RelayRound, RelayScopeSelection, RelayScopeType,
-    RelaySnapshot, RelaySnapshotSource, RelayStats,
+    RelayError, RelayErrorCode, RelayRound, RelayScopeSelection, RelayScopeType, RelaySnapshot,
+    RelaySnapshotSource, RelayStats,
 };
+use codeg_lib::restricted_codex::{RestrictedCodexError, RestrictedCodexRequest};
 use codeg_lib::web::event_bridge::EventEmitter;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set, TransactionTrait,
 };
 use std::sync::Arc;
+use tokio::sync::Notify;
+
+struct BlockingSummarizer {
+    entered: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+#[async_trait::async_trait]
+impl RelaySummarizer for BlockingSummarizer {
+    async fn summarize(&self, rounds: &[RelayRound]) -> Result<RelayStructuredSummary, RelayError> {
+        self.entered.notify_one();
+        self.release.notified().await;
+        Ok(RelayStructuredSummary {
+            goal: vec![RelaySummaryItem {
+                text: "stale summary".to_owned(),
+                source_round_ids: vec![rounds[0].id.clone()],
+            }],
+            ..RelayStructuredSummary::default()
+        })
+    }
+}
+
+struct FailingRunner;
+
+#[async_trait::async_trait]
+impl RelaySummaryRunner for FailingRunner {
+    async fn run(&self, _request: RestrictedCodexRequest) -> Result<String, RestrictedCodexError> {
+        Err(RestrictedCodexError::Failed(
+            "controlled runner failure".to_owned(),
+        ))
+    }
+}
+
+struct RunnerBackedFailingSummarizer;
+
+#[async_trait::async_trait]
+impl RelaySummarizer for RunnerBackedFailingSummarizer {
+    async fn summarize(&self, rounds: &[RelayRound]) -> Result<RelayStructuredSummary, RelayError> {
+        summarize_with_runner(&FailingRunner, rounds).await
+    }
+}
+
+fn relay_round(id: &str, user_text: &str) -> RelayRound {
+    RelayRound {
+        id: id.to_owned(),
+        user_text: user_text.to_owned(),
+        assistant_text: "assistant result".to_owned(),
+        tools: Vec::new(),
+        files: Vec::new(),
+        source_message_ids: vec![format!("message-{id}")],
+    }
+}
+
+fn preview_request(
+    request_id: &str,
+    target_draft_id: &str,
+    source_conversation_id: i32,
+    scope_type: RelayScopeType,
+) -> RelayPreviewRequest {
+    RelayPreviewRequest {
+        request_id: request_id.to_owned(),
+        target_draft_id: target_draft_id.to_owned(),
+        source_conversation_id,
+        target_folder_id: None,
+        target_agent_type: AgentType::Codex,
+        target_model: None,
+        scope: RelayScopeSelection {
+            scope_type,
+            selected_round_ids: vec!["round-1".to_owned()],
+        },
+    }
+}
 
 async fn insert_pack(
     conn: &sea_orm::DatabaseConnection,
@@ -498,6 +576,7 @@ async fn explicit_preview_failure_does_not_persist_an_empty_pack() {
         &state.db,
         &state.data_dir,
         RelayPreviewRequest {
+            request_id: "missing-source-preview".to_owned(),
             target_draft_id: "cross-project-draft".to_owned(),
             source_conversation_id: 999,
             target_folder_id: Some(77),
@@ -526,6 +605,216 @@ async fn explicit_preview_failure_does_not_persist_an_empty_pack() {
 }
 
 #[tokio::test]
+async fn cancelled_preview_does_not_replace_the_previous_active_pack() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-cancelled-preview").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let original = insert_pack(&db.conn, "draft-cancelled", source, None, "draft")
+        .await
+        .unwrap();
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let summarizer = BlockingSummarizer {
+        entered: entered.clone(),
+        release: release.clone(),
+    };
+    let rounds = vec![relay_round("round-1", "cancel this summary")];
+    let preview = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        preview_request(
+            "cancelled-preview-request",
+            "draft-cancelled",
+            source,
+            RelayScopeType::Summary,
+        ),
+        rounds,
+        &summarizer,
+    );
+    tokio::pin!(preview);
+    tokio::select! {
+        () = entered.notified() => {}
+        result = &mut preview => panic!("preview completed before cancellation: {result:?}"),
+    }
+
+    assert!(cancel_relay_preview_core("cancelled-preview-request").await);
+    release.notify_one();
+    let error = preview.await.unwrap_err();
+
+    assert_eq!(
+        error.message,
+        RelayErrorCode::RelaySourceUnavailable.to_string()
+    );
+    let retained = relay_context_pack::Entity::find_by_id(original.id)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retained.snapshot_json, original.snapshot_json);
+    assert_eq!(retained.status, original.status);
+    assert_eq!(
+        get_active_by_draft(&db.conn, "draft-cancelled")
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        original.id
+    );
+}
+
+#[tokio::test]
+async fn dropped_preview_future_releases_its_request_slot() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-dropped-preview").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let rounds = vec![relay_round("round-1", "drop this summary")];
+
+    for sequence in 0..40 {
+        {
+            let entered = Arc::new(Notify::new());
+            let release = Arc::new(Notify::new());
+            let summarizer = BlockingSummarizer {
+                entered: entered.clone(),
+                release,
+            };
+            let preview = preview_relay_context_from_rounds_with_summarizer_core(
+                &db,
+                preview_request(
+                    &format!("dropped-preview-request-{sequence}"),
+                    &format!("draft-dropped-{sequence}"),
+                    source,
+                    RelayScopeType::Summary,
+                ),
+                rounds.clone(),
+                &summarizer,
+            );
+            tokio::pin!(preview);
+            tokio::select! {
+                () = entered.notified() => {}
+                result = &mut preview => panic!("preview slot leaked before request {sequence}: {result:?}"),
+            }
+        }
+        tokio::task::yield_now().await;
+    }
+
+    let persisted = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        preview_request(
+            "preview-after-dropped-requests",
+            "draft-after-dropped-requests",
+            source,
+            RelayScopeType::RecentRounds,
+        ),
+        rounds,
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    assert_eq!(persisted.target_draft_id, "draft-after-dropped-requests");
+    assert_eq!(persisted.status, "draft");
+}
+
+#[tokio::test]
+async fn stale_preview_finishing_after_a_new_preview_cannot_become_active() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-preview-generation").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let summarizer = BlockingSummarizer {
+        entered: entered.clone(),
+        release: release.clone(),
+    };
+    let rounds = vec![relay_round("round-1", "latest preview wins")];
+    let old_preview = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        preview_request(
+            "old-preview-request",
+            "draft-generation",
+            source,
+            RelayScopeType::Summary,
+        ),
+        rounds.clone(),
+        &summarizer,
+    );
+    tokio::pin!(old_preview);
+    tokio::select! {
+        () = entered.notified() => {}
+        result = &mut old_preview => panic!("old preview completed before overlap: {result:?}"),
+    }
+
+    let latest = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        preview_request(
+            "latest-preview-request",
+            "draft-generation",
+            source,
+            RelayScopeType::RecentRounds,
+        ),
+        rounds,
+        &summarizer,
+    )
+    .await
+    .unwrap();
+    release.notify_one();
+    let old_error = old_preview.await.unwrap_err();
+
+    assert_eq!(
+        old_error.message,
+        RelayErrorCode::RelaySourceUnavailable.to_string()
+    );
+    let active = get_relay_context_by_draft_core(&db.conn, "draft-generation")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(active.id, latest.id);
+    assert_eq!(active.scope.scope_type, RelayScopeType::RecentRounds);
+    assert!(active.snapshot.summary.is_none());
+}
+
+#[tokio::test]
+async fn late_cancel_for_an_old_request_does_not_cancel_the_latest_preview() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-late-cancel").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let summarizer = RunnerBackedFailingSummarizer;
+    let rounds = vec![relay_round("round-1", "late cancel")];
+    preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        preview_request(
+            "finished-old-request",
+            "draft-late-cancel",
+            source,
+            RelayScopeType::RecentRounds,
+        ),
+        rounds.clone(),
+        &summarizer,
+    )
+    .await
+    .unwrap();
+    let latest = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        preview_request(
+            "finished-latest-request",
+            "draft-late-cancel",
+            source,
+            RelayScopeType::RecentRounds,
+        ),
+        rounds,
+        &summarizer,
+    )
+    .await
+    .unwrap();
+
+    assert!(cancel_relay_preview_core("finished-old-request").await);
+    let active = get_relay_context_by_draft_core(&db.conn, "draft-late-cancel")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(active.id, latest.id);
+    assert_eq!(active.status, "draft");
+}
+
+#[tokio::test]
 async fn summary_patch_failure_keeps_the_previous_valid_draft_unchanged() {
     let db = fresh_in_memory_db().await;
     let folder_id = seed_folder(&db, "C:/workspace/relay-summary-failure").await;
@@ -544,14 +833,7 @@ async fn summary_patch_failure_keeps_the_previous_valid_draft_unchanged() {
             folder_id,
         },
         scope: scope.clone(),
-        available_rounds: vec![RelayRound {
-            id: "round-1".to_owned(),
-            user_text: "x".repeat(500_000),
-            assistant_text: String::new(),
-            tools: Vec::new(),
-            files: Vec::<RelayFileReference>::new(),
-            source_message_ids: vec!["round-1".to_owned()],
-        }],
+        available_rounds: vec![relay_round("round-1", "runner failure input")],
         included_rounds: Vec::new(),
         summary: None,
         files: Vec::new(),
@@ -576,13 +858,14 @@ async fn summary_patch_failure_keeps_the_previous_valid_draft_unchanged() {
         .exec(&db.conn)
         .await
         .unwrap();
-    let data_dir = tempfile::tempdir().unwrap();
-    let state = codeg_lib::app_state::AppState::new_for_test(db, data_dir.path().to_path_buf());
+    let before_failure = relay_context_pack::Entity::find_by_id(original.id)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
 
-    let error = update_relay_context_core(
-        &state.connection_manager,
-        &state.db,
-        &state.data_dir,
+    let error = update_relay_context_with_summarizer_core(
+        &db,
         original.id,
         RelayPatchRequest {
             scope: RelayScopeSelection {
@@ -592,22 +875,30 @@ async fn summary_patch_failure_keeps_the_previous_valid_draft_unchanged() {
             target_agent_type: AgentType::Codex,
             target_model: None,
         },
+        &RunnerBackedFailingSummarizer,
     )
     .await
     .unwrap_err();
 
     assert_eq!(
         error.message,
-        RelayErrorCode::RelaySummaryInputTooLarge.to_string()
+        RelayErrorCode::RelaySummaryUnavailable.to_string()
     );
-    let retained = get_relay_context_by_draft_core(&state.db.conn, "draft-summary")
+    let retained = relay_context_pack::Entity::find_by_id(original.id)
+        .one(&db.conn)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(retained.id, original.id);
+    assert_eq!(retained.id, before_failure.id);
+    assert_eq!(retained.snapshot_json, before_failure.snapshot_json);
+    assert_eq!(retained.status, before_failure.status);
     assert_eq!(
-        retained.snapshot.canonical_context,
-        "previous valid context"
+        get_active_by_draft(&db.conn, "draft-summary")
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        original.id
     );
 }
 

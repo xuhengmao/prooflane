@@ -1,10 +1,15 @@
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::OnceLock;
+use std::time::Duration;
 
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    Set,
+    ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, DatabaseConnection, EntityTrait,
+    IntoActiveModel, QueryFilter, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::acp::manager::ConnectionManager;
@@ -29,10 +34,70 @@ use super::{
 };
 
 const RELAY_STORAGE_UNAVAILABLE: &str = "relay_storage_unavailable";
+const MAX_PREVIEW_REQUEST_ID_BYTES: usize = 128;
+const MAX_PENDING_PREVIEW_REQUESTS: usize = 1_024;
+const MAX_ACTIVE_PREVIEWS: usize = 32;
+const PREVIEW_TOMBSTONE_TTL: Duration = Duration::from_secs(125);
+
+#[derive(Clone)]
+struct RelayPreviewEntry {
+    cancellation: CancellationToken,
+    target_draft_id: Option<String>,
+    active: bool,
+    committed: bool,
+    cleanup_scheduled: bool,
+}
+
+#[derive(Default)]
+struct RelayPreviewRegistry {
+    requests: HashMap<String, RelayPreviewEntry>,
+    active_by_draft: HashMap<String, String>,
+}
+
+struct RelayPreviewGuard {
+    registration: Option<(String, String)>,
+    cancellation: CancellationToken,
+}
+
+impl RelayPreviewGuard {
+    fn new(request_id: String, target_draft_id: String, cancellation: CancellationToken) -> Self {
+        Self {
+            registration: Some((request_id, target_draft_id)),
+            cancellation,
+        }
+    }
+
+    async fn finish(mut self) {
+        if let Some((request_id, target_draft_id)) = self.registration.as_ref() {
+            finish_relay_preview(request_id, target_draft_id).await;
+        }
+        self.registration = None;
+    }
+}
+
+impl Drop for RelayPreviewGuard {
+    fn drop(&mut self) {
+        let Some((request_id, target_draft_id)) = self.registration.take() else {
+            return;
+        };
+        self.cancellation.cancel();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                finish_relay_preview(&request_id, &target_draft_id).await;
+            });
+        }
+    }
+}
+
+fn relay_preview_registry() -> &'static Mutex<RelayPreviewRegistry> {
+    static REGISTRY: OnceLock<Mutex<RelayPreviewRegistry>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(RelayPreviewRegistry::default()))
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelayPreviewRequest {
+    pub request_id: String,
     pub target_draft_id: String,
     pub source_conversation_id: i32,
     pub target_folder_id: Option<i32>,
@@ -69,6 +134,128 @@ fn relay_error(code: RelayErrorCode) -> AppCommandError {
 
 fn storage_error() -> AppCommandError {
     AppCommandError::database_error(RELAY_STORAGE_UNAVAILABLE)
+}
+
+fn preview_cancelled_error() -> AppCommandError {
+    relay_error(RelayErrorCode::RelaySourceUnavailable)
+}
+
+fn valid_preview_request_id(request_id: &str) -> bool {
+    !request_id.is_empty() && request_id.len() <= MAX_PREVIEW_REQUEST_ID_BYTES
+}
+
+async fn register_relay_preview(
+    request_id: &str,
+    target_draft_id: &str,
+) -> Result<CancellationToken, AppCommandError> {
+    let mut registry = relay_preview_registry().lock().await;
+    if registry
+        .requests
+        .values()
+        .filter(|entry| entry.active)
+        .count()
+        >= MAX_ACTIVE_PREVIEWS
+    {
+        return Err(preview_cancelled_error());
+    }
+    if !registry.requests.contains_key(request_id)
+        && registry.requests.len() >= MAX_PENDING_PREVIEW_REQUESTS
+    {
+        return Err(preview_cancelled_error());
+    }
+
+    let cancellation = {
+        let entry = registry
+            .requests
+            .entry(request_id.to_owned())
+            .or_insert_with(|| RelayPreviewEntry {
+                cancellation: CancellationToken::new(),
+                target_draft_id: None,
+                active: false,
+                committed: false,
+                cleanup_scheduled: false,
+            });
+        if entry.active {
+            return Err(preview_cancelled_error());
+        }
+        entry.active = true;
+        entry.committed = false;
+        entry.target_draft_id = Some(target_draft_id.to_owned());
+        entry.cancellation.clone()
+    };
+    let previous_request_id = registry
+        .active_by_draft
+        .insert(target_draft_id.to_owned(), request_id.to_owned());
+    let previous_cancellation = previous_request_id
+        .filter(|previous| previous != request_id)
+        .and_then(|previous| registry.requests.get(&previous))
+        .map(|entry| entry.cancellation.clone());
+    if let Some(previous_cancellation) = previous_cancellation {
+        previous_cancellation.cancel();
+    }
+    drop(registry);
+    Ok(cancellation)
+}
+
+async fn finish_relay_preview(request_id: &str, target_draft_id: &str) {
+    let mut registry = relay_preview_registry().lock().await;
+    registry.requests.remove(request_id);
+    if registry
+        .active_by_draft
+        .get(target_draft_id)
+        .is_some_and(|active_request_id| active_request_id == request_id)
+    {
+        registry.active_by_draft.remove(target_draft_id);
+    }
+}
+
+pub async fn cancel_relay_preview_core(request_id: &str) -> bool {
+    let request_id = request_id.trim();
+    if !valid_preview_request_id(request_id) {
+        return false;
+    }
+    let schedule_cleanup = {
+        let mut registry = relay_preview_registry().lock().await;
+        if !registry.requests.contains_key(request_id)
+            && registry.requests.len() >= MAX_PENDING_PREVIEW_REQUESTS
+        {
+            return false;
+        }
+        let entry = registry
+            .requests
+            .entry(request_id.to_owned())
+            .or_insert_with(|| RelayPreviewEntry {
+                cancellation: CancellationToken::new(),
+                target_draft_id: None,
+                active: false,
+                committed: false,
+                cleanup_scheduled: false,
+            });
+        if entry.committed {
+            return false;
+        }
+        let schedule_cleanup = !entry.active && !entry.cleanup_scheduled;
+        if schedule_cleanup {
+            entry.cleanup_scheduled = true;
+        }
+        entry.cancellation.cancel();
+        schedule_cleanup
+    };
+    if schedule_cleanup {
+        let request_id = request_id.to_owned();
+        tokio::spawn(async move {
+            tokio::time::sleep(PREVIEW_TOMBSTONE_TTL).await;
+            let mut registry = relay_preview_registry().lock().await;
+            if registry
+                .requests
+                .get(&request_id)
+                .is_some_and(|entry| !entry.active && entry.cancellation.is_cancelled())
+            {
+                registry.requests.remove(&request_id);
+            }
+        });
+    }
+    true
 }
 
 fn validate_target_model(target_model: Option<String>) -> Result<Option<String>, AppCommandError> {
@@ -192,19 +379,18 @@ async fn find_source(
         .ok_or_else(|| relay_error(RelayErrorCode::RelaySourceNotFound))
 }
 
-async fn build_snapshot(
-    manager: &ConnectionManager,
-    db: &AppDatabase,
-    data_dir: &Path,
+async fn build_snapshot_with_summarizer(
     source_conversation_id: i32,
     source_folder_id: i32,
     scope: RelayScopeSelection,
     available_rounds: Vec<crate::models::conversation_relay::RelayRound>,
+    summarizer: Option<&dyn RelaySummarizer>,
 ) -> Result<RelaySnapshot, AppCommandError> {
     let selected =
         select_relay_rounds(&available_rounds, &scope).map_err(|error| relay_error(error.code))?;
     let summary = if scope.scope_type == RelayScopeType::Summary {
-        let summarizer = CodexRelaySummarizer::new(manager, db, data_dir, CancellationToken::new());
+        let summarizer =
+            summarizer.ok_or_else(|| relay_error(RelayErrorCode::RelaySummaryUnavailable))?;
         Some(summary_from_structured(
             summarizer
                 .summarize(&selected)
@@ -227,12 +413,42 @@ async fn build_snapshot(
     .map_err(|error| relay_error(error.code))
 }
 
-async fn persist_snapshot(
+async fn build_snapshot(
+    manager: &ConnectionManager,
     db: &AppDatabase,
+    data_dir: &Path,
+    source: RelaySnapshotSource,
+    scope: RelayScopeSelection,
+    available_rounds: Vec<crate::models::conversation_relay::RelayRound>,
+    cancellation: CancellationToken,
+) -> Result<RelaySnapshot, AppCommandError> {
+    if scope.scope_type == RelayScopeType::Summary {
+        let summarizer = CodexRelaySummarizer::new(manager, db, data_dir, cancellation);
+        build_snapshot_with_summarizer(
+            source.conversation_id,
+            source.folder_id,
+            scope,
+            available_rounds,
+            Some(&summarizer),
+        )
+        .await
+    } else {
+        build_snapshot_with_summarizer(
+            source.conversation_id,
+            source.folder_id,
+            scope,
+            available_rounds,
+            None,
+        )
+        .await
+    }
+}
+
+fn new_relay_pack(
     target_draft_id: String,
     target_model: Option<String>,
     snapshot: RelaySnapshot,
-) -> Result<RelayContextPackView, AppCommandError> {
+) -> Result<relay_context_pack_service::NewRelayPack, AppCommandError> {
     let source_fingerprint = fingerprint_rounds(&snapshot.available_rounds);
     let estimated_tokens = estimate_relay_tokens(&snapshot.canonical_context);
     let context_window_tokens = context_window_tokens(target_model.as_deref());
@@ -245,26 +461,113 @@ async fn persist_snapshot(
         .map_err(|_| relay_error(RelayErrorCode::RelaySourceUnavailable))?;
     let snapshot_json = serde_json::to_string(&snapshot)
         .map_err(|_| relay_error(RelayErrorCode::RelaySourceUnavailable))?;
-    let model = relay_context_pack_service::create_or_replace_draft(
-        &db.conn,
-        relay_context_pack_service::NewRelayPack {
-            target_draft_id,
-            source_conversation_id: snapshot.source.conversation_id,
-            source_folder_id: snapshot.source.folder_id,
-            scope_type: scope_type_name(snapshot.scope.scope_type).to_owned(),
-            selected_round_ids_json,
-            snapshot_json,
-            source_fingerprint,
-            estimated_tokens: i32::try_from(estimated_tokens)
-                .map_err(|_| relay_error(RelayErrorCode::RelayBudgetExceeded))?,
-            context_window_tokens: context_window_tokens
-                .and_then(|value| i32::try_from(value).ok()),
-            allowed_tokens: i32::try_from(allowed_tokens)
-                .map_err(|_| relay_error(RelayErrorCode::RelayBudgetExceeded))?,
-        },
-    )
+    Ok(relay_context_pack_service::NewRelayPack {
+        target_draft_id,
+        source_conversation_id: snapshot.source.conversation_id,
+        source_folder_id: snapshot.source.folder_id,
+        scope_type: scope_type_name(snapshot.scope.scope_type).to_owned(),
+        selected_round_ids_json,
+        snapshot_json,
+        source_fingerprint,
+        estimated_tokens: i32::try_from(estimated_tokens)
+            .map_err(|_| relay_error(RelayErrorCode::RelayBudgetExceeded))?,
+        context_window_tokens: context_window_tokens.and_then(|value| i32::try_from(value).ok()),
+        allowed_tokens: i32::try_from(allowed_tokens)
+            .map_err(|_| relay_error(RelayErrorCode::RelayBudgetExceeded))?,
+    })
+}
+
+async fn persist_snapshot(
+    db: &AppDatabase,
+    target_draft_id: String,
+    target_model: Option<String>,
+    snapshot: RelaySnapshot,
+) -> Result<RelayContextPackView, AppCommandError> {
+    let pack = new_relay_pack(target_draft_id, target_model, snapshot)?;
+    let model = relay_context_pack_service::create_or_replace_draft(&db.conn, pack)
+        .await
+        .map_err(|_| storage_error())?;
+    view_from_model(model)
+}
+
+async fn persist_preview_snapshot(
+    db: &AppDatabase,
+    request_id: &str,
+    target_draft_id: String,
+    target_model: Option<String>,
+    snapshot: RelaySnapshot,
+    cancellation: &CancellationToken,
+) -> Result<RelayContextPackView, AppCommandError> {
+    let pack = new_relay_pack(target_draft_id.clone(), target_model, snapshot)?;
+    if cancellation.is_cancelled() {
+        return Err(preview_cancelled_error());
+    }
+
+    let txn = db.conn.begin().await.map_err(|_| storage_error())?;
+    let now = chrono::Utc::now();
+    relay_context_pack::Entity::update_many()
+        .col_expr(relay_context_pack::Column::Status, Expr::value("removed"))
+        .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(now))
+        .filter(relay_context_pack::Column::TargetDraftId.eq(&pack.target_draft_id))
+        .filter(relay_context_pack::Column::Status.is_in(["draft", "attached"]))
+        .exec(&txn)
+        .await
+        .map_err(|_| storage_error())?;
+    let model = relay_context_pack::ActiveModel {
+        id: NotSet,
+        target_draft_id: Set(pack.target_draft_id),
+        target_conversation_id: Set(None),
+        source_conversation_id: Set(pack.source_conversation_id),
+        source_folder_id: Set(pack.source_folder_id),
+        scope_type: Set(pack.scope_type),
+        selected_round_ids_json: Set(pack.selected_round_ids_json),
+        snapshot_json: Set(pack.snapshot_json),
+        source_fingerprint: Set(pack.source_fingerprint),
+        estimated_tokens: Set(pack.estimated_tokens),
+        context_window_tokens: Set(pack.context_window_tokens),
+        allowed_tokens: Set(pack.allowed_tokens),
+        status: Set("draft".to_owned()),
+        invalid_reason: Set(None),
+        consume_client_message_id: Set(None),
+        consume_attempt_state: Set(None),
+        consumed_snapshot_json: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        consumed_at: Set(None),
+    }
+    .insert(&txn)
     .await
     .map_err(|_| storage_error())?;
+
+    let mut registry = relay_preview_registry().lock().await;
+    let may_commit = registry.requests.get(request_id).is_some_and(|entry| {
+        entry.active
+            && !entry.committed
+            && entry.target_draft_id.as_deref() == Some(target_draft_id.as_str())
+            && !entry.cancellation.is_cancelled()
+    }) && registry
+        .active_by_draft
+        .get(&target_draft_id)
+        .is_some_and(|active_request_id| active_request_id == request_id);
+    if !may_commit {
+        drop(registry);
+        txn.rollback().await.map_err(|_| storage_error())?;
+        return Err(preview_cancelled_error());
+    }
+    let request_id = request_id.to_owned();
+    let commit_result = tokio::spawn(async move {
+        let result = txn.commit().await;
+        if result.is_ok() {
+            if let Some(entry) = registry.requests.get_mut(&request_id) {
+                entry.committed = true;
+            }
+        }
+        drop(registry);
+        result
+    })
+    .await
+    .map_err(|_| storage_error())?;
+    commit_result.map_err(|_| storage_error())?;
     view_from_model(model)
 }
 
@@ -274,28 +577,102 @@ pub async fn preview_relay_context_core(
     data_dir: &Path,
     request: RelayPreviewRequest,
 ) -> Result<RelayContextPackView, AppCommandError> {
-    ensure_relay_enabled(&db.conn).await?;
-    let target_model = validate_target_model(request.target_model)?;
-    let target_draft_id = request.target_draft_id.trim();
-    if target_draft_id.is_empty() {
+    let request_id = request.request_id.trim().to_owned();
+    let target_draft_id = request.target_draft_id.trim().to_owned();
+    if !valid_preview_request_id(&request_id) || target_draft_id.is_empty() {
         return Err(relay_error(RelayErrorCode::RelaySourceUnavailable));
     }
-    let source = find_source(&db.conn, request.source_conversation_id).await?;
-    let (detail, _) = get_folder_conversation_core(&db.conn, request.source_conversation_id)
+    let cancellation = register_relay_preview(&request_id, &target_draft_id).await?;
+    let guard = RelayPreviewGuard::new(
+        request_id.clone(),
+        target_draft_id.clone(),
+        cancellation.clone(),
+    );
+    let result = async {
+        if cancellation.is_cancelled() {
+            return Err(preview_cancelled_error());
+        }
+        ensure_relay_enabled(&db.conn).await?;
+        let target_model = validate_target_model(request.target_model)?;
+        let source = find_source(&db.conn, request.source_conversation_id).await?;
+        let (detail, _) = get_folder_conversation_core(&db.conn, request.source_conversation_id)
+            .await
+            .map_err(|_| relay_error(RelayErrorCode::RelaySourceUnavailable))?;
+        let available_rounds = normalize_relay_rounds(&detail.turns);
+        let snapshot = build_snapshot(
+            manager,
+            db,
+            data_dir,
+            RelaySnapshotSource {
+                conversation_id: source.id,
+                folder_id: source.folder_id,
+            },
+            request.scope,
+            available_rounds,
+            cancellation.clone(),
+        )
+        .await?;
+        persist_preview_snapshot(
+            db,
+            &request_id,
+            target_draft_id.clone(),
+            target_model,
+            snapshot,
+            &cancellation,
+        )
         .await
-        .map_err(|_| relay_error(RelayErrorCode::RelaySourceUnavailable))?;
-    let available_rounds = normalize_relay_rounds(&detail.turns);
-    let snapshot = build_snapshot(
-        manager,
-        db,
-        data_dir,
-        source.id,
-        source.folder_id,
-        request.scope,
-        available_rounds,
-    )
-    .await?;
-    persist_snapshot(db, target_draft_id.to_owned(), target_model, snapshot).await
+    }
+    .await;
+    guard.finish().await;
+    result
+}
+
+#[cfg(feature = "test-utils")]
+pub async fn preview_relay_context_from_rounds_with_summarizer_core(
+    db: &AppDatabase,
+    request: RelayPreviewRequest,
+    available_rounds: Vec<crate::models::conversation_relay::RelayRound>,
+    summarizer: &dyn RelaySummarizer,
+) -> Result<RelayContextPackView, AppCommandError> {
+    let request_id = request.request_id.trim().to_owned();
+    let target_draft_id = request.target_draft_id.trim().to_owned();
+    if !valid_preview_request_id(&request_id) || target_draft_id.is_empty() {
+        return Err(relay_error(RelayErrorCode::RelaySourceUnavailable));
+    }
+    let cancellation = register_relay_preview(&request_id, &target_draft_id).await?;
+    let guard = RelayPreviewGuard::new(
+        request_id.clone(),
+        target_draft_id.clone(),
+        cancellation.clone(),
+    );
+    let result = async {
+        if cancellation.is_cancelled() {
+            return Err(preview_cancelled_error());
+        }
+        ensure_relay_enabled(&db.conn).await?;
+        let target_model = validate_target_model(request.target_model)?;
+        let source = find_source(&db.conn, request.source_conversation_id).await?;
+        let snapshot = build_snapshot_with_summarizer(
+            source.id,
+            source.folder_id,
+            request.scope,
+            available_rounds,
+            Some(summarizer),
+        )
+        .await?;
+        persist_preview_snapshot(
+            db,
+            &request_id,
+            target_draft_id.clone(),
+            target_model,
+            snapshot,
+            &cancellation,
+        )
+        .await
+    }
+    .await;
+    guard.finish().await;
+    result
 }
 
 pub async fn get_relay_context_by_draft_core(
@@ -315,8 +692,31 @@ pub async fn update_relay_context_core(
     relay_id: i32,
     request: RelayPatchRequest,
 ) -> Result<RelayContextPackView, AppCommandError> {
+    let (existing, target_model, prior_snapshot) =
+        prepare_relay_update(db, relay_id, request.target_model).await?;
+    let snapshot = build_snapshot(
+        manager,
+        db,
+        data_dir,
+        RelaySnapshotSource {
+            conversation_id: existing.source_conversation_id,
+            folder_id: existing.source_folder_id,
+        },
+        request.scope,
+        prior_snapshot.available_rounds,
+        CancellationToken::new(),
+    )
+    .await?;
+    persist_snapshot(db, existing.target_draft_id, target_model, snapshot).await
+}
+
+async fn prepare_relay_update(
+    db: &AppDatabase,
+    relay_id: i32,
+    target_model: Option<String>,
+) -> Result<(relay_context_pack::Model, Option<String>, RelaySnapshot), AppCommandError> {
     ensure_relay_enabled(&db.conn).await?;
-    let target_model = validate_target_model(request.target_model)?;
+    let target_model = validate_target_model(target_model)?;
     let existing = relay_context_pack::Entity::find_by_id(relay_id)
         .one(&db.conn)
         .await
@@ -331,14 +731,24 @@ pub async fn update_relay_context_core(
     if fingerprint_rounds(&prior_snapshot.available_rounds) != existing.source_fingerprint {
         return Err(relay_error(RelayErrorCode::RelayRoundsChanged));
     }
-    let snapshot = build_snapshot(
-        manager,
-        db,
-        data_dir,
+    Ok((existing, target_model, prior_snapshot))
+}
+
+#[cfg(feature = "test-utils")]
+pub async fn update_relay_context_with_summarizer_core(
+    db: &AppDatabase,
+    relay_id: i32,
+    request: RelayPatchRequest,
+    summarizer: &dyn RelaySummarizer,
+) -> Result<RelayContextPackView, AppCommandError> {
+    let (existing, target_model, prior_snapshot) =
+        prepare_relay_update(db, relay_id, request.target_model).await?;
+    let snapshot = build_snapshot_with_summarizer(
         existing.source_conversation_id,
         existing.source_folder_id,
         request.scope,
         prior_snapshot.available_rounds,
+        Some(summarizer),
     )
     .await?;
     persist_snapshot(db, existing.target_draft_id, target_model, snapshot).await

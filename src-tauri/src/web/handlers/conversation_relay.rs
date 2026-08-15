@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::app_error::AppCommandError;
 use crate::app_state::AppState;
 use crate::conversation_relay::service::{
-    get_conversation_capabilities_core, get_conversation_relay_core,
+    cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
     get_relay_context_by_draft_core, preview_relay_context_core, remove_relay_context_core,
     update_conversation_capabilities_core, update_relay_context_core, RelayPatchRequest,
     RelayPreviewRequest, UpdateConversationCapabilitiesInput,
@@ -31,6 +31,12 @@ pub struct RelayIdParams {
 #[serde(rename_all = "camelCase")]
 pub struct ConversationIdParams {
     conversation_id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelRelayPreviewParams {
+    request_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +76,10 @@ pub async fn preview_relay_context(
         )
         .await?,
     ))
+}
+
+pub async fn cancel_relay_preview(Json(params): Json<CancelRelayPreviewParams>) -> Json<bool> {
+    Json(cancel_relay_preview_core(&params.request_id).await)
 }
 
 pub async fn get_relay_context_by_draft(

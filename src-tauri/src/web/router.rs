@@ -82,6 +82,10 @@ pub fn build_router(
             post(handlers::conversation_relay::preview_relay_context),
         )
         .route(
+            "/cancel_relay_preview",
+            post(handlers::conversation_relay::cancel_relay_preview),
+        )
+        .route(
             "/get_relay_context_by_draft",
             post(handlers::conversation_relay::get_relay_context_by_draft),
         )

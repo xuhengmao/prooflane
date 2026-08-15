@@ -638,6 +638,7 @@ async fn conversation_relay_preview_is_explicit_and_failures_never_persist_or_re
     );
 
     let explicit_cross_project = json!({
+        "requestId": "api-preview-command",
         "targetDraftId": "protected-draft",
         "sourceConversationId": source,
         "targetFolderId": target_folder,
@@ -649,7 +650,15 @@ async fn conversation_relay_preview_is_explicit_and_failures_never_persist_or_re
         .json(&explicit_cross_project)
         .await;
     let rest = authorized(&server, "POST", "/api/relay-context-packs/preview")
-        .json(&explicit_cross_project)
+        .json(&json!({
+            "requestId": "api-preview-rest",
+            "targetDraftId": "protected-draft",
+            "sourceConversationId": source,
+            "targetFolderId": target_folder,
+            "targetAgentType": "codex",
+            "targetModel": null,
+            "scope": { "scopeType": "recent_rounds", "selectedRoundIds": ["round-a"] }
+        }))
         .await;
     assert_eq!(command.status_code(), rest.status_code());
     assert_eq!(
@@ -659,6 +668,7 @@ async fn conversation_relay_preview_is_explicit_and_failures_never_persist_or_re
 
     let missing_source = authorized(&server, "POST", "/api/preview_relay_context")
         .json(&json!({
+            "requestId": "api-preview-missing-source",
             "targetDraftId": "protected-draft",
             "targetFolderId": target_folder,
             "targetAgentType": "codex",
@@ -679,6 +689,12 @@ async fn conversation_relay_preview_is_explicit_and_failures_never_persist_or_re
             .unwrap(),
         1
     );
+
+    let cancelled = authorized(&server, "POST", "/api/cancel_relay_preview")
+        .json(&json!({ "requestId": "api-preview-cancel" }))
+        .await;
+    assert_eq!(cancelled.status_code(), 200);
+    assert_eq!(cancelled.json::<Value>(), json!(true));
 }
 
 #[tokio::test]

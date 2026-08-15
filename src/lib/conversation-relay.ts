@@ -1,4 +1,5 @@
 import { getTransport } from "./transport"
+import { randomUUID } from "./utils"
 import type {
   ConversationCapabilitySettings,
   RelayContextPack,
@@ -6,6 +7,8 @@ import type {
   RelayPreviewInput,
   RelayProvenance,
 } from "./types"
+
+const RELAY_PREVIEW_TIMEOUT_MS = 60 * 60_000
 
 function abortError(): DOMException {
   return new DOMException("Aborted", "AbortError")
@@ -49,9 +52,24 @@ export function previewRelayContext(
   signal?: AbortSignal
 ): Promise<RelayContextPack> {
   if (signal?.aborted) return Promise.reject(abortError())
-  return observeAbort(
-    getTransport().call("preview_relay_context", input),
-    signal
+  const requestId = randomUUID()
+  const transport = getTransport()
+  const cancel = () => {
+    void transport.call("cancel_relay_preview", { requestId }).catch(() => {})
+  }
+  signal?.addEventListener("abort", cancel, { once: true })
+  const preview = transport
+    .call<RelayContextPack>(
+      "preview_relay_context",
+      { ...input, requestId },
+      { timeoutMs: RELAY_PREVIEW_TIMEOUT_MS }
+    )
+    .catch((error) => {
+      cancel()
+      throw error
+    })
+  return observeAbort(preview, signal).finally(() =>
+    signal?.removeEventListener("abort", cancel)
   )
 }
 

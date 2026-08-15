@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
   call: vi.fn(),
+  randomUUID: vi.fn(),
 }))
 
 vi.mock("@/lib/transport", () => ({
@@ -11,6 +12,11 @@ vi.mock("@/lib/transport", () => ({
   isRemoteDesktopMode: () => false,
   getActiveRemoteConnectionId: () => null,
   notifyRemoteDesktopUnauthorized: vi.fn(),
+}))
+
+vi.mock("@/lib/utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/utils")>()),
+  randomUUID: mocks.randomUUID,
 }))
 
 import {
@@ -66,6 +72,8 @@ describe("conversation relay transport API", () => {
   beforeEach(() => {
     mocks.call.mockReset()
     mocks.call.mockResolvedValue(pack)
+    mocks.randomUUID.mockReset()
+    mocks.randomUUID.mockReturnValue("relay-preview-request-id")
   })
 
   it("reads and updates the relay capability with camelCase wire fields", async () => {
@@ -94,7 +102,72 @@ describe("conversation relay transport API", () => {
 
     await previewRelayContext(input)
 
-    expect(mocks.call).toHaveBeenCalledWith("preview_relay_context", input)
+    expect(mocks.call).toHaveBeenCalledWith(
+      "preview_relay_context",
+      {
+        ...input,
+        requestId: "relay-preview-request-id",
+      },
+      { timeoutMs: 60 * 60_000 }
+    )
+  })
+
+  it("cancels an aborted preview with the exact internal request id", async () => {
+    const input: RelayPreviewInput = {
+      targetDraftId: "new-tab-abort",
+      sourceConversationId: 42,
+      targetFolderId: 9,
+      targetAgentType: "codex",
+      targetModel: "gpt-5.4",
+      scope,
+    }
+    const pending = new Promise<RelayContextPack>(() => {})
+    mocks.call.mockImplementation((command: string) =>
+      command === "cancel_relay_preview" ? Promise.resolve(true) : pending
+    )
+    const controller = new AbortController()
+
+    const result = previewRelayContext(input, controller.signal)
+    controller.abort()
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError" })
+    await vi.waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(2))
+    const previewArgs = mocks.call.mock.calls[0][1]
+    expect(previewArgs).toEqual({
+      ...input,
+      requestId: "relay-preview-request-id",
+    })
+    expect(mocks.call.mock.calls[1]).toEqual([
+      "cancel_relay_preview",
+      { requestId: previewArgs.requestId },
+    ])
+  })
+
+  it("cancels the same request id when the transport fails", async () => {
+    const input: RelayPreviewInput = {
+      targetDraftId: "new-tab-timeout",
+      sourceConversationId: 42,
+      targetFolderId: 9,
+      targetAgentType: "codex",
+      targetModel: "gpt-5.4",
+      scope,
+    }
+    mocks.call
+      .mockRejectedValueOnce(new Error("Request timed out"))
+      .mockResolvedValueOnce(true)
+
+    await expect(previewRelayContext(input)).rejects.toThrow(
+      "Request timed out"
+    )
+
+    expect(mocks.call.mock.calls).toEqual([
+      [
+        "preview_relay_context",
+        { ...input, requestId: "relay-preview-request-id" },
+        { timeoutMs: 60 * 60_000 },
+      ],
+      ["cancel_relay_preview", { requestId: "relay-preview-request-id" }],
+    ])
   })
 
   it("restores a relay by stable draft id", async () => {
