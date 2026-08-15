@@ -3,8 +3,9 @@ use codeg_lib::conversation_relay::service::{
     cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
     get_relay_context_by_draft_core, preview_relay_context_core,
     preview_relay_context_from_rounds_with_summarizer_core, remove_relay_context_core,
-    update_conversation_capabilities_core, update_relay_context_with_summarizer_core,
-    RelayPatchRequest, RelayPreviewRequest, UpdateConversationCapabilitiesInput,
+    reserve_relay_preview_core, update_conversation_capabilities_core,
+    update_relay_context_with_summarizer_core, RelayPatchRequest, RelayPreviewRequest,
+    UpdateConversationCapabilitiesInput,
 };
 use codeg_lib::conversation_relay::summarizer::{
     summarize_with_runner, RelayStructuredSummary, RelaySummarizer, RelaySummaryItem,
@@ -102,6 +103,14 @@ fn preview_request(
             selected_round_ids: vec!["round-1".to_owned()],
         },
     }
+}
+
+async fn reserved_preview_request(request: RelayPreviewRequest) -> RelayPreviewRequest {
+    assert!(
+        reserve_relay_preview_core(&request.request_id, &request.target_draft_id).await,
+        "preview reservation should succeed"
+    );
+    request
 }
 
 async fn insert_pack(
@@ -576,7 +585,7 @@ async fn explicit_preview_failure_does_not_persist_an_empty_pack() {
         &state.connection_manager,
         &state.db,
         &state.data_dir,
-        RelayPreviewRequest {
+        reserved_preview_request(RelayPreviewRequest {
             request_id: "missing-source-preview".to_owned(),
             target_draft_id: "cross-project-draft".to_owned(),
             source_conversation_id: 999,
@@ -587,7 +596,8 @@ async fn explicit_preview_failure_does_not_persist_an_empty_pack() {
                 scope_type: RelayScopeType::RecentRounds,
                 selected_round_ids: vec!["round-1".to_owned()],
             },
-        },
+        })
+        .await,
     )
     .await
     .unwrap_err();
@@ -622,12 +632,13 @@ async fn cancelled_preview_does_not_replace_the_previous_active_pack() {
     let rounds = vec![relay_round("round-1", "cancel this summary")];
     let preview = preview_relay_context_from_rounds_with_summarizer_core(
         &db,
-        preview_request(
+        reserved_preview_request(preview_request(
             "cancelled-preview-request",
             "draft-cancelled",
             source,
             RelayScopeType::Summary,
-        ),
+        ))
+        .await,
         rounds,
         &summarizer,
     );
@@ -679,12 +690,13 @@ async fn dropped_preview_future_releases_its_request_slot() {
             };
             let preview = preview_relay_context_from_rounds_with_summarizer_core(
                 &db,
-                preview_request(
+                reserved_preview_request(preview_request(
                     &format!("dropped-preview-request-{sequence}"),
                     &format!("draft-dropped-{sequence}"),
                     source,
                     RelayScopeType::Summary,
-                ),
+                ))
+                .await,
                 rounds.clone(),
                 &summarizer,
             );
@@ -699,12 +711,13 @@ async fn dropped_preview_future_releases_its_request_slot() {
 
     let persisted = preview_relay_context_from_rounds_with_summarizer_core(
         &db,
-        preview_request(
+        reserved_preview_request(preview_request(
             "preview-after-dropped-requests",
             "draft-after-dropped-requests",
             source,
             RelayScopeType::RecentRounds,
-        ),
+        ))
+        .await,
         rounds,
         &RunnerBackedFailingSummarizer,
     )
@@ -728,12 +741,13 @@ async fn stale_preview_finishing_after_a_new_preview_cannot_become_active() {
     let rounds = vec![relay_round("round-1", "latest preview wins")];
     let old_preview = preview_relay_context_from_rounds_with_summarizer_core(
         &db,
-        preview_request(
+        reserved_preview_request(preview_request(
             "old-preview-request",
             "draft-generation",
             source,
             RelayScopeType::Summary,
-        ),
+        ))
+        .await,
         rounds.clone(),
         &summarizer,
     );
@@ -745,12 +759,13 @@ async fn stale_preview_finishing_after_a_new_preview_cannot_become_active() {
 
     let latest = preview_relay_context_from_rounds_with_summarizer_core(
         &db,
-        preview_request(
+        reserved_preview_request(preview_request(
             "latest-preview-request",
             "draft-generation",
             source,
             RelayScopeType::RecentRounds,
-        ),
+        ))
+        .await,
         rounds,
         &summarizer,
     )
@@ -781,12 +796,13 @@ async fn late_cancel_for_an_old_request_does_not_cancel_the_latest_preview() {
     let rounds = vec![relay_round("round-1", "late cancel")];
     preview_relay_context_from_rounds_with_summarizer_core(
         &db,
-        preview_request(
+        reserved_preview_request(preview_request(
             "finished-old-request",
             "draft-late-cancel",
             source,
             RelayScopeType::RecentRounds,
-        ),
+        ))
+        .await,
         rounds.clone(),
         &summarizer,
     )
@@ -794,19 +810,20 @@ async fn late_cancel_for_an_old_request_does_not_cancel_the_latest_preview() {
     .unwrap();
     let latest = preview_relay_context_from_rounds_with_summarizer_core(
         &db,
-        preview_request(
+        reserved_preview_request(preview_request(
             "finished-latest-request",
             "draft-late-cancel",
             source,
             RelayScopeType::RecentRounds,
-        ),
+        ))
+        .await,
         rounds,
         &summarizer,
     )
     .await
     .unwrap();
 
-    assert!(cancel_relay_preview_core("finished-old-request").await);
+    assert!(!cancel_relay_preview_core("finished-old-request").await);
     let active = get_relay_context_by_draft_core(&db.conn, "draft-late-cancel")
         .await
         .unwrap()
@@ -816,7 +833,7 @@ async fn late_cancel_for_an_old_request_does_not_cancel_the_latest_preview() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn cancelled_tombstone_rejects_a_late_preview_past_the_legacy_ttl() {
+async fn cancelled_request_cannot_reenter_after_reservation_cleanup_boundary() {
     let db = fresh_in_memory_db().await;
     let folder_id = seed_folder(&db, "C:/workspace/relay-cancel-tombstone").await;
     let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
@@ -825,15 +842,29 @@ async fn cancelled_tombstone_rejects_a_late_preview_past_the_legacy_ttl() {
         "cancelled request must stay cancelled",
     )];
 
-    assert!(cancel_relay_preview_core("cancelled-before-preview").await);
+    let cancelled_request = preview_request(
+        "cancelled-before-preview",
+        "draft-cancel-tombstone",
+        source,
+        RelayScopeType::RecentRounds,
+    );
+    assert!(
+        reserve_relay_preview_core(
+            &cancelled_request.request_id,
+            &cancelled_request.target_draft_id
+        )
+        .await
+    );
+    assert!(cancel_relay_preview_core(&cancelled_request.request_id).await);
     let latest = preview_relay_context_from_rounds_with_summarizer_core(
         &db,
-        preview_request(
+        reserved_preview_request(preview_request(
             "latest-valid-preview",
             "draft-cancel-tombstone",
             source,
             RelayScopeType::RecentRounds,
-        ),
+        ))
+        .await,
         rounds.clone(),
         &RunnerBackedFailingSummarizer,
     )
@@ -842,16 +873,12 @@ async fn cancelled_tombstone_rejects_a_late_preview_past_the_legacy_ttl() {
 
     tokio::time::pause();
     tokio::task::yield_now().await;
-    tokio::time::advance(Duration::from_secs(60 * 60 - 1)).await;
+    tokio::time::advance(Duration::from_secs(31)).await;
+    tokio::task::yield_now().await;
 
     let late_error = preview_relay_context_from_rounds_with_summarizer_core(
         &db,
-        preview_request(
-            "cancelled-before-preview",
-            "draft-cancel-tombstone",
-            source,
-            RelayScopeType::RecentRounds,
-        ),
+        cancelled_request,
         rounds,
         &RunnerBackedFailingSummarizer,
     )
@@ -868,6 +895,101 @@ async fn cancelled_tombstone_rejects_a_late_preview_past_the_legacy_ttl() {
         .unwrap();
     assert_eq!(active.id, latest.id);
     assert_eq!(active.status, "draft");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn abandoned_reservation_expires_and_cannot_be_claimed() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-abandoned-reservation").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let request = preview_request(
+        "abandoned-preview-request",
+        "draft-abandoned-reservation",
+        source,
+        RelayScopeType::RecentRounds,
+    );
+
+    tokio::time::pause();
+    assert!(reserve_relay_preview_core(&request.request_id, &request.target_draft_id).await);
+    tokio::time::advance(Duration::from_secs(31)).await;
+    tokio::task::yield_now().await;
+
+    let error = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        request,
+        vec![relay_round("round-1", "expired reservation")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        error.message,
+        RelayErrorCode::RelaySourceUnavailable.to_string()
+    );
+    assert!(!cancel_relay_preview_core("abandoned-preview-request").await);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn old_cleanup_does_not_remove_a_reused_request_id_reservation() {
+    tokio::time::pause();
+
+    for (sequence, (old_draft, new_draft)) in [
+        ("draft-aba-same", "draft-aba-same"),
+        ("draft-aba-old", "draft-aba-new"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let request_id = format!("reused-reservation-{sequence}");
+        assert!(reserve_relay_preview_core(&request_id, old_draft).await);
+        assert!(cancel_relay_preview_core(&request_id).await);
+
+        tokio::time::advance(Duration::from_secs(20)).await;
+        assert!(reserve_relay_preview_core(&request_id, new_draft).await);
+        tokio::time::advance(Duration::from_secs(11)).await;
+        tokio::task::yield_now().await;
+
+        assert!(cancel_relay_preview_core(&request_id).await);
+    }
+}
+
+#[tokio::test]
+async fn overlong_target_draft_id_is_not_reserved() {
+    let request_id = "overlong-target-draft-reservation";
+    let target_draft_id = "x".repeat(513);
+
+    assert!(!reserve_relay_preview_core(request_id, &target_draft_id).await);
+    assert!(!cancel_relay_preview_core(request_id).await);
+}
+
+#[tokio::test]
+async fn unknown_cancel_storm_does_not_block_a_valid_preview() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-cancel-storm").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+
+    for sequence in 0..=1_024 {
+        assert!(!cancel_relay_preview_core(&format!("unknown-cancel-{sequence}")).await);
+    }
+
+    let persisted = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "valid-preview-after-cancel-storm",
+            "draft-after-cancel-storm",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "valid preview")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(persisted.target_draft_id, "draft-after-cancel-storm");
+    assert_eq!(persisted.status, "draft");
 }
 
 #[tokio::test]

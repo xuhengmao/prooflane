@@ -7,8 +7,8 @@ use crate::app_error::AppCommandError;
 use crate::conversation_relay::service::{
     cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
     get_relay_context_by_draft_core, preview_relay_context_core, remove_relay_context_core,
-    update_conversation_capabilities_core, update_relay_context_core, RelayPatchRequest,
-    RelayPreviewRequest, UpdateConversationCapabilitiesInput,
+    reserve_relay_preview_core, update_conversation_capabilities_core, update_relay_context_core,
+    RelayPatchRequest, RelayPreviewRequest, UpdateConversationCapabilitiesInput,
 };
 use crate::db::service::conversation_capability_service::ConversationCapabilitySettings;
 use crate::db::AppDatabase;
@@ -53,6 +53,11 @@ pub async fn preview_relay_context(
         },
     )
     .await
+}
+
+#[tauri::command]
+pub async fn reserve_relay_preview(request_id: String, target_draft_id: String) -> bool {
+    reserve_relay_preview_core(&request_id, &target_draft_id).await
 }
 
 #[tauri::command]

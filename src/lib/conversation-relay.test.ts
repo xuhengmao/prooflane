@@ -102,14 +102,80 @@ describe("conversation relay transport API", () => {
 
     await previewRelayContext(input)
 
-    expect(mocks.call).toHaveBeenCalledWith(
-      "preview_relay_context",
-      {
-        ...input,
-        requestId: "relay-preview-request-id",
-      },
-      { timeoutMs: 60 * 60_000 }
+    expect(mocks.call.mock.calls).toEqual([
+      [
+        "reserve_relay_preview",
+        {
+          requestId: "relay-preview-request-id",
+          targetDraftId: "new-tab-7",
+        },
+      ],
+      [
+        "preview_relay_context",
+        {
+          ...input,
+          requestId: "relay-preview-request-id",
+        },
+        { timeoutMs: 60 * 60_000 },
+      ],
+    ])
+  })
+
+  it("cleans a reservation cancelled before preview starts", async () => {
+    const input: RelayPreviewInput = {
+      targetDraftId: "new-tab-reserve-abort",
+      sourceConversationId: 42,
+      targetFolderId: 9,
+      targetAgentType: "codex",
+      targetModel: "gpt-5.4",
+      scope,
+    }
+    let resolveReservation: (value: boolean) => void = () => {}
+    const reservation = new Promise<boolean>((resolve) => {
+      resolveReservation = resolve
+    })
+    mocks.call.mockImplementation((command: string) =>
+      command === "reserve_relay_preview" ? reservation : Promise.resolve(true)
     )
+    const controller = new AbortController()
+
+    const result = previewRelayContext(input, controller.signal)
+    controller.abort()
+
+    const outcome = result.then(
+      () => "resolved",
+      (error: Error) => error.name
+    )
+    await expect(
+      Promise.race([
+        outcome,
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve("still-pending"), 0)
+        ),
+      ])
+    ).resolves.toBe("AbortError")
+    expect(mocks.call.mock.calls).toEqual([
+      [
+        "reserve_relay_preview",
+        {
+          requestId: "relay-preview-request-id",
+          targetDraftId: "new-tab-reserve-abort",
+        },
+      ],
+    ])
+
+    resolveReservation(true)
+    await vi.waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(2))
+    expect(mocks.call.mock.calls).toEqual([
+      [
+        "reserve_relay_preview",
+        {
+          requestId: "relay-preview-request-id",
+          targetDraftId: "new-tab-reserve-abort",
+        },
+      ],
+      ["cancel_relay_preview", { requestId: "relay-preview-request-id" }],
+    ])
   })
 
   it("cancels an aborted preview with the exact internal request id", async () => {
@@ -122,22 +188,32 @@ describe("conversation relay transport API", () => {
       scope,
     }
     const pending = new Promise<RelayContextPack>(() => {})
-    mocks.call.mockImplementation((command: string) =>
-      command === "cancel_relay_preview" ? Promise.resolve(true) : pending
-    )
+    mocks.call.mockImplementation((command: string) => {
+      if (command === "reserve_relay_preview") return Promise.resolve(true)
+      if (command === "cancel_relay_preview") return Promise.resolve(true)
+      return pending
+    })
     const controller = new AbortController()
 
     const result = previewRelayContext(input, controller.signal)
+    await vi.waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(2))
     controller.abort()
 
     await expect(result).rejects.toMatchObject({ name: "AbortError" })
-    await vi.waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(2))
-    const previewArgs = mocks.call.mock.calls[0][1]
+    await vi.waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(3))
+    const previewArgs = mocks.call.mock.calls[1][1]
     expect(previewArgs).toEqual({
       ...input,
       requestId: "relay-preview-request-id",
     })
-    expect(mocks.call.mock.calls[1]).toEqual([
+    expect(mocks.call.mock.calls[0]).toEqual([
+      "reserve_relay_preview",
+      {
+        requestId: "relay-preview-request-id",
+        targetDraftId: "new-tab-abort",
+      },
+    ])
+    expect(mocks.call.mock.calls[2]).toEqual([
       "cancel_relay_preview",
       { requestId: previewArgs.requestId },
     ])
@@ -153,6 +229,7 @@ describe("conversation relay transport API", () => {
       scope,
     }
     mocks.call
+      .mockResolvedValueOnce(true)
       .mockRejectedValueOnce(new Error("Request timed out"))
       .mockResolvedValueOnce(true)
 
@@ -161,6 +238,13 @@ describe("conversation relay transport API", () => {
     )
 
     expect(mocks.call.mock.calls).toEqual([
+      [
+        "reserve_relay_preview",
+        {
+          requestId: "relay-preview-request-id",
+          targetDraftId: "new-tab-timeout",
+        },
+      ],
       [
         "preview_relay_context",
         { ...input, requestId: "relay-preview-request-id" },

@@ -9,8 +9,8 @@ use crate::app_state::AppState;
 use crate::conversation_relay::service::{
     cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
     get_relay_context_by_draft_core, preview_relay_context_core, remove_relay_context_core,
-    update_conversation_capabilities_core, update_relay_context_core, RelayPatchRequest,
-    RelayPreviewRequest, UpdateConversationCapabilitiesInput,
+    reserve_relay_preview_core, update_conversation_capabilities_core, update_relay_context_core,
+    RelayPatchRequest, RelayPreviewRequest, UpdateConversationCapabilitiesInput,
 };
 use crate::db::service::conversation_capability_service::ConversationCapabilitySettings;
 use crate::models::{RelayContextPackView, RelayProvenanceView};
@@ -37,6 +37,13 @@ pub struct ConversationIdParams {
 #[serde(rename_all = "camelCase")]
 pub struct CancelRelayPreviewParams {
     request_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReserveRelayPreviewParams {
+    request_id: String,
+    target_draft_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,6 +87,10 @@ pub async fn preview_relay_context(
 
 pub async fn cancel_relay_preview(Json(params): Json<CancelRelayPreviewParams>) -> Json<bool> {
     Json(cancel_relay_preview_core(&params.request_id).await)
+}
+
+pub async fn reserve_relay_preview(Json(params): Json<ReserveRelayPreviewParams>) -> Json<bool> {
+    Json(reserve_relay_preview_core(&params.request_id, &params.target_draft_id).await)
 }
 
 pub async fn get_relay_context_by_draft(

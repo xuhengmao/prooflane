@@ -35,25 +35,25 @@ use super::{
 
 const RELAY_STORAGE_UNAVAILABLE: &str = "relay_storage_unavailable";
 const MAX_PREVIEW_REQUEST_ID_BYTES: usize = 128;
+const MAX_PREVIEW_TARGET_DRAFT_ID_BYTES: usize = 512;
 const MAX_PENDING_PREVIEW_REQUESTS: usize = 1_024;
 const MAX_ACTIVE_PREVIEWS: usize = 32;
-// A cancel may arrive before its preview request. Keep that tombstone for the
-// full client preview window so the delayed request cannot become a new draft.
-const PREVIEW_TOMBSTONE_TTL: Duration = Duration::from_secs(60 * 60);
+const PREVIEW_RESERVATION_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 struct RelayPreviewEntry {
     cancellation: CancellationToken,
-    target_draft_id: Option<String>,
+    target_draft_id: String,
+    generation: u64,
     active: bool,
     committed: bool,
-    cleanup_scheduled: bool,
 }
 
 #[derive(Default)]
 struct RelayPreviewRegistry {
     requests: HashMap<String, RelayPreviewEntry>,
-    active_by_draft: HashMap<String, String>,
+    latest_by_draft: HashMap<String, String>,
+    next_generation: u64,
 }
 
 struct RelayPreviewGuard {
@@ -146,7 +146,84 @@ fn valid_preview_request_id(request_id: &str) -> bool {
     !request_id.is_empty() && request_id.len() <= MAX_PREVIEW_REQUEST_ID_BYTES
 }
 
-async fn register_relay_preview(
+fn valid_preview_target_draft_id(target_draft_id: &str) -> bool {
+    !target_draft_id.is_empty() && target_draft_id.len() <= MAX_PREVIEW_TARGET_DRAFT_ID_BYTES
+}
+
+pub async fn reserve_relay_preview_core(request_id: &str, target_draft_id: &str) -> bool {
+    let request_id = request_id.trim();
+    let target_draft_id = target_draft_id.trim();
+    if !valid_preview_request_id(request_id) || !valid_preview_target_draft_id(target_draft_id) {
+        return false;
+    }
+
+    let generation = {
+        let mut registry = relay_preview_registry().lock().await;
+        if registry.requests.contains_key(request_id)
+            || registry.requests.len() >= MAX_PENDING_PREVIEW_REQUESTS
+        {
+            return false;
+        }
+        let Some(generation) = registry.next_generation.checked_add(1) else {
+            return false;
+        };
+        registry.next_generation = generation;
+
+        registry.requests.insert(
+            request_id.to_owned(),
+            RelayPreviewEntry {
+                cancellation: CancellationToken::new(),
+                target_draft_id: target_draft_id.to_owned(),
+                generation,
+                active: false,
+                committed: false,
+            },
+        );
+        let previous_request_id = registry
+            .latest_by_draft
+            .insert(target_draft_id.to_owned(), request_id.to_owned());
+        if let Some(previous_request_id) = previous_request_id {
+            let remove_previous =
+                registry
+                    .requests
+                    .get(&previous_request_id)
+                    .is_some_and(|previous| {
+                        previous.cancellation.cancel();
+                        !previous.active
+                    });
+            if remove_previous {
+                registry.requests.remove(&previous_request_id);
+            }
+        }
+        generation
+    };
+
+    let request_id = request_id.to_owned();
+    let target_draft_id = target_draft_id.to_owned();
+    let expires_at = tokio::time::Instant::now() + PREVIEW_RESERVATION_TTL;
+    tokio::spawn(async move {
+        tokio::time::sleep_until(expires_at).await;
+        let mut registry = relay_preview_registry().lock().await;
+        let expired = registry.requests.get(&request_id).is_some_and(|entry| {
+            entry.generation == generation
+                && entry.target_draft_id == target_draft_id
+                && !entry.active
+        });
+        if expired {
+            registry.requests.remove(&request_id);
+            if registry
+                .latest_by_draft
+                .get(&target_draft_id)
+                .is_some_and(|latest_request_id| latest_request_id == &request_id)
+            {
+                registry.latest_by_draft.remove(&target_draft_id);
+            }
+        }
+    });
+    true
+}
+
+async fn claim_relay_preview(
     request_id: &str,
     target_draft_id: &str,
 ) -> Result<CancellationToken, AppCommandError> {
@@ -160,54 +237,34 @@ async fn register_relay_preview(
     {
         return Err(preview_cancelled_error());
     }
-    if !registry.requests.contains_key(request_id)
-        && registry.requests.len() >= MAX_PENDING_PREVIEW_REQUESTS
-    {
+    let is_latest = registry
+        .latest_by_draft
+        .get(target_draft_id)
+        .is_some_and(|latest_request_id| latest_request_id == request_id);
+    if !is_latest {
         return Err(preview_cancelled_error());
     }
 
-    let cancellation = {
-        let entry = registry
-            .requests
-            .entry(request_id.to_owned())
-            .or_insert_with(|| RelayPreviewEntry {
-                cancellation: CancellationToken::new(),
-                target_draft_id: None,
-                active: false,
-                committed: false,
-                cleanup_scheduled: false,
-            });
-        if entry.active {
-            return Err(preview_cancelled_error());
-        }
-        entry.active = true;
-        entry.committed = false;
-        entry.target_draft_id = Some(target_draft_id.to_owned());
-        entry.cancellation.clone()
+    let Some(entry) = registry.requests.get_mut(request_id) else {
+        return Err(preview_cancelled_error());
     };
-    let previous_request_id = registry
-        .active_by_draft
-        .insert(target_draft_id.to_owned(), request_id.to_owned());
-    let previous_cancellation = previous_request_id
-        .filter(|previous| previous != request_id)
-        .and_then(|previous| registry.requests.get(&previous))
-        .map(|entry| entry.cancellation.clone());
-    if let Some(previous_cancellation) = previous_cancellation {
-        previous_cancellation.cancel();
+    if entry.active || entry.target_draft_id != target_draft_id || entry.cancellation.is_cancelled()
+    {
+        return Err(preview_cancelled_error());
     }
-    drop(registry);
-    Ok(cancellation)
+    entry.active = true;
+    Ok(entry.cancellation.clone())
 }
 
 async fn finish_relay_preview(request_id: &str, target_draft_id: &str) {
     let mut registry = relay_preview_registry().lock().await;
     registry.requests.remove(request_id);
     if registry
-        .active_by_draft
+        .latest_by_draft
         .get(target_draft_id)
         .is_some_and(|active_request_id| active_request_id == request_id)
     {
-        registry.active_by_draft.remove(target_draft_id);
+        registry.latest_by_draft.remove(target_draft_id);
     }
 }
 
@@ -216,46 +273,26 @@ pub async fn cancel_relay_preview_core(request_id: &str) -> bool {
     if !valid_preview_request_id(request_id) {
         return false;
     }
-    let schedule_cleanup = {
-        let mut registry = relay_preview_registry().lock().await;
-        if !registry.requests.contains_key(request_id)
-            && registry.requests.len() >= MAX_PENDING_PREVIEW_REQUESTS
-        {
+    let mut registry = relay_preview_registry().lock().await;
+    let (target_draft_id, active) = {
+        let Some(entry) = registry.requests.get_mut(request_id) else {
             return false;
-        }
-        let entry = registry
-            .requests
-            .entry(request_id.to_owned())
-            .or_insert_with(|| RelayPreviewEntry {
-                cancellation: CancellationToken::new(),
-                target_draft_id: None,
-                active: false,
-                committed: false,
-                cleanup_scheduled: false,
-            });
+        };
         if entry.committed {
             return false;
         }
-        let schedule_cleanup = !entry.active && !entry.cleanup_scheduled;
-        if schedule_cleanup {
-            entry.cleanup_scheduled = true;
-        }
         entry.cancellation.cancel();
-        schedule_cleanup
+        (entry.target_draft_id.clone(), entry.active)
     };
-    if schedule_cleanup {
-        let request_id = request_id.to_owned();
-        tokio::spawn(async move {
-            tokio::time::sleep(PREVIEW_TOMBSTONE_TTL).await;
-            let mut registry = relay_preview_registry().lock().await;
-            if registry
-                .requests
-                .get(&request_id)
-                .is_some_and(|entry| !entry.active && entry.cancellation.is_cancelled())
-            {
-                registry.requests.remove(&request_id);
-            }
-        });
+    if !active {
+        registry.requests.remove(request_id);
+        if registry
+            .latest_by_draft
+            .get(&target_draft_id)
+            .is_some_and(|latest_request_id| latest_request_id == request_id)
+        {
+            registry.latest_by_draft.remove(&target_draft_id);
+        }
     }
     true
 }
@@ -545,10 +582,10 @@ async fn persist_preview_snapshot(
     let may_commit = registry.requests.get(request_id).is_some_and(|entry| {
         entry.active
             && !entry.committed
-            && entry.target_draft_id.as_deref() == Some(target_draft_id.as_str())
+            && entry.target_draft_id == target_draft_id
             && !entry.cancellation.is_cancelled()
     }) && registry
-        .active_by_draft
+        .latest_by_draft
         .get(&target_draft_id)
         .is_some_and(|active_request_id| active_request_id == request_id);
     if !may_commit {
@@ -581,10 +618,10 @@ pub async fn preview_relay_context_core(
 ) -> Result<RelayContextPackView, AppCommandError> {
     let request_id = request.request_id.trim().to_owned();
     let target_draft_id = request.target_draft_id.trim().to_owned();
-    if !valid_preview_request_id(&request_id) || target_draft_id.is_empty() {
+    if !valid_preview_request_id(&request_id) || !valid_preview_target_draft_id(&target_draft_id) {
         return Err(relay_error(RelayErrorCode::RelaySourceUnavailable));
     }
-    let cancellation = register_relay_preview(&request_id, &target_draft_id).await?;
+    let cancellation = claim_relay_preview(&request_id, &target_draft_id).await?;
     let guard = RelayPreviewGuard::new(
         request_id.clone(),
         target_draft_id.clone(),
@@ -638,10 +675,10 @@ pub async fn preview_relay_context_from_rounds_with_summarizer_core(
 ) -> Result<RelayContextPackView, AppCommandError> {
     let request_id = request.request_id.trim().to_owned();
     let target_draft_id = request.target_draft_id.trim().to_owned();
-    if !valid_preview_request_id(&request_id) || target_draft_id.is_empty() {
+    if !valid_preview_request_id(&request_id) || !valid_preview_target_draft_id(&target_draft_id) {
         return Err(relay_error(RelayErrorCode::RelaySourceUnavailable));
     }
-    let cancellation = register_relay_preview(&request_id, &target_draft_id).await?;
+    let cancellation = claim_relay_preview(&request_id, &target_draft_id).await?;
     let guard = RelayPreviewGuard::new(
         request_id.clone(),
         target_draft_id.clone(),

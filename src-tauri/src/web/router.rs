@@ -78,6 +78,10 @@ pub fn build_router(
             post(handlers::conversation_relay::update_conversation_capabilities),
         )
         .route(
+            "/reserve_relay_preview",
+            post(handlers::conversation_relay::reserve_relay_preview),
+        )
+        .route(
             "/preview_relay_context",
             post(handlers::conversation_relay::preview_relay_context),
         )

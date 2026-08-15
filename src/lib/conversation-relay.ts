@@ -47,17 +47,47 @@ export function updateConversationCapabilities(input: {
   return getTransport().call("update_conversation_capabilities", input)
 }
 
-export function previewRelayContext(
+export async function previewRelayContext(
   input: RelayPreviewInput,
   signal?: AbortSignal
 ): Promise<RelayContextPack> {
   if (signal?.aborted) return Promise.reject(abortError())
   const requestId = randomUUID()
   const transport = getTransport()
+  let cancellation: Promise<unknown> | undefined
   const cancel = () => {
-    void transport.call("cancel_relay_preview", { requestId }).catch(() => {})
+    cancellation ??= transport
+      .call("cancel_relay_preview", { requestId })
+      .catch(() => false)
+    return cancellation
   }
-  signal?.addEventListener("abort", cancel, { once: true })
+
+  const reservation = transport.call<boolean>("reserve_relay_preview", {
+    requestId,
+    targetDraftId: input.targetDraftId,
+  })
+  let reserved: boolean
+  try {
+    reserved = await observeAbort(reservation, signal)
+  } catch (error) {
+    if (signal?.aborted) {
+      void reservation
+        .then((completed) => (completed ? cancel() : undefined))
+        .catch(() => {})
+      throw abortError()
+    }
+    throw error
+  }
+  if (!reserved) throw new Error("relay_source_unavailable")
+  if (signal?.aborted) {
+    await cancel()
+    throw abortError()
+  }
+
+  const cancelOnAbort = () => {
+    void cancel()
+  }
+  signal?.addEventListener("abort", cancelOnAbort, { once: true })
   const preview = transport
     .call<RelayContextPack>(
       "preview_relay_context",
@@ -65,11 +95,11 @@ export function previewRelayContext(
       { timeoutMs: RELAY_PREVIEW_TIMEOUT_MS }
     )
     .catch((error) => {
-      cancel()
+      void cancel()
       throw error
     })
   return observeAbort(preview, signal).finally(() =>
-    signal?.removeEventListener("abort", cancel)
+    signal?.removeEventListener("abort", cancelOnAbort)
   )
 }
 

@@ -1003,6 +1003,7 @@ mod tauri_app {
                 conversations::delete_conversation,
                 conversation_relay_commands::get_conversation_capabilities,
                 conversation_relay_commands::update_conversation_capabilities,
+                conversation_relay_commands::reserve_relay_preview,
                 conversation_relay_commands::preview_relay_context,
                 conversation_relay_commands::cancel_relay_preview,
                 conversation_relay_commands::get_relay_context_by_draft,

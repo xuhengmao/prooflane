@@ -646,9 +646,25 @@ async fn conversation_relay_preview_is_explicit_and_failures_never_persist_or_re
         "targetModel": null,
         "scope": { "scopeType": "recent_rounds", "selectedRoundIds": ["round-a"] }
     });
+    let command_reservation = authorized(&server, "POST", "/api/reserve_relay_preview")
+        .json(&json!({
+            "requestId": "api-preview-command",
+            "targetDraftId": "protected-draft"
+        }))
+        .await;
+    assert_eq!(command_reservation.status_code(), 200);
+    assert_eq!(command_reservation.json::<Value>(), json!(true));
     let command = authorized(&server, "POST", "/api/preview_relay_context")
         .json(&explicit_cross_project)
         .await;
+    let rest_reservation = authorized(&server, "POST", "/api/reserve_relay_preview")
+        .json(&json!({
+            "requestId": "api-preview-rest",
+            "targetDraftId": "protected-draft"
+        }))
+        .await;
+    assert_eq!(rest_reservation.status_code(), 200);
+    assert_eq!(rest_reservation.json::<Value>(), json!(true));
     let rest = authorized(&server, "POST", "/api/relay-context-packs/preview")
         .json(&json!({
             "requestId": "api-preview-rest",
@@ -666,6 +682,14 @@ async fn conversation_relay_preview_is_explicit_and_failures_never_persist_or_re
         rest.json::<Value>()["message"]
     );
 
+    let missing_source_reservation = authorized(&server, "POST", "/api/reserve_relay_preview")
+        .json(&json!({
+            "requestId": "api-preview-missing-source",
+            "targetDraftId": "protected-draft"
+        }))
+        .await;
+    assert_eq!(missing_source_reservation.status_code(), 200);
+    assert_eq!(missing_source_reservation.json::<Value>(), json!(true));
     let missing_source = authorized(&server, "POST", "/api/preview_relay_context")
         .json(&json!({
             "requestId": "api-preview-missing-source",
@@ -694,7 +718,7 @@ async fn conversation_relay_preview_is_explicit_and_failures_never_persist_or_re
         .json(&json!({ "requestId": "api-preview-cancel" }))
         .await;
     assert_eq!(cancelled.status_code(), 200);
-    assert_eq!(cancelled.json::<Value>(), json!(true));
+    assert_eq!(cancelled.json::<Value>(), json!(false));
 }
 
 #[tokio::test]
