@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -8,11 +8,11 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::acp::manager::ConnectionManager;
-use crate::acp::types::{ConnectionStatus, PromptInputBlock};
-use crate::commands::acp::{build_session_runtime_env, verify_agent_installed};
 use crate::db::AppDatabase;
-use crate::models::agent::AgentType;
-use crate::web::event_bridge::EventEmitter;
+use crate::restricted_codex::{
+    normalize_restricted_codex_output, run_restricted_codex_once, RestrictedCodexError,
+    RestrictedCodexRequest,
+};
 
 const OPTIMIZATION_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_DRAFT_CHARACTERS: usize = 65_536;
@@ -25,7 +25,6 @@ const MAX_CONTEXT_TOTAL_BYTES: usize = 192 * 1024;
 const MAX_REQUEST_ID_BYTES: usize = 128;
 const MAX_PENDING_CANCELLATIONS: usize = 1_024;
 const MAX_ACTIVE_OPTIMIZATIONS: usize = 8;
-const TRANSPORT_CLEANUP_DELAY: Duration = Duration::from_millis(250);
 
 #[derive(Clone)]
 struct OptimizationEntry {
@@ -339,131 +338,8 @@ fn context_file_labels(working_dir: Option<&str>, related_files: &[String]) -> V
         .collect()
 }
 
-fn restricted_session_mode(
-    selectors_ready: bool,
-    current_mode: Option<&str>,
-) -> Option<Result<(), String>> {
-    if !selectors_ready {
-        return None;
-    }
-    Some(match current_mode {
-        Some("read-only") => Ok(()),
-        Some(_) => Err("Prompt optimization agent failed to enter read-only mode".into()),
-        None => Err("Prompt optimization agent did not advertise read-only mode".into()),
-    })
-}
-
-fn default_codex_home() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".codex")
-}
-
-fn codex_home_for_runtime(runtime_env: &BTreeMap<String, String>) -> PathBuf {
-    match runtime_env.get("CODEX_HOME") {
-        Some(value) if value.is_empty() => default_codex_home(),
-        Some(value) => {
-            let trimmed = value.trim();
-            if trimmed == "~" {
-                dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
-            } else if let Some(relative) = trimmed.strip_prefix("~/") {
-                dirs::home_dir()
-                    .unwrap_or_else(|| PathBuf::from("."))
-                    .join(relative)
-            } else {
-                PathBuf::from(value)
-            }
-        }
-        None => crate::parsers::codex::resolve_codex_home_dir(),
-    }
-}
-
-fn restricted_codex_config(source: Option<&str>) -> Result<String, String> {
-    let source = match source {
-        Some(raw) => raw
-            .parse::<toml::Value>()
-            .map_err(|error| format!("Invalid Codex config for prompt optimization: {error}"))?,
-        None => toml::Value::Table(toml::map::Map::new()),
-    };
-    let source = source.as_table().ok_or_else(|| {
-        "Invalid Codex config for prompt optimization: root must be a table".to_string()
-    })?;
-    let mut restricted = toml::map::Map::new();
-
-    // Keep only model selection and provider transport data. User tools,
-    // hooks, skills, project trust and every other native setting stay out of
-    // the short-lived optimization profile.
-    for key in [
-        "model",
-        "model_provider",
-        "model_reasoning_effort",
-        "model_reasoning_summary",
-        "model_verbosity",
-        "service_tier",
-        "personality",
-        "preferred_auth_method",
-        "chatgpt_base_url",
-        "model_providers",
-    ] {
-        if let Some(value) = source.get(key) {
-            restricted.insert(key.to_string(), value.clone());
-        }
-    }
-    restricted.insert(
-        "approval_policy".into(),
-        toml::Value::String("never".into()),
-    );
-    restricted.insert(
-        "sandbox_mode".into(),
-        toml::Value::String("read-only".into()),
-    );
-
-    toml::to_string_pretty(&toml::Value::Table(restricted))
-        .map_err(|error| format!("Serialize restricted Codex config failed: {error}"))
-}
-
-fn prepare_restricted_codex_home(source: &Path, target: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(target)
-        .map_err(|error| format!("Create restricted Codex home failed: {error}"))?;
-
-    let source_config = match std::fs::read_to_string(source.join("config.toml")) {
-        Ok(raw) => Some(raw),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => {
-            return Err(format!(
-                "Read Codex config for prompt optimization failed: {error}"
-            ))
-        }
-    };
-    let config = restricted_codex_config(source_config.as_deref())?;
-    std::fs::write(target.join("config.toml"), config)
-        .map_err(|error| format!("Write restricted Codex config failed: {error}"))?;
-
-    match std::fs::read(source.join("auth.json")) {
-        Ok(auth) => std::fs::write(target.join("auth.json"), auth)
-            .map_err(|error| format!("Copy Codex authentication failed: {error}"))?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(format!("Read Codex authentication failed: {error}")),
-    }
-    Ok(())
-}
-
 pub fn normalize_optimized_prompt(raw: &str) -> String {
-    let trimmed = raw.trim();
-    if !trimmed.starts_with("```") || !trimmed.ends_with("```") {
-        return trimmed.to_string();
-    }
-
-    let without_open = trimmed
-        .strip_prefix("```")
-        .unwrap_or(trimmed)
-        .trim_start_matches(|c| c != '\n' && c != '\r')
-        .trim_start_matches(['\r', '\n']);
-    without_open
-        .strip_suffix("```")
-        .unwrap_or(without_open)
-        .trim()
-        .to_string()
+    normalize_restricted_codex_output("prompt-optimization", raw)
 }
 
 async fn run_prompt_optimization(
@@ -489,17 +365,10 @@ async fn run_prompt_optimization(
             "Prompt optimization draft exceeds {MAX_DRAFT_CHARACTERS} characters"
         ));
     }
-
-    let optimization_agent = AgentType::Codex;
-    verify_agent_installed(optimization_agent)
-        .await
-        .map_err(|error| error.to_string())?;
-    let runtime_env = build_session_runtime_env(db, optimization_agent, None, data_dir)
-        .await
-        .map_err(|error| error.to_string())?;
     if cancellation.is_cancelled() {
         return Err("Prompt optimization cancelled".into());
     }
+
     let workspace_context = collect_workspace_context(working_dir.as_deref(), &related_files);
     let related_file_labels = context_file_labels(working_dir.as_deref(), &related_files);
     let instruction = build_prompt_optimization_instruction(
@@ -508,114 +377,24 @@ async fn run_prompt_optimization(
         &related_file_labels,
         &workspace_context,
     );
-    let temp_dir = tempfile::Builder::new()
-        .prefix("prooflane-prompt-optimization-")
-        .tempdir()
-        .map_err(|error| error.to_string())?;
-    let isolated_codex_home = temp_dir.path().join("codex-home");
-    prepare_restricted_codex_home(&codex_home_for_runtime(&runtime_env), &isolated_codex_home)?;
-    let isolated_workspace = temp_dir.path().join("workspace");
-    std::fs::create_dir(&isolated_workspace).map_err(|error| error.to_string())?;
-    let mut runtime_env = runtime_env;
-    runtime_env.insert(
-        "CODEX_HOME".into(),
-        isolated_codex_home.to_string_lossy().into_owned(),
-    );
-    // Empty values are removed from the child environment by sacp-tokio. This
-    // prevents an inherited adapter-level JSON override from reintroducing MCP
-    // or other user capabilities into the isolated native config.
-    runtime_env.insert("CODEX_CONFIG".into(), String::new());
-    runtime_env.insert(
-        crate::acp::connection::RESTRICTED_SESSION_ENV.into(),
-        "1".into(),
-    );
-    let connection_id = manager
-        .spawn_agent(
-            optimization_agent,
-            Some(isolated_workspace.to_string_lossy().into_owned()),
-            None,
-            runtime_env,
-            "prompt-optimization".into(),
-            EventEmitter::Noop,
-            Some("read-only".into()),
-            BTreeMap::new(),
-        )
-        .await
-        .map_err(|error| error.to_string())?;
-    let state = manager
-        .get_state(&connection_id)
-        .await
-        .ok_or_else(|| "Prompt optimization connection disappeared".to_string())?;
-
-    let run = async {
-        loop {
-            let readiness = {
-                let snapshot = state.read().await;
-                if snapshot.status == ConnectionStatus::Error {
-                    return Err(snapshot
-                        .last_error
-                        .as_ref()
-                        .map(|error| error.message.clone())
-                        .unwrap_or_else(|| "Prompt optimization agent failed".into()));
-                }
-                if snapshot.status == ConnectionStatus::Disconnected {
-                    return Err("Prompt optimization agent disconnected".into());
-                }
-                restricted_session_mode(snapshot.selectors_ready, snapshot.current_mode.as_deref())
-            };
-            if let Some(readiness) = readiness {
-                readiness?;
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-
-        manager
-            .send_prompt(
-                &connection_id,
-                vec![PromptInputBlock::Text { text: instruction }],
-            )
-            .await
-            .map_err(|error| error.to_string())?;
-
-        loop {
-            {
-                let snapshot = state.read().await;
-                if !snapshot.turn_in_flight {
-                    if snapshot.status == ConnectionStatus::Error {
-                        return Err(snapshot
-                            .last_error
-                            .as_ref()
-                            .map(|error| error.message.clone())
-                            .unwrap_or_else(|| "Prompt optimization agent failed".into()));
-                    }
-                    if snapshot.last_turn_ended_abnormally {
-                        return Err("Prompt optimization agent stopped before completing".into());
-                    }
-                    if let Some(text) = snapshot
-                        .last_assistant_text
-                        .as_deref()
-                        .map(normalize_optimized_prompt)
-                        .filter(|text| !text.is_empty())
-                    {
-                        return Ok(text);
-                    }
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    };
-
-    let result = tokio::select! {
-        _ = cancellation.cancelled() => Err("Prompt optimization cancelled".to_string()),
-        result = tokio::time::timeout(OPTIMIZATION_TIMEOUT, run) => result
-            .map_err(|_| "Prompt optimization timed out".to_string())
-            .and_then(|result| result),
-    };
-    let _ = manager.disconnect(&connection_id).await;
-    tokio::time::sleep(TRANSPORT_CLEANUP_DELAY).await;
-    drop(temp_dir);
-    result
+    let raw = run_restricted_codex_once(
+        manager,
+        db,
+        data_dir,
+        RestrictedCodexRequest {
+            operation: "prompt-optimization".into(),
+            instruction,
+            timeout: OPTIMIZATION_TIMEOUT,
+            cancellation,
+        },
+    )
+    .await
+    .map_err(|error| match error {
+        RestrictedCodexError::Cancelled => "Prompt optimization cancelled".into(),
+        RestrictedCodexError::TimedOut => "Prompt optimization timed out".into(),
+        RestrictedCodexError::Failed(message) => message,
+    })?;
+    Ok(normalize_optimized_prompt(&raw))
 }
 
 pub async fn optimize_prompt_core(
@@ -740,7 +519,7 @@ pub async fn cancel_prompt_optimization(request_id: String) -> bool {
 mod tests {
     use super::{
         build_prompt_optimization_instruction, collect_workspace_context,
-        normalize_optimized_prompt, prepare_restricted_codex_home, PromptOptimizationHistoryItem,
+        normalize_optimized_prompt, PromptOptimizationHistoryItem,
     };
 
     #[test]
@@ -805,73 +584,6 @@ mod tests {
         assert!(context.contains("inside marker"));
         assert!(!context.contains("outside marker"));
         assert!(!context.contains(&outside_file.display().to_string()));
-    }
-
-    #[test]
-    fn restricted_codex_home_keeps_auth_and_model_config_only() {
-        let source = tempfile::tempdir().expect("source codex home");
-        let target = tempfile::tempdir().expect("target parent");
-        std::fs::write(
-            source.path().join("auth.json"),
-            r#"{"tokens":{"access_token":"secret"}}"#,
-        )
-        .expect("write auth");
-        std::fs::write(
-            source.path().join("config.toml"),
-            r#"
-model = "gpt-5"
-model_provider = "custom"
-model_reasoning_effort = "high"
-notify = ["dangerous-command"]
-
-[model_providers.custom]
-name = "Custom"
-base_url = "https://example.test/v1"
-wire_api = "responses"
-
-[mcp_servers.user-tool]
-command = "dangerous-tool"
-
-[projects."C:/repo"]
-trust_level = "trusted"
-"#,
-        )
-        .expect("write config");
-        std::fs::create_dir(source.path().join("skills")).expect("create skills");
-        std::fs::write(source.path().join("skills/unsafe.md"), "unsafe").expect("write skill");
-
-        let isolated = target.path().join("codex-home");
-        prepare_restricted_codex_home(source.path(), &isolated).expect("prepare restricted home");
-
-        assert_eq!(
-            std::fs::read_to_string(isolated.join("auth.json")).expect("copied auth"),
-            r#"{"tokens":{"access_token":"secret"}}"#
-        );
-        let config: toml::Value = std::fs::read_to_string(isolated.join("config.toml"))
-            .expect("restricted config")
-            .parse()
-            .expect("valid restricted config");
-        assert_eq!(
-            config.get("model").and_then(toml::Value::as_str),
-            Some("gpt-5")
-        );
-        assert_eq!(
-            config.get("model_provider").and_then(toml::Value::as_str),
-            Some("custom")
-        );
-        assert!(config.get("model_providers").is_some());
-        assert_eq!(
-            config.get("approval_policy").and_then(toml::Value::as_str),
-            Some("never")
-        );
-        assert_eq!(
-            config.get("sandbox_mode").and_then(toml::Value::as_str),
-            Some("read-only")
-        );
-        assert!(config.get("mcp_servers").is_none());
-        assert!(config.get("notify").is_none());
-        assert!(config.get("projects").is_none());
-        assert!(!isolated.join("skills").exists());
     }
 
     #[tokio::test]
@@ -940,27 +652,6 @@ trust_level = "trusted"
         assert_eq!(
             super::registration_limit_error(&registry, "next").as_deref(),
             Some("Too many prompt optimizations are active")
-        );
-    }
-
-    #[test]
-    fn restricted_session_readiness_fails_closed_until_read_only_is_confirmed() {
-        assert_eq!(super::restricted_session_mode(false, None), None);
-        assert_eq!(
-            super::restricted_session_mode(true, None),
-            Some(Err(
-                "Prompt optimization agent did not advertise read-only mode".into()
-            ))
-        );
-        assert_eq!(
-            super::restricted_session_mode(true, Some("agent")),
-            Some(Err(
-                "Prompt optimization agent failed to enter read-only mode".into()
-            ))
-        );
-        assert_eq!(
-            super::restricted_session_mode(true, Some("read-only")),
-            Some(Ok(()))
         );
     }
 
