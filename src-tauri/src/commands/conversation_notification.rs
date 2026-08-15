@@ -2,7 +2,9 @@ use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "tauri-runtime")]
-use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
+#[cfg(all(feature = "tauri-runtime", target_os = "windows"))]
+use tauri::Emitter;
 
 use crate::app_error::AppCommandError;
 use crate::db::service::conversation_notification_service;
@@ -14,7 +16,7 @@ const WINDOWS_ELEMENT_NOT_FOUND_HRESULT: i32 = 0x80070490u32 as i32;
 const MAX_NOTIFICATION_TITLE_BYTES: usize = 256;
 #[cfg(feature = "tauri-runtime")]
 const MAX_NOTIFICATION_BODY_BYTES: usize = 1024;
-#[cfg(feature = "tauri-runtime")]
+#[cfg(all(feature = "tauri-runtime", target_os = "windows"))]
 const CONVERSATION_NOTIFICATION_ACTIVATED_EVENT: &str = "notification://activated";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
