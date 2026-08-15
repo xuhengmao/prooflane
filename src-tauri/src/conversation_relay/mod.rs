@@ -1,4 +1,5 @@
 pub mod normalizer;
+pub mod service;
 pub mod summarizer;
 pub mod token_budget;
 

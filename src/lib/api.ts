@@ -146,6 +146,16 @@ import type {
   TokenUsageSyncStatus,
 } from "./types"
 
+export {
+  getConversationCapabilities,
+  getConversationRelay,
+  getRelayContextByDraft,
+  previewRelayContext,
+  removeRelayContext,
+  updateConversationCapabilities,
+  updateRelayContext,
+} from "./conversation-relay"
+
 export async function listConversations(params?: {
   agent_type?: AgentType | null
   search?: string | null

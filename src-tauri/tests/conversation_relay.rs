@@ -1,3 +1,10 @@
+use codeg_lib::conversation_relay::fingerprint_rounds;
+use codeg_lib::conversation_relay::service::{
+    get_conversation_capabilities_core, get_conversation_relay_core,
+    get_relay_context_by_draft_core, preview_relay_context_core, remove_relay_context_core,
+    update_conversation_capabilities_core, update_relay_context_core, RelayPatchRequest,
+    RelayPreviewRequest, UpdateConversationCapabilitiesInput,
+};
 use codeg_lib::db::entities::{conversation_capability_setting, relay_context_pack};
 use codeg_lib::db::service::conversation_capability_service::{
     get_capabilities, set_relay_enabled,
@@ -8,9 +15,14 @@ use codeg_lib::db::service::relay_context_pack_service::{
 };
 use codeg_lib::db::test_helpers::{fresh_in_memory_db, seed_conversation, seed_folder};
 use codeg_lib::models::agent::AgentType;
-use codeg_lib::models::conversation_relay::RelayErrorCode;
+use codeg_lib::models::conversation_relay::{
+    RelayErrorCode, RelayFileReference, RelayRound, RelayScopeSelection, RelayScopeType,
+    RelaySnapshot, RelaySnapshotSource, RelayStats,
+};
 use codeg_lib::web::event_bridge::EventEmitter;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set, TransactionTrait,
+};
 use std::sync::Arc;
 
 async fn insert_pack(
@@ -422,4 +434,239 @@ async fn invalidating_a_source_does_not_change_consumed_packs_or_their_snapshot(
         consumed.consumed_snapshot_json.as_deref(),
         Some("{\"context\":\"sealed\"}")
     );
+}
+
+#[tokio::test]
+async fn ordinary_conversation_listing_has_zero_relay_side_effects() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-list").await;
+    seed_conversation(&db, folder_id, AgentType::Codex).await;
+
+    let listed = codeg_lib::commands::conversations::list_all_conversations_core(
+        &db.conn, None, None, None, None, None, false,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        relay_context_pack::Entity::find()
+            .count(&db.conn)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn capability_core_round_trips_the_same_camel_case_setting() {
+    let db = fresh_in_memory_db().await;
+    assert!(
+        get_conversation_capabilities_core(&db.conn)
+            .await
+            .unwrap()
+            .relay_enabled
+    );
+
+    let updated = update_conversation_capabilities_core(
+        &db.conn,
+        &EventEmitter::Noop,
+        UpdateConversationCapabilitiesInput {
+            relay_enabled: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(!updated.relay_enabled);
+    assert!(
+        !get_conversation_capabilities_core(&db.conn)
+            .await
+            .unwrap()
+            .relay_enabled
+    );
+}
+
+#[tokio::test]
+async fn explicit_preview_failure_does_not_persist_an_empty_pack() {
+    let db = fresh_in_memory_db().await;
+    let data_dir = tempfile::tempdir().unwrap();
+    let state = codeg_lib::app_state::AppState::new_for_test(db, data_dir.path().to_path_buf());
+
+    let error = preview_relay_context_core(
+        &state.connection_manager,
+        &state.db,
+        &state.data_dir,
+        RelayPreviewRequest {
+            target_draft_id: "cross-project-draft".to_owned(),
+            source_conversation_id: 999,
+            target_folder_id: Some(77),
+            target_agent_type: AgentType::Codex,
+            target_model: Some("gpt-5.4".to_owned()),
+            scope: RelayScopeSelection {
+                scope_type: RelayScopeType::RecentRounds,
+                selected_round_ids: vec!["round-1".to_owned()],
+            },
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        error.message,
+        RelayErrorCode::RelaySourceNotFound.to_string()
+    );
+    assert_eq!(
+        relay_context_pack::Entity::find()
+            .count(&state.db.conn)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn summary_patch_failure_keeps_the_previous_valid_draft_unchanged() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-summary-failure").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let original = insert_pack(&db.conn, "draft-summary", source, None, "draft")
+        .await
+        .unwrap();
+    let scope = RelayScopeSelection {
+        scope_type: RelayScopeType::RecentRounds,
+        selected_round_ids: vec!["round-1".to_owned()],
+    };
+    let snapshot = RelaySnapshot {
+        version: 1,
+        source: RelaySnapshotSource {
+            conversation_id: source,
+            folder_id,
+        },
+        scope: scope.clone(),
+        available_rounds: vec![RelayRound {
+            id: "round-1".to_owned(),
+            user_text: "x".repeat(500_000),
+            assistant_text: String::new(),
+            tools: Vec::new(),
+            files: Vec::<RelayFileReference>::new(),
+            source_message_ids: vec!["round-1".to_owned()],
+        }],
+        included_rounds: Vec::new(),
+        summary: None,
+        files: Vec::new(),
+        stats: RelayStats::default(),
+        canonical_context: "previous valid context".to_owned(),
+    };
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::SnapshotJson,
+            sea_orm::sea_query::Expr::value(serde_json::to_string(&snapshot).unwrap()),
+        )
+        .filter(relay_context_pack::Column::Id.eq(original.id))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::SourceFingerprint,
+            sea_orm::sea_query::Expr::value(fingerprint_rounds(&snapshot.available_rounds)),
+        )
+        .filter(relay_context_pack::Column::Id.eq(original.id))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+    let data_dir = tempfile::tempdir().unwrap();
+    let state = codeg_lib::app_state::AppState::new_for_test(db, data_dir.path().to_path_buf());
+
+    let error = update_relay_context_core(
+        &state.connection_manager,
+        &state.db,
+        &state.data_dir,
+        original.id,
+        RelayPatchRequest {
+            scope: RelayScopeSelection {
+                scope_type: RelayScopeType::Summary,
+                selected_round_ids: vec!["round-1".to_owned()],
+            },
+            target_agent_type: AgentType::Codex,
+            target_model: None,
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        error.message,
+        RelayErrorCode::RelaySummaryInputTooLarge.to_string()
+    );
+    let retained = get_relay_context_by_draft_core(&state.db.conn, "draft-summary")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retained.id, original.id);
+    assert_eq!(
+        retained.snapshot.canonical_context,
+        "previous valid context"
+    );
+}
+
+#[tokio::test]
+async fn restore_remove_and_consumed_provenance_use_stable_views() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-controller-views").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let draft = insert_pack(&db.conn, "draft-view", source, None, "draft")
+        .await
+        .unwrap();
+    let draft_snapshot = RelaySnapshot {
+        version: 1,
+        source: RelaySnapshotSource {
+            conversation_id: source,
+            folder_id,
+        },
+        scope: RelayScopeSelection {
+            scope_type: RelayScopeType::Summary,
+            selected_round_ids: Vec::new(),
+        },
+        available_rounds: Vec::new(),
+        included_rounds: Vec::new(),
+        summary: None,
+        files: Vec::new(),
+        stats: RelayStats::default(),
+        canonical_context: "restorable context".to_owned(),
+    };
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::SnapshotJson,
+            sea_orm::sea_query::Expr::value(serde_json::to_string(&draft_snapshot).unwrap()),
+        )
+        .filter(relay_context_pack::Column::Id.eq(draft.id))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+    insert_pack(&db.conn, "consumed-view", source, Some(target), "consumed")
+        .await
+        .unwrap();
+
+    let restored = get_relay_context_by_draft_core(&db.conn, "draft-view")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(restored.id, draft.id);
+    let provenance = get_conversation_relay_core(&db.conn, target)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(provenance.source_conversation_id, source);
+
+    let removed = remove_relay_context_core(&db.conn, &EventEmitter::Noop, draft.id)
+        .await
+        .unwrap();
+    assert_eq!(removed.status, "removed");
+    assert!(get_relay_context_by_draft_core(&db.conn, "draft-view")
+        .await
+        .unwrap()
+        .is_none());
 }
