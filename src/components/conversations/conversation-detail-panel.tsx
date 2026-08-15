@@ -384,6 +384,7 @@ const ConversationTabView = memo(function ConversationTabView({
   const selectedAgentRef = useRef(selectedAgent)
   const createConversationPendingRef = useRef(false)
   const [composerRestoreNonce, setComposerRestoreNonce] = useState(0)
+  const [relaySendPending, setRelaySendPending] = useState(false)
   const relayForSendRef = useRef<{
     relayId: number
     targetDraftId: string
@@ -999,6 +1000,8 @@ const ConversationTabView = memo(function ConversationTabView({
         return
       }
 
+      const relayBindingForAttempt = relayForSendRef.current
+      if (relayBindingForAttempt) setRelaySendPending(true)
       const optimisticTurn = buildOptimisticUserTurnFromDraft(
         draft,
         sharedT("attachedResources")
@@ -1039,7 +1042,8 @@ const ConversationTabView = memo(function ConversationTabView({
       // bounce): a deterministic failure would retry — and toast — forever.
       const onSendFailed = () => {
         removeOptimisticTurn(effectiveConversationId, optimisticTurn.id)
-        if (relayForSendRef.current) {
+        if (relayBindingForAttempt) {
+          setRelaySendPending(false)
           const draftText = draft.displayText.trim()
           if (draftText) {
             const recoveryKey =
@@ -1100,7 +1104,7 @@ const ConversationTabView = memo(function ConversationTabView({
       const chatExistingDir = sendOwnTab?.workingDir
       // Only a first-send draft may carry relay metadata. Existing rows and
       // ordinary new drafts keep the legacy create/send payload unchanged.
-      const relayBinding = relayForSendRef.current ?? undefined
+      const relayBinding = relayBindingForAttempt ?? undefined
 
       void (async () => {
         try {
@@ -1188,6 +1192,7 @@ const ConversationTabView = memo(function ConversationTabView({
             onTurnInProgress,
             onSendFailed,
             onSendSucceeded: () => {
+              setRelaySendPending(false)
               clearMessageInputDraft(buildNewConversationDraftStorageKey(tabId))
               if (relayBinding) clearRelayRef.current()
             },
@@ -1206,12 +1211,16 @@ const ConversationTabView = memo(function ConversationTabView({
           removeOptimisticTurn(effectiveConversationId, optimisticTurn.id)
           setSyncState(effectiveConversationId, "idle")
           setHasSentMessage(false)
+          if (relayBinding) setRelaySendPending(false)
           const draftText = draft.displayText.trim()
           if (draftText) {
             saveMessageInputDraft(
               buildNewConversationDraftStorageKey(tabId),
               draftText
             )
+            if (mountedRef.current) {
+              setComposerRestoreNonce((value) => value + 1)
+            }
           }
           if (mountedRef.current) {
             setAgentConnectError(tWelcome("createConversationFailed"))
@@ -1632,6 +1641,7 @@ const ConversationTabView = memo(function ConversationTabView({
     <RelayContextCard
       relay={relay}
       sourceTitle={relaySourceTitle}
+      disabled={relaySendPending}
       onPreview={() => setRelayPreviewOpen(true)}
       onAdjust={() => setRelayDialogOpen(true)}
       onRemove={() => void remove()}

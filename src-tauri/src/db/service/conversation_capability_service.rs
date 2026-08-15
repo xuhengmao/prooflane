@@ -6,6 +6,7 @@ use serde::Serialize;
 use crate::app_error::AppCommandError;
 use crate::db::entities::{conversation_capability_setting, relay_context_pack};
 use crate::db::error::DbError;
+use crate::db::service::relay_context_pack_service;
 use crate::web::event_bridge::{
     emit_event, ConversationRelayChange, EventEmitter, CONVERSATION_CAPABILITIES_CHANGED_EVENT,
     CONVERSATION_RELAY_CHANGED_EVENT,
@@ -42,6 +43,7 @@ pub async fn set_relay_enabled(
     } else {
         relay_context_pack::Entity::find()
             .filter(relay_context_pack::Column::Status.is_in(["draft", "attached"]))
+            .filter(relay_context_pack_service::consume_not_claimed())
             .all(&txn)
             .await
             .map_err(DbError::from)?
@@ -66,6 +68,7 @@ pub async fn set_relay_enabled(
             .col_expr(relay_context_pack::Column::Status, Expr::value("removed"))
             .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(now))
             .filter(relay_context_pack::Column::Status.is_in(["draft", "attached"]))
+            .filter(relay_context_pack_service::consume_not_claimed())
             .exec(&txn)
             .await
             .map_err(DbError::from)?;

@@ -1,3 +1,9 @@
+use codeg_lib::acp::manager::ConnectionManager;
+use codeg_lib::acp::types::PromptInputBlock;
+use codeg_lib::commands::acp::{send_prompt_with_relay_core, AcpPromptRequest};
+use codeg_lib::commands::conversations::{
+    create_conversation_with_relay_core, relay_binding_from_parts, RelayBindingInput,
+};
 use codeg_lib::conversation_relay::context::{
     build_hidden_relay_block, marker_for_snapshot, strip_hidden_relay_context, RelayContextMarker,
 };
@@ -20,13 +26,10 @@ use codeg_lib::db::service::conversation_capability_service::{
 };
 use codeg_lib::db::service::relay_context_pack_service::{
     bind_to_conversation, claim_consume, create_or_replace_draft, get_active_by_draft,
-    invalidate_unconsumed_by_source, mark_consumed, release_claim, ConsumeClaim, NewRelayPack,
+    invalidate_unconsumed_by_source, mark_consumed, mark_uncertain, release_claim,
+    remove_unclaimed, ConsumeClaim, NewRelayPack,
 };
 use codeg_lib::db::test_helpers::{fresh_in_memory_db, seed_conversation, seed_folder};
-use codeg_lib::commands::conversations::{
-    create_conversation_with_relay_core, relay_binding_from_parts, RelayBindingInput,
-};
-use codeg_lib::acp::types::PromptInputBlock;
 use codeg_lib::models::agent::AgentType;
 use codeg_lib::models::conversation_relay::{
     RelayError, RelayErrorCode, RelayRound, RelayScopeSelection, RelayScopeType, RelaySnapshot,
@@ -35,7 +38,8 @@ use codeg_lib::models::conversation_relay::{
 use codeg_lib::restricted_codex::{RestrictedCodexError, RestrictedCodexRequest};
 use codeg_lib::web::event_bridge::EventEmitter;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait,
+    QueryFilter, Set, Statement, TransactionTrait,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -190,6 +194,27 @@ async fn migration_seeds_enabled_setting_and_enforces_single_active_pack() {
 }
 
 #[tokio::test]
+async fn migration_adds_the_preview_target_model_identity() {
+    let db = fresh_in_memory_db().await;
+    let columns = db
+        .conn
+        .query_all(Statement::from_string(
+            DbBackend::Sqlite,
+            "PRAGMA table_info(relay_context_pack)".to_owned(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.try_get::<String>("", "name").unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(
+        columns.iter().any(|column| column == "target_model"),
+        "relay packs must retain the exact preview model identity"
+    );
+}
+
+#[tokio::test]
 async fn migration_enforces_single_target_conversation_pack() {
     let db = fresh_in_memory_db().await;
     let folder_id = seed_folder(&db, "C:/workspace/relay-target").await;
@@ -338,6 +363,7 @@ fn new_pack(
         source_fingerprint: "fingerprint".to_owned(),
         estimated_tokens: 128,
         context_window_tokens: Some(512),
+        target_model: None,
         allowed_tokens: 256,
     }
 }
@@ -359,6 +385,19 @@ async fn consume_is_idempotent_for_same_message_and_rejects_a_different_message(
 }
 
 #[tokio::test]
+async fn relay_draft_persists_the_exact_preview_model_identity() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-model-identity").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let mut pack = new_pack("draft-model-identity", source, folder_id);
+    pack.target_model = Some("gpt-4o".to_owned());
+
+    let stored = create_or_replace_draft(&db.conn, pack).await.unwrap();
+
+    assert_eq!(stored.target_model.as_deref(), Some("gpt-4o"));
+}
+
+#[tokio::test]
 async fn disabling_relay_soft_removes_only_unconsumed_packs() {
     let db = seeded_draft_and_consumed_packs().await;
 
@@ -368,6 +407,30 @@ async fn disabling_relay_soft_removes_only_unconsumed_packs() {
 
     assert_eq!(status(&db.conn, 1).await, "removed");
     assert_eq!(status(&db.conn, 2).await, "consumed");
+}
+
+#[tokio::test]
+async fn disabling_relay_does_not_interrupt_a_claimed_pack() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-disable-in-flight")
+        .await
+        .unwrap();
+
+    let settings = set_relay_enabled(&db.conn, &EventEmitter::Noop, false)
+        .await
+        .unwrap();
+
+    assert!(!settings.relay_enabled);
+    assert_eq!(status(&db.conn, 1).await, "attached");
+    let consumed = mark_consumed(
+        &db.conn,
+        1,
+        "message-disable-in-flight",
+        "{\"immutable\":true}",
+    )
+    .await
+    .unwrap();
+    assert_eq!(consumed.status, "consumed");
 }
 
 #[tokio::test]
@@ -423,6 +486,105 @@ async fn replacing_a_draft_removes_the_previous_active_pack_and_restores_one_act
             .id,
         second.id
     );
+}
+
+#[tokio::test]
+async fn replacing_a_claimed_draft_is_rejected_without_interrupting_finalization() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-replace-claimed").await;
+    let source = seed_conversation(&db, folder_id, AgentType::ClaudeCode).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let first = create_or_replace_draft(
+        &db.conn,
+        new_pack("draft-replace-claimed", source, folder_id),
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, first.id, "draft-replace-claimed", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    claim_consume(&db.conn, first.id, "message-replace-claimed")
+        .await
+        .unwrap();
+
+    let replacement = create_or_replace_draft(
+        &db.conn,
+        new_pack("draft-replace-claimed", source, folder_id),
+    )
+    .await;
+
+    assert!(replacement.is_err());
+    let retained = relay_context_pack::Entity::find_by_id(first.id)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retained.status, "attached");
+    assert_eq!(retained.consume_attempt_state.as_deref(), Some("claimed"));
+    assert!(mark_consumed(
+        &db.conn,
+        first.id,
+        "message-replace-claimed",
+        "{\"immutable\":true}",
+    )
+    .await
+    .is_ok());
+}
+
+#[tokio::test]
+async fn preview_cannot_replace_a_claimed_draft() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-preview-claimed").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let rounds = vec![relay_round("round-1", "keep the claimed preview")];
+    let original = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "initial-claimed-preview",
+            "draft-preview-claimed",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        rounds.clone(),
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, original.id, "draft-preview-claimed", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    claim_consume(&db.conn, original.id, "message-preview-claimed")
+        .await
+        .unwrap();
+
+    let replacement = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "replacement-claimed-preview",
+            "draft-preview-claimed",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        rounds,
+        &RunnerBackedFailingSummarizer,
+    )
+    .await;
+
+    assert!(replacement.is_err());
+    let retained = relay_context_pack::Entity::find_by_id(original.id)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retained.status, "attached");
+    assert_eq!(retained.consume_attempt_state.as_deref(), Some("claimed"));
 }
 
 #[tokio::test]
@@ -603,6 +765,28 @@ async fn invalidating_a_source_does_not_change_consumed_packs_or_their_snapshot(
     assert_eq!(
         consumed.consumed_snapshot_json.as_deref(),
         Some("{\"context\":\"sealed\"}")
+    );
+}
+
+#[tokio::test]
+async fn invalidating_a_source_does_not_interrupt_a_claimed_relay_finalizer() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-in-flight")
+        .await
+        .unwrap();
+
+    let invalidated = invalidate_unconsumed_by_source(&db.conn, 1, "relay_source_not_found")
+        .await
+        .unwrap();
+
+    assert_eq!(invalidated, 0);
+    let consumed = mark_consumed(&db.conn, 1, "message-in-flight", "{\"immutable\":true}")
+        .await
+        .unwrap();
+    assert_eq!(consumed.status, "consumed");
+    assert_eq!(
+        consumed.consumed_snapshot_json.as_deref(),
+        Some("{\"immutable\":true}")
     );
 }
 
@@ -1299,5 +1483,113 @@ fn relay_binding_rejects_single_sided_request_fields() {
             .unwrap()
             .relay_id,
         1
+    );
+}
+
+#[tokio::test]
+async fn consumed_retry_is_idempotent_after_the_connection_is_gone() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-consumed-retry").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let pack = insert_pack(
+        &db.conn,
+        "draft-consumed-retry",
+        source,
+        Some(target),
+        "consumed",
+    )
+    .await
+    .unwrap();
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::ConsumeClientMessageId,
+            sea_orm::sea_query::Expr::value(Some("message-consumed".to_owned())),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumedSnapshotJson,
+            sea_orm::sea_query::Expr::value(Some("{\"immutable\":true}".to_owned())),
+        )
+        .filter(relay_context_pack::Column::Id.eq(pack.id))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+
+    let result = send_prompt_with_relay_core(
+        &ConnectionManager::new(),
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "already-disconnected".to_owned(),
+            blocks: vec![PromptInputBlock::Text {
+                text: "do not send twice".to_owned(),
+            }],
+            folder_id: Some(folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-consumed".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some("draft-consumed-retry".to_owned()),
+        },
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "same-id consumed retry must be a no-op: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_claimed_relay_cannot_be_removed_while_the_prompt_outcome_is_pending() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-pending").await.unwrap();
+
+    let error = remove_relay_context_core(&db.conn, &EventEmitter::Noop, 1)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.message,
+        RelayErrorCode::RelayConsumeConflict.to_string()
+    );
+    let retained = relay_context_pack::Entity::find_by_id(1)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retained.status, "attached");
+    assert_eq!(retained.consume_attempt_state.as_deref(), Some("claimed"));
+}
+
+#[tokio::test]
+async fn an_uncertain_relay_can_be_removed_without_erasing_the_attempt_record() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-uncertain")
+        .await
+        .unwrap();
+    let uncertain = mark_uncertain(&db.conn, 1, "message-uncertain")
+        .await
+        .unwrap();
+    assert_eq!(uncertain.status, "attached");
+    assert_eq!(
+        uncertain.consume_attempt_state.as_deref(),
+        Some("uncertain")
+    );
+
+    let removed = remove_unclaimed(&db.conn, 1).await.unwrap();
+
+    assert_eq!(removed.status, "removed");
+    let persisted = relay_context_pack::Entity::find_by_id(1)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        persisted.consume_client_message_id.as_deref(),
+        Some("message-uncertain")
+    );
+    assert_eq!(
+        persisted.consume_attempt_state.as_deref(),
+        Some("uncertain")
     );
 }

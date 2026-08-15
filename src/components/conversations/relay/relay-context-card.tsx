@@ -20,6 +20,7 @@ interface RelayCardData {
 interface RelayContextCardProps {
   relay: RelayCardData
   sourceTitle?: string | null
+  disabled?: boolean
   onPreview: () => void
   onAdjust: () => void
   onRemove: () => void
@@ -33,6 +34,7 @@ function formatTokens(value: number): string {
 export function RelayContextCard({
   relay,
   sourceTitle,
+  disabled = false,
   onPreview,
   onAdjust,
   onRemove,
@@ -46,10 +48,11 @@ export function RelayContextCard({
         <span>10 秒内可撤销</span>
         <button
           type="button"
+          disabled={disabled}
           onClick={onUndo}
           title="撤销移除"
           aria-label="撤销移除"
-          className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RotateCcw className="size-3.5" aria-hidden /> 撤销移除
         </button>
@@ -85,28 +88,31 @@ export function RelayContextCard({
       <span className="ml-auto flex items-center gap-1">
         <button
           type="button"
+          disabled={disabled}
           onClick={onPreview}
           title="查看"
           aria-label="查看"
-          className="rounded p-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded p-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Eye className="size-3.5" aria-hidden />
         </button>
         <button
           type="button"
+          disabled={disabled}
           onClick={onAdjust}
           title="调整范围"
           aria-label="调整范围"
-          className="rounded p-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded p-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Pencil className="size-3.5" aria-hidden />
         </button>
         <button
           type="button"
+          disabled={disabled}
           onClick={onRemove}
           title="移除"
           aria-label="移除"
-          className="rounded p-1 text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded p-1 text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Trash2 className="size-3.5" aria-hidden />
         </button>

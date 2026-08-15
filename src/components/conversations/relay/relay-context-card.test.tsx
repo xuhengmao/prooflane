@@ -4,6 +4,36 @@ import { describe, expect, it, vi } from "vitest"
 import { RelayContextCard } from "./relay-context-card"
 
 describe("RelayContextCard", () => {
+  it("发送接力上下文期间禁止调整或移除", () => {
+    const onPreview = vi.fn()
+    const onAdjust = vi.fn()
+    const onRemove = vi.fn()
+    render(
+      <RelayContextCard
+        disabled
+        sourceTitle="产品需求讨论"
+        relay={{
+          sourceConversationId: 42,
+          estimatedTokens: 1200,
+          allowedTokens: 4000,
+          invalidReason: null,
+          status: "attached",
+          snapshot: {
+            stats: { messageCount: 32, fileCount: 4, todoCount: 3 },
+          },
+        }}
+        onPreview={onPreview}
+        onAdjust={onAdjust}
+        onRemove={onRemove}
+        onUndo={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole("button", { name: "查看" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "调整范围" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "移除" })).toBeDisabled()
+  })
+
   it("提供预算、风险、查看、调整、移除和十秒撤销操作", () => {
     const onPreview = vi.fn()
     const onAdjust = vi.fn()

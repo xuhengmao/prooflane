@@ -169,6 +169,7 @@ pub async fn acp_prompt(
     crate::commands::acp::send_prompt_with_relay_core(
         &state.connection_manager,
         &state.db,
+        &state.emitter,
         crate::commands::acp::AcpPromptRequest {
             connection_id: params.connection_id,
             blocks: params.blocks,
@@ -863,8 +864,8 @@ pub async fn acp_update_pi_config(
     Ok(Json(()))
 }
 
-pub async fn acp_load_pi_config(
-) -> Result<Json<acp_commands::PiConfigProjection>, AppCommandError> {
+pub async fn acp_load_pi_config() -> Result<Json<acp_commands::PiConfigProjection>, AppCommandError>
+{
     Ok(Json(acp_commands::load_pi_config_core()))
 }
 

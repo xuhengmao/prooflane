@@ -279,7 +279,11 @@ export async function acpPrompt(
       payload.relayId = relayId
       payload.targetDraftId = targetDraftId
     }
-    await getTransport().call("acp_prompt", payload)
+    if (relayId !== null && targetDraftId !== null) {
+      await getTransport().call("acp_prompt", payload, { timeoutMs: 50_000 })
+    } else {
+      await getTransport().call("acp_prompt", payload)
+    }
   } catch (e) {
     if (isTurnInProgressRejection(e)) throw new TurnBusyError()
     throw e

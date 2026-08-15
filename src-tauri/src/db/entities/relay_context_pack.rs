@@ -15,6 +15,7 @@ pub struct Model {
     pub source_fingerprint: String,
     pub estimated_tokens: i32,
     pub context_window_tokens: Option<i32>,
+    pub target_model: Option<String>,
     pub allowed_tokens: i32,
     pub status: String,
     pub invalid_reason: Option<String>,

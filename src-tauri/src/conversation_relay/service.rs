@@ -6,7 +6,7 @@ use std::time::Duration;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, Set, TransactionTrait,
+    QueryFilter, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -522,6 +522,7 @@ fn new_relay_pack(
         estimated_tokens: i32::try_from(estimated_tokens)
             .map_err(|_| relay_error(RelayErrorCode::RelayBudgetExceeded))?,
         context_window_tokens: context_window_tokens.and_then(|value| i32::try_from(value).ok()),
+        target_model,
         allowed_tokens: i32::try_from(allowed_tokens)
             .map_err(|_| relay_error(RelayErrorCode::RelayBudgetExceeded))?,
     })
@@ -560,6 +561,7 @@ async fn persist_preview_snapshot(
         .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(now))
         .filter(relay_context_pack::Column::TargetDraftId.eq(&pack.target_draft_id))
         .filter(relay_context_pack::Column::Status.is_in(["draft", "attached"]))
+        .filter(relay_context_pack_service::consume_not_claimed())
         .exec(&txn)
         .await
         .map_err(|_| storage_error())?;
@@ -575,6 +577,7 @@ async fn persist_preview_snapshot(
         source_fingerprint: Set(pack.source_fingerprint),
         estimated_tokens: Set(pack.estimated_tokens),
         context_window_tokens: Set(pack.context_window_tokens),
+        target_model: Set(pack.target_model),
         allowed_tokens: Set(pack.allowed_tokens),
         status: Set("draft".to_owned()),
         invalid_reason: Set(None),
@@ -809,18 +812,9 @@ pub async fn remove_relay_context_core(
     emitter: &EventEmitter,
     relay_id: i32,
 ) -> Result<RelayContextPackView, AppCommandError> {
-    let model = relay_context_pack::Entity::find_by_id(relay_id)
-        .one(conn)
+    let removed = relay_context_pack_service::remove_unclaimed(conn, relay_id)
         .await
-        .map_err(|_| storage_error())?
-        .ok_or_else(|| relay_error(RelayErrorCode::RelaySourceNotFound))?;
-    if !matches!(model.status.as_str(), "draft" | "attached") {
-        return Err(relay_error(RelayErrorCode::RelayImmutableSnapshot));
-    }
-    let mut active = model.into_active_model();
-    active.status = Set("removed".to_owned());
-    active.updated_at = Set(chrono::Utc::now());
-    let removed = active.update(conn).await.map_err(|_| storage_error())?;
+        .map_err(|error| relay_error(error.code))?;
     emit_event(
         emitter,
         CONVERSATION_RELAY_CHANGED_EVENT,

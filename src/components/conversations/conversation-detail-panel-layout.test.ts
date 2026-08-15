@@ -540,8 +540,24 @@ describe("ConversationDetailPanel send-path hardening", () => {
     expect(catchBlock).toContain("setHasSentMessage(false)")
     expect(catchBlock).toContain("saveMessageInputDraft(")
     expect(catchBlock).toContain(
+      "setComposerRestoreNonce((value) => value + 1)"
+    )
+    expect(catchBlock).toContain(
       'setAgentConnectError(tWelcome("createConversationFailed"))'
     )
+  })
+
+  it("restores an attached relay after ACP send failure without clearing it", () => {
+    const callbackStart = source.indexOf("const onSendFailed = () => {")
+    const callbackEnd = source.indexOf("// Pin the tab", callbackStart)
+    expect(callbackStart).toBeGreaterThan(-1)
+    expect(callbackEnd).toBeGreaterThan(callbackStart)
+    const callback = source.slice(callbackStart, callbackEnd)
+    expect(callback).toContain("setRelaySendPending(false)")
+    expect(callback).toContain("buildConversationDraftStorageKey(")
+    expect(callback).toContain("saveMessageInputDraft(")
+    expect(callback).toContain("setComposerRestoreNonce((value) => value + 1)")
+    expect(callback).not.toContain("clearRelayRef.current()")
   })
 })
 
