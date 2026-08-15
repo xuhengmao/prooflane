@@ -4855,6 +4855,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tauri-winrt-notification",
  "temp-env",
  "tempfile",
  "thiserror 2.0.18",
@@ -4871,6 +4872,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "which 7.0.3",
+ "windows 0.61.3",
  "windows-sys 0.59.0",
  "zip 2.4.2",
 ]

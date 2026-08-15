@@ -52,6 +52,16 @@ vi.mock("@/lib/api", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock("@/lib/platform", () => ({ isDesktop: () => true }))
 vi.mock("@/lib/transport", () => ({ getActiveRemoteConnectionId: () => null }))
+vi.mock("@/lib/conversation-notification-runtime", () => ({
+  conversationNotificationRuntime: {
+    getState: vi.fn(async () => ({
+      appFocused: false,
+      permission: "granted",
+    })),
+    requestPermission: vi.fn(async () => ({ permission: "granted" })),
+    openSettings: vi.fn(async () => true),
+  },
+}))
 // Windows, so the rendering section (desktop + Windows only) is on screen.
 vi.mock("@/hooks/use-platform", () => ({
   usePlatform: () => ({
@@ -103,6 +113,7 @@ describe("GeneralSettings", () => {
     for (const heading of [
       "Default Terminal",
       "Disable hardware acceleration",
+      "Conversation completion notifications",
       "Notification sounds",
       "Multi-Agent Collaboration",
       "In-conversation tools",

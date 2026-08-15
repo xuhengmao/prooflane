@@ -1322,6 +1322,41 @@
     "agentsLoading": "Cargando configuración de agentes...",
     "skillPacksLoading": "Cargando paquetes de habilidades…"
   },
+  "ConversationNotifications": {
+    "title": "Notificaciones de finalización de conversaciones",
+    "description": "Te avisa cuando una conversación termina mientras Prooflane está en segundo plano. Haz clic en la notificación para volver a esa conversación.",
+    "allow": "Permitir notificaciones del sistema",
+    "openSettings": "Abrir ajustes del sistema",
+    "browserSettingsHint": "Permite las notificaciones de Prooflane en los ajustes del sitio de tu navegador.",
+    "permissionCheckFailed": "No se pudo comprobar el permiso de notificaciones: {message}",
+    "permissionRequestFailed": "No se pudo solicitar el permiso de notificaciones: {message}",
+    "openSettingsFailed": "No se pudieron abrir los ajustes de notificaciones: {message}",
+    "permission": {
+      "checking": "Comprobando el permiso de notificaciones del sistema...",
+      "granted": "Las notificaciones del sistema están permitidas",
+      "prompt": "Se requiere permiso para las notificaciones",
+      "promptHint": "Prooflane solo solicita permiso cuando eliges permitir las notificaciones aquí.",
+      "denied": "El permiso de notificaciones del sistema está desactivado",
+      "deniedHint": "Activa las notificaciones de Prooflane en los ajustes del sistema operativo o del navegador.",
+      "unsupported": "Las notificaciones del sistema no están disponibles",
+      "unsupportedHint": "Este entorno no admite notificaciones del sistema. Las conversaciones continúan normalmente."
+    },
+    "notification": {
+      "fallbackConversationTitle": "Conversación",
+      "completedTitle": "Conversación completada",
+      "completedStatus": "ha generado una respuesta. Haz clic para verla.",
+      "failedTitle": "La conversación ha fallado",
+      "failedStatus": "no pudo finalizar. Haz clic para verla.",
+      "actionRequiredTitle": "La conversación requiere tu intervención",
+      "actionRequiredStatus": "está esperando confirmación. Haz clic para continuar."
+    },
+    "activation": {
+      "missingTitle": "La conversación ya no está disponible",
+      "missingDetail": "Es posible que la conversación {id} se haya eliminado o movido.",
+      "failedTitle": "No se pudo abrir la conversación",
+      "failedDetail": "La notificación se abrió, pero falló la navegación: {message}"
+    }
+  },
   "GeneralSettings": {
     "loading": "Cargando...",
     "sectionTitle": "General",

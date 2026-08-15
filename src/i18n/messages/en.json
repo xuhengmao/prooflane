@@ -1322,6 +1322,41 @@
     "agentsLoading": "Loading agent settings...",
     "skillPacksLoading": "Loading skill packs…"
   },
+  "ConversationNotifications": {
+    "title": "Conversation completion notifications",
+    "description": "Notify you when a conversation finishes while Prooflane is in the background. Click a notification to return to that conversation.",
+    "allow": "Allow system notifications",
+    "openSettings": "Open system settings",
+    "browserSettingsHint": "Open your browser's site settings and allow notifications for Prooflane.",
+    "permissionCheckFailed": "Could not check notification permission: {message}",
+    "permissionRequestFailed": "Could not request notification permission: {message}",
+    "openSettingsFailed": "Could not open notification settings: {message}",
+    "permission": {
+      "checking": "Checking system notification permission...",
+      "granted": "System notifications are allowed",
+      "prompt": "Notification permission is required",
+      "promptHint": "Prooflane only asks after you choose to allow notifications here.",
+      "denied": "System notification permission is off",
+      "deniedHint": "Enable notifications for Prooflane in your operating system or browser settings.",
+      "unsupported": "System notifications are unavailable",
+      "unsupportedHint": "This environment does not support system notifications. Conversations continue normally."
+    },
+    "notification": {
+      "fallbackConversationTitle": "Conversation",
+      "completedTitle": "Conversation completed",
+      "completedStatus": "has generated a response. Click to view.",
+      "failedTitle": "Conversation failed",
+      "failedStatus": "could not finish. Click to view.",
+      "actionRequiredTitle": "Conversation needs your action",
+      "actionRequiredStatus": "is waiting for confirmation. Click to continue."
+    },
+    "activation": {
+      "missingTitle": "Conversation is no longer available",
+      "missingDetail": "Conversation {id} may have been deleted or moved.",
+      "failedTitle": "Could not open the conversation",
+      "failedDetail": "The notification was opened, but navigation failed: {message}"
+    }
+  },
   "GeneralSettings": {
     "loading": "Loading...",
     "sectionTitle": "General",

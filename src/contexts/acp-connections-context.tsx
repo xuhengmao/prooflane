@@ -70,7 +70,9 @@ import {
   CONNECTION_KEEPALIVE_INTERVAL_MS,
   IDLE_SWEEP_INTERVAL_MS,
 } from "@/lib/constants"
-import { sendSystemNotification } from "@/lib/notification"
+import { buildConversationNotificationRequests } from "@/lib/conversation-notification-events"
+import { conversationNotificationRuntime } from "@/lib/conversation-notification-runtime"
+import type { ConversationNotificationCopy } from "@/lib/conversation-notification"
 import {
   playEventSound,
   primeNotificationSoundOutput,
@@ -82,7 +84,7 @@ import {
   saveConfigPreference,
 } from "@/lib/selector-prefs-storage"
 import { useAlertContext, type AlertAction } from "@/contexts/alert-context"
-import { useActiveFolder } from "@/contexts/active-folder-context"
+import { useAppWorkspaceStore } from "@/stores/app-workspace-store"
 
 // ── Shared types (re-exported for consumers) ──
 
@@ -2604,13 +2606,37 @@ function isAlertedError(error: unknown): error is AlertedError {
 
 export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
   const t = useTranslations("Folder.chat.acpConnections")
-  const tChat = useTranslations("Folder.chat")
+  const tConversationNotifications = useTranslations(
+    "ConversationNotifications"
+  )
+  const conversationNotificationText = useMemo(
+    (): {
+      fallbackConversationTitle: string
+      copy: ConversationNotificationCopy
+    } => ({
+      fallbackConversationTitle: tConversationNotifications(
+        "notification.fallbackConversationTitle"
+      ),
+      copy: {
+        completed: {
+          title: tConversationNotifications("notification.completedTitle"),
+          status: tConversationNotifications("notification.completedStatus"),
+        },
+        failed: {
+          title: tConversationNotifications("notification.failedTitle"),
+          status: tConversationNotifications("notification.failedStatus"),
+        },
+        action_required: {
+          title: tConversationNotifications("notification.actionRequiredTitle"),
+          status: tConversationNotifications(
+            "notification.actionRequiredStatus"
+          ),
+        },
+      },
+    }),
+    [tConversationNotifications]
+  )
   const { pushAlert } = useAlertContext()
-  const { activeFolder: folder } = useActiveFolder()
-  const folderNameRef = useRef(folder?.name)
-  useEffect(() => {
-    folderNameRef.current = folder?.name
-  }, [folder?.name])
   const pushAlertRef = useRef(pushAlert)
   useEffect(() => {
     pushAlertRef.current = pushAlert
@@ -2637,6 +2663,13 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
   // bypass this entirely — their events are routed by the per-subscription
   // handlers registered in `attachSubscriptionsRef`.
   const reverseMapRef = useRef(new Map<string, string>())
+
+  // Notification identity is connection-scoped because context keys may be
+  // rekeyed when a draft becomes a persisted conversation. The backend emits
+  // the canonical conversation id as soon as it links the row; sendPrompt
+  // fills the same map earlier for the first turn so no completion is missed.
+  const notificationConversationIdsRef = useRef(new Map<string, number>())
+  const notificationRunIdsRef = useRef(new Map<string, string>())
 
   // contextKey → diagnostic evidence already surfaced as an alert. The same
   // error reaches us twice: live on the wire, and again in `last_error` on
@@ -3067,6 +3100,64 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
       // mirrors. Off unless configured, and self-throttling, so this is a
       // cheap no-op on the hot path.
       playEventSound(e)
+
+      if (e.type === "conversation_linked") {
+        notificationConversationIdsRef.current.set(
+          e.connection_id,
+          e.conversation_id
+        )
+      }
+
+      if (
+        e.type === "turn_complete" ||
+        e.type === "error" ||
+        e.type === "permission_request" ||
+        e.type === "background_activity"
+      ) {
+        // Capture the current turn before any reducer action below changes
+        // status/liveMessage. This keeps run ids stable at turn boundaries.
+        const notificationConnection =
+          storeRef.current.connections.get(contextKey)
+        const eventSessionId =
+          "session_id" in e && typeof e.session_id === "string"
+            ? e.session_id
+            : notificationConnection?.sessionId
+        const conversationId =
+          notificationConversationIdsRef.current.get(e.connection_id) ??
+          (eventSessionId
+            ? getConversationIdByExternalIdFromStore(eventSessionId)
+            : null)
+
+        if (conversationId != null) {
+          const summary = useAppWorkspaceStore
+            .getState()
+            .conversations.find((item) => item.id === conversationId)
+          const trackedRunId =
+            notificationConnection?.status === "prompting"
+              ? notificationRunIdsRef.current.get(e.connection_id)
+              : null
+          const requests = buildConversationNotificationRequests({
+            envelope: e,
+            conversationId,
+            conversationTitle:
+              summary?.title?.trim() ||
+              conversationNotificationText.fallbackConversationTitle,
+            connectionStatus: notificationConnection?.status ?? "connected",
+            pendingUserMessageId:
+              notificationConnection?.pendingUserMessage?.messageId ??
+              trackedRunId ??
+              null,
+            liveMessageId: notificationConnection?.liveMessage?.id ?? null,
+          })
+          for (const request of requests) {
+            void conversationNotificationRuntime.notify(
+              request,
+              conversationNotificationText.copy
+            )
+          }
+        }
+      }
+
       switch (e.type) {
         case "status_changed":
           flushStreamingQueue()
@@ -3254,25 +3345,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
               }
             }
           }
-          // 3. one OS notification per settled task (matches the permission
-          //    notification's shape; `document.hidden` gating lives inside
-          //    sendSystemNotification).
           if (e.settled && e.settled.length > 0) {
-            const nc = storeRef.current.connections.get(contextKey)
-            const agentLabel = nc ? getAgentLabel(nc.agentType) : "Agent"
-            const fn = folderNameRef.current
-            const title = fn ? `${fn} - Prooflane` : "Prooflane"
-            for (const settled of e.settled) {
-              const body =
-                settled.summary ??
-                tChat("backgroundTasks.settledFallback", {
-                  status: settled.status,
-                })
-              sendSystemNotification(title, `${agentLabel}: ${body}`).catch(
-                () => {}
-              )
-            }
-            // 4. flip each async sub-agent's launch card to its terminal
+            // 3. Flip each async sub-agent's launch card to its terminal
             //    (completed + result) state IN-MEMORY, by rewriting the
             //    launching tool call's `[[codeg-background-task]]` marker from
             //    the settle payload's own `tool_use_id`/`status`/`result`. This
@@ -3315,19 +3389,6 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
             fallback_kind: "tool",
             options: e.options,
           })
-          // Send OS notification when permission approval is needed
-          {
-            const nc = storeRef.current.connections.get(contextKey)
-            if (nc) {
-              const agentLabel = getAgentLabel(nc.agentType)
-              const fn = folderNameRef.current
-              const title = fn ? `${fn} - Prooflane` : "Prooflane"
-              sendSystemNotification(
-                title,
-                `${agentLabel}: ${tChat("permissionDialog.subtitle")}`
-              ).catch(() => {})
-            }
-          }
           break
         case "session_started":
           flushStreamingQueue()
@@ -3508,19 +3569,6 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
               }
             }
           }
-          // Send OS notification when window is not focused
-          {
-            const nc = storeRef.current.connections.get(contextKey)
-            if (nc) {
-              const agentLabel = getAgentLabel(nc.agentType)
-              const fn = folderNameRef.current
-              const title = fn ? `${fn} - Prooflane` : "Prooflane"
-              sendSystemNotification(
-                title,
-                t("notificationTurnComplete", { agent: agentLabel })
-              ).catch(() => {})
-            }
-          }
           break
         }
         case "error": {
@@ -3621,20 +3669,6 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
           if (evidence) {
             alertedErrorDetailsRef.current.set(contextKey, evidence)
           }
-          // Send OS notification for agent errors. Deliberately message-only:
-          // notification centers persist their payload outside the app, so
-          // agent output must not be forwarded there.
-          if (nc) {
-            const fn = folderNameRef.current
-            const title = fn ? `${fn} - Prooflane` : "Prooflane"
-            sendSystemNotification(
-              title,
-              t("notificationError", {
-                agent: agentLabel,
-                message: localizedMessage,
-              })
-            ).catch(() => {})
-          }
           break
         }
         case "session_load_failed": {
@@ -3693,8 +3727,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
       flushPendingToolCallUpdates,
       flushStreamingQueue,
       scheduleToolCallUpdateFlush,
+      conversationNotificationText,
       t,
-      tChat,
     ]
   )
 
@@ -4096,6 +4130,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
       for (const { contextKey, connectionId } of toDisconnect) {
         acpDisconnect(connectionId).catch(() => {})
         reverseMapRef.current.delete(connectionId)
+        notificationConversationIdsRef.current.delete(connectionId)
+        notificationRunIdsRef.current.delete(connectionId)
         teardownAttachSubscription(contextKey)
         lastActivityRef.current.delete(contextKey)
         pendingUnmappedEventsRef.current.delete(connectionId)
@@ -4110,6 +4146,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const reverseMap = reverseMapRef.current
     const attachSubs = attachSubscriptionsRef.current
+    const notificationConversationIds = notificationConversationIdsRef.current
+    const notificationRunIds = notificationRunIdsRef.current
     // Capture the store ref at effect-setup time so the cleanup
     // function doesn't read a moving target (`storeRef.current` is the
     // same object across renders by design, but the lint rule
@@ -4139,6 +4177,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
           // best-effort during teardown
         }
       }
+      notificationConversationIds.clear()
+      notificationRunIds.clear()
     }
   }, [])
 
@@ -4323,6 +4363,12 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
             existing.status !== "disconnected" &&
             existing.status !== "error"
           ) {
+            if (conversationId != null && conversationId > 0) {
+              notificationConversationIdsRef.current.set(
+                existing.connectionId,
+                conversationId
+              )
+            }
             return
           }
           if (
@@ -4336,6 +4382,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
               await acpDisconnect(existing.connectionId).catch(() => {})
             }
             reverseMapRef.current.delete(existing.connectionId)
+            notificationConversationIdsRef.current.delete(existing.connectionId)
+            notificationRunIdsRef.current.delete(existing.connectionId)
             teardownAttachSubscription(contextKey)
             lastActivityRef.current.delete(contextKey)
             pendingUnmappedEventsRef.current.delete(existing.connectionId)
@@ -4370,6 +4418,12 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
           }
           if (orphanKey && orphanConn) {
             reverseMapRef.current.set(orphanConn.connectionId, contextKey)
+            if (conversationId != null && conversationId > 0) {
+              notificationConversationIdsRef.current.set(
+                orphanConn.connectionId,
+                conversationId
+              )
+            }
             const lastActivity = lastActivityRef.current.get(orphanKey)
             lastActivityRef.current.delete(orphanKey)
             lastActivityRef.current.set(contextKey, lastActivity ?? Date.now())
@@ -4446,6 +4500,10 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
             discovered &&
             !isConnectionOwnedLocally(discovered.connection_id)
           ) {
+            notificationConversationIdsRef.current.set(
+              discovered.connection_id,
+              conversationId
+            )
             await connectAsViewer(
               contextKey,
               discovered.connection_id,
@@ -4503,6 +4561,13 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
             acpDisconnect(connectionId).catch(() => {})
           }
           return
+        }
+
+        if (conversationId != null && conversationId > 0) {
+          notificationConversationIdsRef.current.set(
+            connectionId,
+            conversationId
+          )
         }
 
         lastActivityRef.current.set(contextKey, Date.now())
@@ -4679,6 +4744,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
         // governs the connection's real lifetime.
         teardownAttachSubscription(contextKey)
         reverseMapRef.current.delete(conn.connectionId)
+        notificationConversationIdsRef.current.delete(conn.connectionId)
+        notificationRunIdsRef.current.delete(conn.connectionId)
         pendingUnmappedEventsRef.current.delete(conn.connectionId)
         lastActivityRef.current.delete(contextKey)
         dispatch({ type: "CONNECTION_REMOVED", contextKey })
@@ -4686,6 +4753,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
       }
       await acpDisconnect(conn.connectionId)
       reverseMapRef.current.delete(conn.connectionId)
+      notificationConversationIdsRef.current.delete(conn.connectionId)
+      notificationRunIdsRef.current.delete(conn.connectionId)
       teardownAttachSubscription(contextKey)
       lastActivityRef.current.delete(contextKey)
       pendingUnmappedEventsRef.current.delete(conn.connectionId)
@@ -4758,6 +4827,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
       teardownAttachSubscription(contextKey)
       pendingUnmappedEventsRef.current.delete(conn.connectionId)
     }
+    notificationConversationIdsRef.current.clear()
+    notificationRunIdsRef.current.clear()
     lastActivityRef.current.clear()
     // Context keys are reused across backends, so a surviving entry here would
     // suppress the first snapshot alert of an unrelated session.
@@ -4778,6 +4849,16 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
     ) => {
       const conn = storeRef.current.connections.get(contextKey)
       if (!conn) return
+      if (opts?.conversationId != null && opts.conversationId > 0) {
+        notificationConversationIdsRef.current.set(
+          conn.connectionId,
+          opts.conversationId
+        )
+      }
+      const clientMessageId = opts?.clientMessageId?.trim()
+      if (clientMessageId) {
+        notificationRunIdsRef.current.set(conn.connectionId, clientMessageId)
+      }
       lastActivityRef.current.set(contextKey, Date.now())
       await acpPrompt(
         conn.connectionId,
@@ -5046,6 +5127,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
       if (!existing || !existing.isDelegationChild) return
       teardownAttachSubscription(connectionId)
       reverseMapRef.current.delete(connectionId)
+      notificationConversationIdsRef.current.delete(connectionId)
+      notificationRunIdsRef.current.delete(connectionId)
       pendingUnmappedEventsRef.current.delete(connectionId)
       lastActivityRef.current.delete(connectionId)
       dispatch({ type: "DELEGATION_CHILD_DETACH", contextKey: connectionId })

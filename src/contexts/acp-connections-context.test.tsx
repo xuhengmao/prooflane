@@ -43,14 +43,20 @@ const h = vi.hoisted(() => {
     buildDelegationSeedEnvelopes: vi.fn(() => []),
     denormalizeSnapshot: vi.fn(),
     // Stable across renders so tests can assert on what the error handler
-    // routes to the status-bar alert vs. to the OS notification.
+    // routes to the status-bar alert vs. to the OS notification coordinator.
     pushAlert: vi.fn(),
-    sendSystemNotification: vi.fn(async () => undefined),
+    conversationNotificationNotify: vi.fn(async (...args: unknown[]) => {
+      void args
+      return { status: "sent" }
+    }),
   }
 })
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: (namespace: string) => (key: string) =>
+    namespace === "ConversationNotifications"
+      ? `ConversationNotifications.${key}`
+      : key,
 }))
 
 vi.mock("@/lib/platform", () => ({
@@ -66,12 +72,10 @@ vi.mock("@/contexts/alert-context", () => ({
   useAlertContext: () => ({ pushAlert: h.pushAlert }),
 }))
 
-vi.mock("@/contexts/active-folder-context", () => ({
-  useActiveFolder: () => ({ activeFolder: { path: "/tmp/x", name: "x" } }),
-}))
-
-vi.mock("@/lib/notification", () => ({
-  sendSystemNotification: h.sendSystemNotification,
+vi.mock("@/lib/conversation-notification-runtime", () => ({
+  conversationNotificationRuntime: {
+    notify: h.conversationNotificationNotify,
+  },
 }))
 
 vi.mock("@/lib/selector-prefs-storage", () => ({
@@ -140,6 +144,7 @@ beforeEach(() => {
   h.acpDisconnect.mockReset()
   h.acpGetSessionSnapshot.mockReset()
   h.denormalizeSnapshot.mockReset()
+  h.conversationNotificationNotify.mockClear()
   h.denormalizeSnapshot.mockReturnValue({
     connectionId: "owner-conn",
     status: "connected",
@@ -1132,8 +1137,7 @@ describe("out-of-turn wire guard + background activity", () => {
   it("background_activity mirrors outstanding, applies overlay turns, and notifies settled tasks", async () => {
     const { useConversationRuntimeStore, resetConversationRuntimeStore } =
       await import("@/stores/conversation-runtime-store")
-    const { sendSystemNotification } = await import("@/lib/notification")
-    const notify = vi.mocked(sendSystemNotification)
+    const notify = h.conversationNotificationNotify
     notify.mockClear()
     const { getFolderConversation } = await import("@/lib/api")
     vi.mocked(getFolderConversation).mockClear()
@@ -1198,9 +1202,21 @@ describe("out-of-turn wire guard + background activity", () => {
       turn: { id: "bg-100-0" },
     })
 
-    // 3. one OS notification per settled task, carrying its summary.
+    // 3. One structured notification per settled task. Agent output is not
+    //    forwarded to the operating system notification center.
     expect(notify).toHaveBeenCalledTimes(1)
-    expect(notify.mock.calls[0][1]).toContain('Agent "Run pnpm build" finished')
+    expect(notify.mock.calls[0]?.[0]).toMatchObject({
+      conversationId: 42,
+      runId: "agent1",
+      notificationType: "completed",
+      messageId: "toolu_01",
+    })
+    expect(JSON.stringify(notify.mock.calls[0]?.[0])).not.toContain(
+      'Agent "Run pnpm build" finished'
+    )
+    expect(JSON.stringify(notify.mock.calls[0]?.[0])).not.toContain(
+      "Build succeeded"
+    )
 
     // 4. the settlement flips the launch card IN-MEMORY (no detail refetch):
     //    with no promoted card yet (it's mid-stream), it's queued under the
@@ -1462,12 +1478,25 @@ describe("empty-turn error diagnostics", () => {
   it("appends details to the alert but keeps them out of conn.error and the OS notification", async () => {
     const handlers = await connectOwner()
     h.pushAlert.mockClear()
-    h.sendSystemNotification.mockClear()
+    h.conversationNotificationNotify.mockClear()
+
+    await act(async () => {
+      await h.actions!.sendPrompt(TAB, [{ type: "text", text: "run" }], {
+        conversationId: 42,
+        clientMessageId: "user-turn-1",
+      })
+    })
+    emitAcpEvent(handlers, {
+      seq: 1,
+      connection_id: "spawned-conn",
+      type: "status_changed",
+      status: "prompting",
+    })
 
     const details =
       "dropped 1 update(s) (0 decode, 1 dispatch)\nstderr (this turn, last 1 lines):\n  Error: 401 Unauthorized"
     emitAcpEvent(handlers, {
-      seq: 1,
+      seq: 2,
       connection_id: "spawned-conn",
       type: "error",
       message: "raw english fallback",
@@ -1488,8 +1517,29 @@ describe("empty-turn error diagnostics", () => {
     )
 
     // Notification centers persist their payload outside the app.
-    const notifyCalls = h.sendSystemNotification.mock.calls
+    const notifyCalls = h.conversationNotificationNotify.mock.calls
     const notificationArgs = notifyCalls[notifyCalls.length - 1]!
+    expect(notificationArgs[0]).toMatchObject({
+      conversationId: 42,
+      runId: "user-turn-1",
+      notificationType: "failed",
+      conversationTitle:
+        "ConversationNotifications.notification.fallbackConversationTitle",
+    })
+    expect(notificationArgs[1]).toEqual({
+      completed: {
+        title: "ConversationNotifications.notification.completedTitle",
+        status: "ConversationNotifications.notification.completedStatus",
+      },
+      failed: {
+        title: "ConversationNotifications.notification.failedTitle",
+        status: "ConversationNotifications.notification.failedStatus",
+      },
+      action_required: {
+        title: "ConversationNotifications.notification.actionRequiredTitle",
+        status: "ConversationNotifications.notification.actionRequiredStatus",
+      },
+    })
     expect(JSON.stringify(notificationArgs)).not.toContain("401 Unauthorized")
   })
 
@@ -1644,7 +1694,7 @@ describe("HYDRATE_FROM_SNAPSHOT last_error recovery", () => {
   it("raises an alert for snapshot-carried details without touching conn.error or notifications", async () => {
     const handlers = await connectOwner()
     h.pushAlert.mockClear()
-    h.sendSystemNotification.mockClear()
+    h.conversationNotificationNotify.mockClear()
 
     const details =
       "stderr (this turn, last 1 lines):\n  Error: 401 Unauthorized"
@@ -1666,7 +1716,7 @@ describe("HYDRATE_FROM_SNAPSHOT last_error recovery", () => {
     expect(h.store!.getConnection(TAB)!.error).toBe(
       "agent ended the turn without producing any response."
     )
-    expect(h.sendSystemNotification).not.toHaveBeenCalled()
+    expect(h.conversationNotificationNotify).not.toHaveBeenCalled()
   })
 
   it("does not re-alert the same details on every re-attach", async () => {

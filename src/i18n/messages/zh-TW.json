@@ -1322,6 +1322,41 @@
     "agentsLoading": "載入 Agent 設定中...",
     "skillPacksLoading": "正在載入技能包…"
   },
+  "ConversationNotifications": {
+    "title": "會話完成通知",
+    "description": "當 Prooflane 位於背景且會話完成時通知你。點擊通知可返回對應會話。",
+    "allow": "允許系統通知",
+    "openSettings": "前往系統設定",
+    "browserSettingsHint": "請在瀏覽器的網站設定中允許 Prooflane 傳送通知。",
+    "permissionCheckFailed": "無法檢查通知權限：{message}",
+    "permissionRequestFailed": "無法申請通知權限：{message}",
+    "openSettingsFailed": "無法開啟通知設定：{message}",
+    "permission": {
+      "checking": "正在檢查系統通知權限...",
+      "granted": "已允許系統通知",
+      "prompt": "需要通知權限",
+      "promptHint": "只有你在此處主動允許後，Prooflane 才會申請系統通知權限。",
+      "denied": "系統通知權限未開啟",
+      "deniedHint": "請在作業系統或瀏覽器設定中為 Prooflane 開啟通知。",
+      "unsupported": "目前環境不支援系統通知",
+      "unsupportedHint": "會話仍可正常執行，但無法傳送背景系統通知。"
+    },
+    "notification": {
+      "fallbackConversationTitle": "會話",
+      "completedTitle": "會話已完成",
+      "completedStatus": "已產生回覆，點擊查看。",
+      "failedTitle": "會話執行失敗",
+      "failedStatus": "未能完成，點擊查看。",
+      "actionRequiredTitle": "會話需要你的操作",
+      "actionRequiredStatus": "正在等待確認，點擊繼續。"
+    },
+    "activation": {
+      "missingTitle": "會話已不可用",
+      "missingDetail": "會話 {id} 可能已被刪除或移動。",
+      "failedTitle": "無法開啟會話",
+      "failedDetail": "通知已開啟，但跳轉失敗：{message}"
+    }
+  },
   "GeneralSettings": {
     "loading": "載入中...",
     "sectionTitle": "一般",

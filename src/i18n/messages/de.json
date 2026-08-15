@@ -1322,6 +1322,41 @@
     "agentsLoading": "Agent-Einstellungen werden geladen...",
     "skillPacksLoading": "Skill-Pakete werden geladen…"
   },
+  "ConversationNotifications": {
+    "title": "Benachrichtigungen bei Gesprächsabschluss",
+    "description": "Benachrichtigt dich, wenn ein Gespräch abgeschlossen wird, während Prooflane im Hintergrund läuft. Klicke auf die Benachrichtigung, um zum Gespräch zurückzukehren.",
+    "allow": "Systembenachrichtigungen erlauben",
+    "openSettings": "Systemeinstellungen öffnen",
+    "browserSettingsHint": "Erlaube Prooflane-Benachrichtigungen in den Website-Einstellungen deines Browsers.",
+    "permissionCheckFailed": "Benachrichtigungsberechtigung konnte nicht geprüft werden: {message}",
+    "permissionRequestFailed": "Benachrichtigungsberechtigung konnte nicht angefordert werden: {message}",
+    "openSettingsFailed": "Benachrichtigungseinstellungen konnten nicht geöffnet werden: {message}",
+    "permission": {
+      "checking": "Systemberechtigung für Benachrichtigungen wird geprüft...",
+      "granted": "Systembenachrichtigungen sind erlaubt",
+      "prompt": "Benachrichtigungsberechtigung erforderlich",
+      "promptHint": "Prooflane fragt nur nach der Berechtigung, wenn du Benachrichtigungen hier ausdrücklich erlaubst.",
+      "denied": "Systembenachrichtigungen sind deaktiviert",
+      "deniedHint": "Aktiviere Benachrichtigungen für Prooflane in den Betriebssystem- oder Browsereinstellungen.",
+      "unsupported": "Systembenachrichtigungen sind nicht verfügbar",
+      "unsupportedHint": "Diese Umgebung unterstützt keine Systembenachrichtigungen. Gespräche laufen normal weiter."
+    },
+    "notification": {
+      "fallbackConversationTitle": "Gespräch",
+      "completedTitle": "Gespräch abgeschlossen",
+      "completedStatus": "hat eine Antwort erstellt. Zum Anzeigen klicken.",
+      "failedTitle": "Gespräch fehlgeschlagen",
+      "failedStatus": "konnte nicht abgeschlossen werden. Zum Anzeigen klicken.",
+      "actionRequiredTitle": "Gespräch erfordert deine Aktion",
+      "actionRequiredStatus": "wartet auf eine Bestätigung. Zum Fortfahren klicken."
+    },
+    "activation": {
+      "missingTitle": "Gespräch ist nicht mehr verfügbar",
+      "missingDetail": "Gespräch {id} wurde möglicherweise gelöscht oder verschoben.",
+      "failedTitle": "Gespräch konnte nicht geöffnet werden",
+      "failedDetail": "Die Benachrichtigung wurde geöffnet, aber die Navigation ist fehlgeschlagen: {message}"
+    }
+  },
   "GeneralSettings": {
     "loading": "Wird geladen...",
     "sectionTitle": "Allgemein",

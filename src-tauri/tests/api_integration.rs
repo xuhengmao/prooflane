@@ -19,7 +19,8 @@ use std::sync::Arc;
 
 use axum_test::TestServer;
 use codeg_lib::app_state::AppState;
-use codeg_lib::db::test_helpers::fresh_in_memory_db;
+use codeg_lib::db::test_helpers::{fresh_in_memory_db, seed_conversation, seed_folder};
+use codeg_lib::models::agent::AgentType;
 use codeg_lib::web::router::build_router;
 use codeg_lib::web::shutdown::ShutdownSignal;
 use serde_json::{json, Value};
@@ -186,6 +187,115 @@ async fn health_endpoint_returns_status_field() {
     assert_eq!(resp.status_code(), 200);
     let body: Value = resp.json();
     assert_eq!(body["status"], "ok");
+}
+
+#[tokio::test]
+async fn conversation_notification_claim_endpoint_is_atomic() {
+    let (server, state, _data, _static) = build_test_server_with_state().await;
+    let folder_id = seed_folder(&state.db, "C:/workspace").await;
+    let conversation_id =
+        seed_conversation(&state.db, folder_id, AgentType::ClaudeCode).await;
+    let payload = json!({
+        "conversationId": conversation_id,
+        "runId": "run-1",
+        "notificationType": "completed",
+        "messageId": "message-1"
+    });
+
+    let first = server
+        .post("/api/claim_conversation_notification")
+        .add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+        .json(&payload)
+        .await;
+    assert_eq!(first.status_code(), 200, "body: {}", first.text());
+    assert_eq!(first.json::<Value>()["claimed"], true);
+
+    let duplicate = server
+        .post("/api/claim_conversation_notification")
+        .add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+        .json(&payload)
+        .await;
+    assert_eq!(duplicate.status_code(), 200, "body: {}", duplicate.text());
+    assert_eq!(duplicate.json::<Value>()["claimed"], false);
+}
+
+#[tokio::test]
+async fn conversation_notification_release_endpoint_allows_retry() {
+    let (server, state, _data, _static) = build_test_server_with_state().await;
+    let folder_id = seed_folder(&state.db, "C:/workspace").await;
+    let conversation_id =
+        seed_conversation(&state.db, folder_id, AgentType::ClaudeCode).await;
+    let payload = json!({
+        "conversationId": conversation_id,
+        "runId": "run-1",
+        "notificationType": "failed"
+    });
+
+    let claim = server
+        .post("/api/claim_conversation_notification")
+        .add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+        .json(&payload)
+        .await;
+    assert_eq!(claim.status_code(), 200, "body: {}", claim.text());
+
+    let first = server
+        .post("/api/release_conversation_notification")
+        .add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+        .json(&payload)
+        .await;
+    assert_eq!(first.status_code(), 200, "body: {}", first.text());
+    assert_eq!(first.json::<Value>()["released"], true);
+
+    let duplicate = server
+        .post("/api/release_conversation_notification")
+        .add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+        .json(&payload)
+        .await;
+    assert_eq!(duplicate.status_code(), 200, "body: {}", duplicate.text());
+    assert_eq!(duplicate.json::<Value>()["released"], false);
+
+    let retry = server
+        .post("/api/claim_conversation_notification")
+        .add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+        .json(&payload)
+        .await;
+    assert_eq!(retry.status_code(), 200, "body: {}", retry.text());
+    assert_eq!(retry.json::<Value>()["claimed"], true);
+}
+
+#[tokio::test]
+async fn conversation_notification_clicked_endpoint_is_idempotent() {
+    let (server, state, _data, _static) = build_test_server_with_state().await;
+    let folder_id = seed_folder(&state.db, "C:/workspace").await;
+    let conversation_id =
+        seed_conversation(&state.db, folder_id, AgentType::ClaudeCode).await;
+    let payload = json!({
+        "conversationId": conversation_id,
+        "runId": "run-1",
+        "notificationType": "action_required"
+    });
+    let claim = server
+        .post("/api/claim_conversation_notification")
+        .add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+        .json(&payload)
+        .await;
+    assert_eq!(claim.status_code(), 200, "body: {}", claim.text());
+
+    let first = server
+        .post("/api/mark_conversation_notification_clicked")
+        .add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+        .json(&payload)
+        .await;
+    assert_eq!(first.status_code(), 200, "body: {}", first.text());
+    assert_eq!(first.json::<Value>()["updated"], true);
+
+    let duplicate = server
+        .post("/api/mark_conversation_notification_clicked")
+        .add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+        .json(&payload)
+        .await;
+    assert_eq!(duplicate.status_code(), 200, "body: {}", duplicate.text());
+    assert_eq!(duplicate.json::<Value>()["updated"], false);
 }
 
 #[tokio::test]

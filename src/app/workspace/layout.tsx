@@ -75,6 +75,7 @@ import {
   PetFocusBridge,
 } from "@/components/workspace/deep-link-bootstrap"
 import { WorkspaceOpenFolderListener } from "@/components/workspace/workspace-open-folder-listener"
+import { ConversationNotificationActivationBridge } from "@/components/workspace/conversation-notification-activation-bridge"
 import { HeavyPluginsWarmup } from "@/components/ai-elements/heavy-plugins-warmup"
 import {
   ResizableHandle,
@@ -1254,6 +1255,7 @@ function WorkspaceLayoutInner({ children }: { children: React.ReactNode }) {
                                 <TasksViewProvider>
                                   <WorkbenchRouteProvider>
                                     <WorkbenchRouteConversationSync />
+                                    <ConversationNotificationActivationBridge />
                                     {/* Inside WorkbenchRouteProvider: the
                                           listener calls openConversations() to
                                           surface a launcher-opened folder. */}

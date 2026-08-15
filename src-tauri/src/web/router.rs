@@ -50,6 +50,18 @@ pub fn build_router(
             post(handlers::conversations::get_conversation),
         )
         .route(
+            "/claim_conversation_notification",
+            post(handlers::conversation_notification::claim_conversation_notification),
+        )
+        .route(
+            "/release_conversation_notification",
+            post(handlers::conversation_notification::release_conversation_notification),
+        )
+        .route(
+            "/mark_conversation_notification_clicked",
+            post(handlers::conversation_notification::mark_conversation_notification_clicked),
+        )
+        .route(
             "/list_all_conversations",
             post(handlers::conversations::list_all_conversations),
         )

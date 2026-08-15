@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   mergeConsecutiveAssistantTurns,
   singletonSourceTurns,
+  toConversationNotificationLocatableItems,
   type MergedAssistantRunCache,
   type ResolvedMessageGroup,
   type ThreadRenderItem,
@@ -54,6 +55,23 @@ describe("singletonSourceTurns", () => {
     const a = singletonSourceTurns(turn("a"))
     const b = singletonSourceTurns(turn("b"))
     expect(a).not.toBe(b)
+  })
+})
+
+describe("toConversationNotificationLocatableItems", () => {
+  it("keeps every raw turn id in a merged assistant row", () => {
+    const first = assistantItem("assistant-1") as TurnItem
+    const second = assistantItem("assistant-2") as TurnItem
+    first.sourceTurns = [turn("assistant-1")]
+    second.sourceTurns = [turn("assistant-2")]
+    const merged = mergeConsecutiveAssistantTurns([first, second])
+
+    expect(toConversationNotificationLocatableItems(merged)).toEqual([
+      {
+        key: "merged-persisted-assistant-1",
+        messageIds: ["assistant-1", "assistant-2"],
+      },
+    ])
   })
 })
 

@@ -1322,6 +1322,41 @@
     "agentsLoading": "에이전트 설정을 불러오는 중...",
     "skillPacksLoading": "스킬 팩 로딩 중…"
   },
+  "ConversationNotifications": {
+    "title": "대화 완료 알림",
+    "description": "Prooflane이 백그라운드에 있을 때 대화가 완료되면 알립니다. 알림을 클릭하면 해당 대화로 돌아갑니다.",
+    "allow": "시스템 알림 허용",
+    "openSettings": "시스템 설정 열기",
+    "browserSettingsHint": "브라우저의 사이트 설정에서 Prooflane 알림을 허용하세요.",
+    "permissionCheckFailed": "알림 권한을 확인할 수 없습니다: {message}",
+    "permissionRequestFailed": "알림 권한을 요청할 수 없습니다: {message}",
+    "openSettingsFailed": "알림 설정을 열 수 없습니다: {message}",
+    "permission": {
+      "checking": "시스템 알림 권한을 확인하는 중...",
+      "granted": "시스템 알림이 허용됨",
+      "prompt": "알림 권한이 필요함",
+      "promptHint": "여기에서 허용을 선택한 경우에만 Prooflane이 알림 권한을 요청합니다.",
+      "denied": "시스템 알림 권한이 꺼져 있음",
+      "deniedHint": "운영 체제 또는 브라우저 설정에서 Prooflane 알림을 켜세요.",
+      "unsupported": "시스템 알림을 사용할 수 없음",
+      "unsupportedHint": "이 환경은 시스템 알림을 지원하지 않습니다. 대화는 정상적으로 계속됩니다."
+    },
+    "notification": {
+      "fallbackConversationTitle": "대화",
+      "completedTitle": "대화 완료",
+      "completedStatus": "응답을 생성했습니다. 클릭하여 확인하세요.",
+      "failedTitle": "대화 실패",
+      "failedStatus": "완료하지 못했습니다. 클릭하여 확인하세요.",
+      "actionRequiredTitle": "대화에 작업이 필요함",
+      "actionRequiredStatus": "확인을 기다리고 있습니다. 클릭하여 계속하세요."
+    },
+    "activation": {
+      "missingTitle": "대화를 사용할 수 없음",
+      "missingDetail": "대화 {id}이(가) 삭제되었거나 이동되었을 수 있습니다.",
+      "failedTitle": "대화를 열 수 없음",
+      "failedDetail": "알림은 열렸지만 이동에 실패했습니다: {message}"
+    }
+  },
   "GeneralSettings": {
     "loading": "로딩 중...",
     "sectionTitle": "일반",
