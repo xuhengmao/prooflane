@@ -19,6 +19,7 @@ pub mod automation;
 pub mod backgrounds;
 pub mod chat_channel;
 pub mod commands;
+pub mod conversation_relay;
 pub mod db;
 pub mod folder_links;
 pub mod git_credential;
