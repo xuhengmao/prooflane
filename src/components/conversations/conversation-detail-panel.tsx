@@ -142,6 +142,7 @@ import {
   exportAsMarkdown,
   ExportTooLongError,
 } from "@/lib/export-conversation"
+import { getConversationRelay } from "@/lib/conversation-relay"
 import { useExportLabels } from "@/lib/use-export-labels"
 import { resolveActiveSessionDetails } from "./active-session-details"
 import {
@@ -2396,10 +2397,20 @@ export function ConversationDetailPanel() {
         session.dbConversationId ?? activeConversationTab.conversationId
       )
     }
+    const relayConversationId =
+      session.dbConversationId ??
+      (activeConversationTab.conversationId > 0
+        ? activeConversationTab.conversationId
+        : null)
+    const provenance =
+      relayConversationId == null
+        ? null
+        : await getConversationRelay(relayConversationId)
     return {
       summary: detail.summary,
       turns: detail.turns,
       sessionStats: detail.session_stats,
+      provenance,
       labels: exportLabels,
     }
   }, [activeConversationTab, exportLabels])

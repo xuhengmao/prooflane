@@ -1,6 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::acp::types::PromptInputBlock;
+use crate::models::message::{ContentBlock, MessageTurn, TurnRole};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RelayContextMarker {
@@ -15,10 +16,7 @@ pub fn marker_for_snapshot(relay_id: i32, snapshot: &str) -> RelayContextMarker 
     }
 }
 
-pub fn build_hidden_relay_block(
-    marker: &RelayContextMarker,
-    snapshot: &str,
-) -> PromptInputBlock {
+pub fn build_hidden_relay_block(marker: &RelayContextMarker, snapshot: &str) -> PromptInputBlock {
     PromptInputBlock::Text {
         text: format!(
             "<prooflane-relay-context version=\"1\" relay-id=\"{}\" snapshot-sha256=\"{}\">\n{}\n</prooflane-relay-context>",
@@ -44,6 +42,29 @@ pub fn strip_hidden_relay_context(
         return blocks.to_vec();
     }
     blocks[1..].to_vec()
+}
+
+pub fn strip_hidden_relay_context_from_first_user_turn(
+    turns: &mut [MessageTurn],
+    expected_marker: &RelayContextMarker,
+) -> bool {
+    let Some(turn) = turns
+        .iter_mut()
+        .find(|turn| matches!(turn.role, TurnRole::User))
+    else {
+        return false;
+    };
+    let Some(ContentBlock::Text { text }) = turn.blocks.first() else {
+        return false;
+    };
+    let Some(snapshot) = hidden_snapshot(text, expected_marker) else {
+        return false;
+    };
+    if marker_for_snapshot(expected_marker.relay_id, snapshot) != *expected_marker {
+        return false;
+    }
+    turn.blocks.remove(0);
+    true
 }
 
 fn hidden_snapshot<'a>(text: &'a str, marker: &RelayContextMarker) -> Option<&'a str> {

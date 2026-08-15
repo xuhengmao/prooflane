@@ -8964,6 +8964,7 @@ fn emit_relay_outcome(
         ConversationRelayChange {
             relay_id: pack.id,
             target_draft_id: pack.target_draft_id.clone(),
+            target_conversation_id: pack.target_conversation_id,
             status: pack.status.clone(),
             error_code,
         },

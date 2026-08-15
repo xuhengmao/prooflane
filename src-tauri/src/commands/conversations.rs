@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::app_error::AppCommandError;
+use crate::conversation_relay::context::{
+    marker_for_snapshot, strip_hidden_relay_context_from_first_user_turn,
+};
 use crate::db::entities::conversation;
 use crate::db::entities::folder::FolderKind;
 use crate::db::service::{
@@ -8,6 +11,7 @@ use crate::db::service::{
 };
 #[cfg(feature = "tauri-runtime")]
 use crate::db::AppDatabase;
+use crate::models::conversation_relay::{RelayErrorCode, RelaySnapshot};
 use crate::models::*;
 use crate::parsers::acp_native::AcpNativeParser;
 use crate::parsers::claude::ClaudeParser;
@@ -1008,8 +1012,14 @@ pub async fn get_folder_conversation_core(
         .await
         .map_err(AppCommandError::from)?;
 
-    let (mut turns, session_stats, resolved_ext_id, parsed_title, parsed_model, transcript_watermark) =
-        if let Some(ref ext_id) = summary.external_id {
+    let (
+        mut turns,
+        session_stats,
+        resolved_ext_id,
+        mut parsed_title,
+        parsed_model,
+        transcript_watermark,
+    ) = if let Some(ref ext_id) = summary.external_id {
         let at = summary.agent_type;
         let eid = ext_id.clone();
         let db_created_at = summary.created_at;
@@ -1110,6 +1120,26 @@ pub async fn get_folder_conversation_core(
         (vec![], None, None, None, None, None)
     };
 
+    if let Some(pack) =
+        relay_context_pack_service::get_consumed_by_target(conn, conversation_id).await?
+    {
+        let source_unavailable = || {
+            AppCommandError::task_execution_failed(
+                RelayErrorCode::RelaySourceUnavailable.to_string(),
+            )
+        };
+        let snapshot_json = pack
+            .consumed_snapshot_json
+            .as_deref()
+            .ok_or_else(source_unavailable)?;
+        let snapshot = serde_json::from_str::<RelaySnapshot>(snapshot_json)
+            .map_err(|_| source_unavailable())?;
+        let marker = marker_for_snapshot(pack.id, &snapshot.canonical_context);
+        if strip_hidden_relay_context_from_first_user_turn(&mut turns, &marker) {
+            parsed_title = first_visible_user_title(&turns);
+        }
+    }
+
     // If we resolved a different external_id (e.g. ACP UUID → parser branch ID),
     // update the database so future lookups are direct.
     if let Some(new_ext_id) = resolved_ext_id {
@@ -1154,6 +1184,22 @@ pub async fn get_folder_conversation_core(
         },
         parsed_title,
     ))
+}
+
+fn first_visible_user_title(turns: &[MessageTurn]) -> Option<String> {
+    let turn = turns
+        .iter()
+        .find(|turn| matches!(turn.role, TurnRole::User))?;
+    let text = turn
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    let trimmed = text.trim();
+    (!trimmed.is_empty()).then(|| crate::parsers::truncate_str(trimmed, 80))
 }
 
 /// A normalized, comparable view of a user turn's renderable content. Used to
@@ -2177,8 +2223,11 @@ pub async fn delete_conversation_with_cleanup_core(
             ConversationRelayChange {
                 relay_id: pack.id,
                 target_draft_id: pack.target_draft_id,
+                target_conversation_id: pack.target_conversation_id,
                 status: "invalid".to_owned(),
-                error_code: Some(crate::models::conversation_relay::RelayErrorCode::RelaySourceNotFound),
+                error_code: Some(
+                    crate::models::conversation_relay::RelayErrorCode::RelaySourceNotFound,
+                ),
             },
         );
     }

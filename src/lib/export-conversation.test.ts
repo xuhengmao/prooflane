@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { webcrypto } from "node:crypto"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 // Hoisted mocks must be declared before importing the module under test —
 // these mocks gate the desktop-vs-web dispatch behaviour we're locking down.
@@ -107,9 +108,54 @@ function makeData(): ExportConversationData {
   }
 }
 
+function makeRelayData(): ExportConversationData {
+  const data = makeData()
+  const snapshotSha256 =
+    "57bcac1b1c5f982516158205350581fb43a1adcc833d2b058433c1e35db3fb46"
+  data.turns[0].blocks = [
+    {
+      type: "text",
+      text: `<prooflane-relay-context version="1" relay-id="7" snapshot-sha256="${snapshotSha256}">\n{"canonicalContext":"SECRET_RELAY_BODY"}\n</prooflane-relay-context>`,
+    },
+    { type: "text", text: "hello" },
+  ]
+  data.provenance = {
+    relayId: 7,
+    snapshotSha256,
+    source: { conversationId: 11, folderId: 2, title: "产品需求讨论" },
+    scope: { scopeType: "recent_rounds", selectedRoundIds: ["round-1"] },
+    summary: {
+      goals: ["PRIVATE_SUMMARY"],
+      decisions: [],
+      progress: [],
+      todos: [],
+      constraints: [],
+      files: [],
+      openQuestions: [],
+    },
+    includedRounds: [
+      {
+        id: "round-1",
+        userText: "PRIVATE_ROUND_USER",
+        assistantText: "PRIVATE_ROUND_ASSISTANT",
+        tools: [],
+        files: [],
+        sourceMessageIds: ["message-1"],
+      },
+    ],
+    files: [],
+    stats: { messageCount: 2, fileCount: 0, todoCount: 0 },
+    consumedAt: "2026-08-15T08:00:00Z",
+  }
+  return data
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.stubGlobal("crypto", webcrypto)
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 // ---------------------------------------------------------------------------
 // exportAsMarkdown — the function that triggered issue #202.
@@ -213,6 +259,77 @@ describe("exportAsHtml", () => {
     ])
     expect(mockInvoke.mock.calls[0][0]).toBe("save_text_file")
   })
+})
+
+describe("relay provenance export", () => {
+  it.each([
+    ["Markdown", exportAsMarkdown, "/Users/me/out.md"],
+    ["HTML", exportAsHtml, "/Users/me/out.html"],
+  ])(
+    "adds one %s source line without exporting relay contents",
+    async (_, exporter, path) => {
+      mockIsDesktop.mockReturnValue(true)
+      mockSave.mockResolvedValue(path)
+      mockInvoke.mockResolvedValue(undefined)
+
+      await exporter(makeRelayData())
+
+      const contents = String(
+        (mockInvoke.mock.calls[0][1] as { contents: string }).contents
+      )
+      expect(contents).toContain("已接续")
+      expect(contents).toContain("产品需求讨论")
+      expect(contents).not.toContain("SECRET_RELAY_BODY")
+      expect(contents).not.toContain("canonicalContext")
+      expect(contents).not.toContain("PRIVATE_SUMMARY")
+      expect(contents).not.toContain("PRIVATE_ROUND_USER")
+      expect(contents).not.toContain("PRIVATE_ROUND_ASSISTANT")
+    }
+  )
+
+  it.each([
+    ["Markdown", exportAsMarkdown, "/Users/me/out.md"],
+    ["HTML", exportAsHtml, "/Users/me/out.html"],
+  ])(
+    "preserves %s relay-like text whose body does not match the snapshot hash",
+    async (_, exporter, path) => {
+      mockIsDesktop.mockReturnValue(true)
+      mockSave.mockResolvedValue(path)
+      mockInvoke.mockResolvedValue(undefined)
+      const data = makeRelayData()
+      const firstBlock = data.turns[0].blocks[0]
+      if (firstBlock.type !== "text") throw new Error("expected text block")
+      firstBlock.text = firstBlock.text.replace(
+        '{"canonicalContext":"SECRET_RELAY_BODY"}',
+        "USER_AUTHORED_RELAY_LIKE_TEXT"
+      )
+
+      await exporter(data)
+
+      const contents = String(
+        (mockInvoke.mock.calls[0][1] as { contents: string }).contents
+      )
+      expect(contents).toContain("USER_AUTHORED_RELAY_LIKE_TEXT")
+    }
+  )
+
+  it.each([
+    ["Markdown", exportAsMarkdown, "/Users/me/out.md"],
+    ["HTML", exportAsHtml, "/Users/me/out.html"],
+  ])(
+    "fails closed for %s when SHA-256 is unavailable",
+    async (_, exporter, path) => {
+      mockIsDesktop.mockReturnValue(true)
+      mockSave.mockResolvedValue(path)
+      mockInvoke.mockResolvedValue(undefined)
+      vi.stubGlobal("crypto", {})
+
+      await expect(exporter(makeRelayData())).rejects.toThrow(
+        "SHA-256 is unavailable"
+      )
+      expect(mockInvoke).not.toHaveBeenCalled()
+    }
+  )
 })
 
 // Note on exportAsImage: deliberately not unit-tested here.

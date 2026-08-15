@@ -3,8 +3,8 @@ use codeg_lib::acp::manager::ConnectionManager;
 use codeg_lib::acp::types::PromptInputBlock;
 use codeg_lib::commands::acp::{send_prompt_with_relay_core, AcpPromptRequest};
 use codeg_lib::commands::conversations::{
-    create_conversation_with_relay_core, get_folder_conversation_core, relay_binding_from_parts,
-    RelayBindingInput,
+    create_conversation_with_relay_core, get_folder_conversation_core,
+    get_folder_conversation_with_live_core, relay_binding_from_parts, RelayBindingInput,
 };
 use codeg_lib::conversation_relay::context::{
     build_hidden_relay_block, marker_for_snapshot, strip_hidden_relay_context, RelayContextMarker,
@@ -37,9 +37,10 @@ use codeg_lib::db::service::relay_context_pack_service::{
 use codeg_lib::db::test_helpers::{fresh_in_memory_db, seed_conversation, seed_folder};
 use codeg_lib::models::agent::AgentType;
 use codeg_lib::models::conversation_relay::{
-    RelayError, RelayErrorCode, RelayRound, RelayScopeSelection, RelayScopeType, RelaySnapshot,
-    RelaySnapshotSource, RelayStats,
+    RelayError, RelayErrorCode, RelayFileReference, RelayRound, RelayScopeSelection,
+    RelayScopeType, RelaySnapshot, RelaySnapshotSource, RelayStats, RelaySummary,
 };
+use codeg_lib::models::message::ContentBlock;
 use codeg_lib::restricted_codex::{RestrictedCodexError, RestrictedCodexRequest};
 use codeg_lib::web::event_bridge::EventEmitter;
 use sea_orm::{
@@ -1493,7 +1494,20 @@ async fn restore_remove_and_consumed_provenance_use_stable_views() {
         .exec(&db.conn)
         .await
         .unwrap();
-    insert_pack(&db.conn, "consumed-view", source, Some(target), "consumed")
+    let consumed = insert_pack(&db.conn, "consumed-view", source, Some(target), "consumed")
+        .await
+        .unwrap();
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::ConsumedSnapshotJson,
+            sea_orm::sea_query::Expr::value(Some(serde_json::to_string(&draft_snapshot).unwrap())),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumedAt,
+            sea_orm::sea_query::Expr::value(Some(chrono::Utc::now())),
+        )
+        .filter(relay_context_pack::Column::Id.eq(consumed.id))
+        .exec(&db.conn)
         .await
         .unwrap();
 
@@ -1506,7 +1520,7 @@ async fn restore_remove_and_consumed_provenance_use_stable_views() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(provenance.source_conversation_id, source);
+    assert_eq!(provenance.source.conversation_id, source);
 
     let removed = remove_relay_context_core(&db.conn, &EventEmitter::Noop, draft.id)
         .await
@@ -1516,6 +1530,111 @@ async fn restore_remove_and_consumed_provenance_use_stable_views() {
         .await
         .unwrap()
         .is_none());
+}
+
+#[tokio::test]
+async fn consumed_provenance_uses_immutable_snapshot_and_deleted_source_fallback() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-provenance-snapshot").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    conversation::Entity::update_many()
+        .col_expr(
+            conversation::Column::Title,
+            sea_orm::sea_query::Expr::value(Some("Source at consumption".to_owned())),
+        )
+        .filter(conversation::Column::Id.eq(source))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+
+    let mut snapshot = reloaded_relay_snapshot(source, folder_id);
+    let file = RelayFileReference {
+        path: "src/auth.ts".to_owned(),
+        mime_type: Some("text/typescript".to_owned()),
+        source_message_id: "message-reload-round".to_owned(),
+    };
+    snapshot.summary = Some(RelaySummary {
+        goals: vec!["finish authentication".to_owned()],
+        decisions: vec!["keep local storage".to_owned()],
+        progress: vec!["login form completed".to_owned()],
+        todos: vec!["add refresh flow".to_owned()],
+        constraints: vec!["offline first".to_owned()],
+        files: vec![file.path.clone()],
+        open_questions: vec!["token rotation interval".to_owned()],
+    });
+    snapshot.files = vec![file.clone()];
+    snapshot.stats.file_count = 1;
+    let consumed_at = chrono::Utc::now();
+    let pack = insert_pack(
+        &db.conn,
+        "draft-provenance-snapshot",
+        source,
+        Some(target),
+        "consumed",
+    )
+    .await
+    .unwrap();
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::ConsumedSnapshotJson,
+            sea_orm::sea_query::Expr::value(Some(serde_json::to_string(&snapshot).unwrap())),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumedAt,
+            sea_orm::sea_query::Expr::value(Some(consumed_at)),
+        )
+        .col_expr(
+            relay_context_pack::Column::SnapshotJson,
+            sea_orm::sea_query::Expr::value("{\"mutated\":true}"),
+        )
+        .col_expr(
+            relay_context_pack::Column::ScopeType,
+            sea_orm::sea_query::Expr::value("custom_rounds"),
+        )
+        .col_expr(
+            relay_context_pack::Column::SelectedRoundIdsJson,
+            sea_orm::sea_query::Expr::value("[\"mutated-round\"]"),
+        )
+        .filter(relay_context_pack::Column::Id.eq(pack.id))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+
+    let provenance = get_conversation_relay_core(&db.conn, target)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(provenance.relay_id, pack.id);
+    assert_eq!(
+        provenance.snapshot_sha256,
+        marker_for_snapshot(pack.id, &snapshot.canonical_context).snapshot_sha256
+    );
+    assert_eq!(provenance.source.conversation_id, source);
+    assert_eq!(provenance.source.folder_id, folder_id);
+    assert_eq!(provenance.source.title, "Source at consumption");
+    assert_eq!(provenance.scope, snapshot.scope);
+    assert_eq!(provenance.summary, snapshot.summary);
+    assert_eq!(provenance.included_rounds, snapshot.included_rounds);
+    assert_eq!(provenance.files, vec![file]);
+    assert_eq!(provenance.stats, snapshot.stats);
+    assert_eq!(provenance.consumed_at, Some(consumed_at));
+
+    conversation::Entity::update_many()
+        .col_expr(
+            conversation::Column::DeletedAt,
+            sea_orm::sea_query::Expr::value(Some(chrono::Utc::now())),
+        )
+        .filter(conversation::Column::Id.eq(source))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+
+    let deleted_source = get_conversation_relay_core(&db.conn, target)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(deleted_source.source.title, format!("会话 #{source}"));
 }
 
 #[test]
@@ -1593,6 +1712,327 @@ impl Drop for RelaySendCoreTranscriptFixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.transcript_dir);
     }
+}
+
+fn reloaded_relay_snapshot(source: i32, folder_id: i32) -> RelaySnapshot {
+    let included_round = relay_round("reload-round", "source request");
+    RelaySnapshot {
+        version: 1,
+        source: RelaySnapshotSource {
+            conversation_id: source,
+            folder_id,
+        },
+        scope: RelayScopeSelection {
+            scope_type: RelayScopeType::RecentRounds,
+            selected_round_ids: vec![included_round.id.clone()],
+        },
+        available_rounds: vec![included_round.clone()],
+        included_rounds: vec![included_round],
+        summary: None,
+        files: Vec::new(),
+        stats: RelayStats {
+            message_count: 2,
+            file_count: 0,
+            todo_count: 0,
+        },
+        canonical_context: "SECRET_RELAY_BODY".to_owned(),
+    }
+}
+
+async fn seed_consumed_relay_target(
+    db: &codeg_lib::db::AppDatabase,
+    folder_id: i32,
+    agent_id: &'static str,
+    session_id: &str,
+    prompts: impl FnOnce(i32, &RelaySnapshot) -> Vec<Vec<PromptInputBlock>>,
+) -> (i32, RelaySendCoreTranscriptFixture) {
+    let source = seed_conversation(db, folder_id, AgentType::Codex).await;
+    let target_agent = AgentType::Custom(agent_id);
+    let target = seed_conversation(db, folder_id, target_agent).await;
+    update_external_id(&db.conn, target, session_id.to_owned())
+        .await
+        .unwrap();
+    let snapshot = reloaded_relay_snapshot(source, folder_id);
+    let pack = insert_pack(
+        &db.conn,
+        &format!("draft-{session_id}"),
+        source,
+        Some(target),
+        "consumed",
+    )
+    .await
+    .unwrap();
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::ConsumedSnapshotJson,
+            sea_orm::sea_query::Expr::value(Some(serde_json::to_string(&snapshot).unwrap())),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumedAt,
+            sea_orm::sea_query::Expr::value(Some(chrono::Utc::now())),
+        )
+        .filter(relay_context_pack::Column::Id.eq(pack.id))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+
+    let agent_dir = codeg_lib::acp::registry::registry_id_for(target_agent);
+    let transcript_dir = codeg_lib::paths::codeg_acp_transcripts_root().join(agent_dir);
+    let _ = std::fs::remove_dir_all(&transcript_dir);
+    codeg_lib::acp_transcript::record_header(
+        agent_dir,
+        &codeg_lib::acp_transcript::TranscriptHeader::new(
+            &target_agent.as_wire(),
+            session_id,
+            "C:/workspace/relay-reload",
+            codeg_lib::acp_transcript::now_epoch_ms(),
+        ),
+    )
+    .await
+    .unwrap();
+    for prompt in prompts(pack.id, &snapshot) {
+        codeg_lib::acp_transcript::record_entry(
+            agent_dir,
+            session_id,
+            codeg_lib::acp_transcript::EntryKind::Prompt,
+            serde_json::to_value(prompt).unwrap(),
+        )
+        .await
+        .unwrap();
+        codeg_lib::acp_transcript::record_entry(
+            agent_dir,
+            session_id,
+            codeg_lib::acp_transcript::EntryKind::TurnEnd,
+            serde_json::json!({ "stopReason": "end_turn" }),
+        )
+        .await
+        .unwrap();
+    }
+
+    (target, RelaySendCoreTranscriptFixture { transcript_dir })
+}
+
+fn text_block(block: &ContentBlock) -> &str {
+    match block {
+        ContentBlock::Text { text } => text,
+        other => panic!("expected text block, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn hidden_context_is_removed_from_reloaded_detail() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-reload-matched").await;
+    let (target, _fixture) = seed_consumed_relay_target(
+        &db,
+        folder_id,
+        "relay-reload-matched",
+        "relay-reload-matched-session",
+        |relay_id, snapshot| {
+            let marker = marker_for_snapshot(relay_id, &snapshot.canonical_context);
+            vec![vec![
+                build_hidden_relay_block(&marker, &snapshot.canonical_context),
+                PromptInputBlock::Text {
+                    text: "actual user request".to_owned(),
+                },
+            ]]
+        },
+    )
+    .await;
+
+    let (detail, parsed_title) = get_folder_conversation_core(&db.conn, target)
+        .await
+        .unwrap();
+
+    assert_eq!(detail.turns.len(), 1);
+    assert_eq!(detail.turns[0].blocks.len(), 1);
+    assert_eq!(
+        text_block(&detail.turns[0].blocks[0]),
+        "actual user request"
+    );
+    assert_eq!(parsed_title.as_deref(), Some("actual user request"));
+
+    let live_detail = get_folder_conversation_with_live_core(
+        &db.conn,
+        &ConnectionManager::new(),
+        &codeg_lib::chat_channel::manager::ChatChannelManager::new(),
+        &EventEmitter::Noop,
+        target,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        live_detail.summary.title.as_deref(),
+        Some("actual user request")
+    );
+    let persisted = conversation::Entity::find_by_id(target)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(persisted.title.as_deref(), Some("actual user request"));
+}
+
+#[tokio::test]
+async fn reloaded_detail_preserves_hidden_block_with_wrong_relay_id() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-reload-wrong-id").await;
+    let (target, _fixture) = seed_consumed_relay_target(
+        &db,
+        folder_id,
+        "relay-reload-wrong-id",
+        "relay-reload-wrong-id-session",
+        |relay_id, snapshot| {
+            let marker = marker_for_snapshot(relay_id + 1, &snapshot.canonical_context);
+            vec![vec![
+                build_hidden_relay_block(&marker, &snapshot.canonical_context),
+                PromptInputBlock::Text {
+                    text: "actual user request".to_owned(),
+                },
+            ]]
+        },
+    )
+    .await;
+
+    let (detail, _) = get_folder_conversation_core(&db.conn, target)
+        .await
+        .unwrap();
+
+    assert_eq!(detail.turns[0].blocks.len(), 2);
+    assert!(text_block(&detail.turns[0].blocks[0]).contains("SECRET_RELAY_BODY"));
+}
+
+#[tokio::test]
+async fn reloaded_detail_preserves_hidden_block_with_wrong_snapshot_hash() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-reload-wrong-hash").await;
+    let (target, _fixture) = seed_consumed_relay_target(
+        &db,
+        folder_id,
+        "relay-reload-wrong-hash",
+        "relay-reload-wrong-hash-session",
+        |relay_id, snapshot| {
+            let marker = RelayContextMarker {
+                relay_id,
+                snapshot_sha256: "0".repeat(64),
+            };
+            vec![vec![
+                build_hidden_relay_block(&marker, &snapshot.canonical_context),
+                PromptInputBlock::Text {
+                    text: "actual user request".to_owned(),
+                },
+            ]]
+        },
+    )
+    .await;
+
+    let (detail, _) = get_folder_conversation_core(&db.conn, target)
+        .await
+        .unwrap();
+
+    assert_eq!(detail.turns[0].blocks.len(), 2);
+    assert!(text_block(&detail.turns[0].blocks[0]).contains("SECRET_RELAY_BODY"));
+}
+
+#[tokio::test]
+async fn reloaded_detail_preserves_mixed_or_later_relay_like_text() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-reload-user-text").await;
+    let (target, _fixture) = seed_consumed_relay_target(
+        &db,
+        folder_id,
+        "relay-reload-user-text",
+        "relay-reload-user-text-session",
+        |relay_id, snapshot| {
+            let marker = marker_for_snapshot(relay_id, &snapshot.canonical_context);
+            let hidden = build_hidden_relay_block(&marker, &snapshot.canonical_context);
+            let PromptInputBlock::Text { text: hidden_text } = hidden else {
+                unreachable!()
+            };
+            vec![
+                vec![PromptInputBlock::Text {
+                    text: format!("user prefix\n{hidden_text}"),
+                }],
+                vec![
+                    build_hidden_relay_block(&marker, &snapshot.canonical_context),
+                    PromptInputBlock::Text {
+                        text: "later user request".to_owned(),
+                    },
+                ],
+            ]
+        },
+    )
+    .await;
+
+    let (detail, _) = get_folder_conversation_core(&db.conn, target)
+        .await
+        .unwrap();
+
+    assert_eq!(detail.turns.len(), 2);
+    assert!(text_block(&detail.turns[0].blocks[0]).starts_with("user prefix"));
+    assert_eq!(detail.turns[1].blocks.len(), 2);
+    assert!(text_block(&detail.turns[1].blocks[0]).contains("SECRET_RELAY_BODY"));
+}
+
+async fn assert_invalid_consumed_snapshot_fails_closed(
+    agent_id: &'static str,
+    session_id: &str,
+    consumed_snapshot_json: Option<&str>,
+) {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, &format!("C:/workspace/{session_id}")).await;
+    let (target, _fixture) = seed_consumed_relay_target(
+        &db,
+        folder_id,
+        agent_id,
+        session_id,
+        |relay_id, snapshot| {
+            let marker = marker_for_snapshot(relay_id, &snapshot.canonical_context);
+            vec![vec![
+                build_hidden_relay_block(&marker, &snapshot.canonical_context),
+                PromptInputBlock::Text {
+                    text: "actual user request".to_owned(),
+                },
+            ]]
+        },
+    )
+    .await;
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::ConsumedSnapshotJson,
+            sea_orm::sea_query::Expr::value(consumed_snapshot_json.map(str::to_owned)),
+        )
+        .filter(relay_context_pack::Column::TargetConversationId.eq(target))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+
+    let error = get_folder_conversation_core(&db.conn, target)
+        .await
+        .expect_err("invalid consumed snapshot must not return hidden transcript content");
+
+    assert_eq!(error.message, "relay_source_unavailable");
+}
+
+#[tokio::test]
+async fn reloaded_detail_fails_closed_when_consumed_snapshot_is_missing() {
+    assert_invalid_consumed_snapshot_fails_closed(
+        "relay-reload-missing-snapshot",
+        "relay-reload-missing-snapshot-session",
+        None,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn reloaded_detail_fails_closed_when_consumed_snapshot_is_malformed() {
+    assert_invalid_consumed_snapshot_fails_closed(
+        "relay-reload-malformed-snapshot",
+        "relay-reload-malformed-snapshot-session",
+        Some("{not-json"),
+    )
+    .await;
 }
 
 async fn seed_relay_send_core_source(

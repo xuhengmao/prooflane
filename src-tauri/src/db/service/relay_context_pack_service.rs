@@ -73,6 +73,17 @@ pub async fn get_by_id(
     find_pack(conn, relay_id).await
 }
 
+pub async fn get_consumed_by_target(
+    conn: &DatabaseConnection,
+    conversation_id: i32,
+) -> Result<Option<relay_context_pack::Model>, DbError> {
+    Ok(relay_context_pack::Entity::find()
+        .filter(relay_context_pack::Column::TargetConversationId.eq(conversation_id))
+        .filter(relay_context_pack::Column::Status.eq(STATUS_CONSUMED))
+        .one(conn)
+        .await?)
+}
+
 pub async fn create_or_replace_draft(
     conn: &DatabaseConnection,
     pack: NewRelayPack,

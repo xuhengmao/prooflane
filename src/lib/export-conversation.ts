@@ -2,6 +2,7 @@ import type {
   ContentBlock,
   DbConversationSummary,
   MessageTurn,
+  RelayProvenance,
   SessionStats,
   TurnUsage,
 } from "@/lib/types"
@@ -51,6 +52,7 @@ export interface ExportConversationData {
   summary: DbConversationSummary
   turns: MessageTurn[]
   sessionStats?: SessionStats | null
+  provenance?: RelayProvenance | null
   labels: ExportLabels
 }
 
@@ -154,6 +156,76 @@ function escapeHtml(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
+}
+
+function relayScopeMetadata(provenance: RelayProvenance): string {
+  const rounds = provenance.includedRounds.length
+  switch (provenance.scope.scopeType) {
+    case "summary":
+      return "精简摘要"
+    case "recent_rounds":
+      return `最近 ${rounds} 个完整轮次`
+    case "custom_rounds":
+      return `自定义 ${rounds} 个完整轮次`
+  }
+}
+
+function relayMetadata(provenance: RelayProvenance): string {
+  const counts = [`${provenance.stats.messageCount} 条消息`]
+  if (provenance.stats.fileCount > 0) {
+    counts.push(`${provenance.stats.fileCount} 个文件`)
+  }
+  if (provenance.stats.todoCount > 0) {
+    counts.push(`${provenance.stats.todoCount} 项待办`)
+  }
+  return `已接续《${provenance.source.title}》 · ${relayScopeMetadata(provenance)} · ${counts.join(" · ")}`
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) throw new Error("SHA-256 is unavailable")
+  const digest = await subtle.digest("SHA-256", new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("")
+}
+
+async function isMatchingHiddenRelayBlock(
+  block: ContentBlock | undefined,
+  provenance: RelayProvenance
+): Promise<boolean> {
+  if (!block || block.type !== "text") return false
+  const prefix = `<prooflane-relay-context version="1" relay-id="${provenance.relayId}" snapshot-sha256="${provenance.snapshotSha256}">\n`
+  const suffix = "\n</prooflane-relay-context>"
+  if (!block.text.startsWith(prefix) || !block.text.endsWith(suffix)) {
+    return false
+  }
+  const snapshot = block.text.slice(prefix.length, -suffix.length)
+  return (await sha256Hex(snapshot)) === provenance.snapshotSha256
+}
+
+async function visibleExportTurns(
+  turns: MessageTurn[],
+  provenance?: RelayProvenance | null
+): Promise<MessageTurn[]> {
+  if (!provenance) return turns
+  let sawFirstUser = false
+  let changed = false
+  const visible: MessageTurn[] = []
+  for (const turn of turns) {
+    if (sawFirstUser || turn.role !== "user") {
+      visible.push(turn)
+      continue
+    }
+    sawFirstUser = true
+    if (!(await isMatchingHiddenRelayBlock(turn.blocks[0], provenance))) {
+      visible.push(turn)
+      continue
+    }
+    changed = true
+    visible.push({ ...turn, blocks: turn.blocks.slice(1) })
+  }
+  return changed ? visible : turns
 }
 
 const ALLOWED_IMAGE_MIMES = new Set([
@@ -421,6 +493,7 @@ h1{font-size:1.5rem;margin:0 0 16px}
 .message.user{background:#eff6ff;border-color:#bfdbfe}
 .message.assistant{background:#fff}
 .message.system{background:#fefce8;border-color:#fde68a}
+.relay-provenance{margin:0 0 12px;padding:8px 0;border-top:1px solid #d1d5db;border-bottom:1px solid #d1d5db;color:#4b5563;font-size:0.8125rem}
 .role{font-weight:700;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;opacity:0.7}
 .turn-meta{font-size:0.75rem;color:#6b7280;margin-bottom:8px}
 .text-block{white-space:pre-wrap;word-break:break-word}
@@ -438,22 +511,34 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:0.8125rem}
 .footer{margin-top:24px;padding-top:12px;font-size:0.75rem;color:#9ca3af;text-align:center}
 `
 
-function buildHtmlDocument(data: ExportConversationData): string {
-  const { summary, turns, sessionStats, labels } = data
+async function buildHtmlDocument(
+  data: ExportConversationData
+): Promise<string> {
+  const { summary, sessionStats, labels, provenance } = data
+  const turns = await visibleExportTurns(data.turns, provenance)
   const header = metadataHtml(summary, labels, sessionStats)
+  let provenanceInserted = false
   const messages = turns
-    .map((turn) => {
+    .flatMap((turn) => {
+      const rows: string[] = []
+      if (!provenanceInserted && provenance && turn.role === "user") {
+        provenanceInserted = true
+        rows.push(
+          `<div class="relay-provenance">${escapeHtml(relayMetadata(provenance))}</div>`
+        )
+      }
       const turnMeta: string[] = []
       turnMeta.push(formatTimestamp(turn.timestamp))
       if (turn.model) turnMeta.push(turn.model)
       if (turn.usage) turnMeta.push(formatTokens(turn.usage, labels))
       if (turn.duration_ms) turnMeta.push(formatDuration(turn.duration_ms))
 
-      return `<div class="message ${turn.role}">
+      rows.push(`<div class="message ${turn.role}">
 <div class="role">${escapeHtml(localizeRole(turn.role, labels))}</div>
 <div class="turn-meta">${escapeHtml(turnMeta.join(" · "))}</div>
 ${blocksToHtml(turn.blocks, labels)}
-</div>`
+</div>`)
+      return rows
     })
     .join("\n")
 
@@ -482,13 +567,20 @@ ${header}
 export async function exportAsMarkdown(
   data: ExportConversationData
 ): Promise<ExportResult> {
-  const { summary, turns, sessionStats, labels } = data
+  const { summary, sessionStats, labels, provenance } = data
+  const turns = await visibleExportTurns(data.turns, provenance)
   const parts: string[] = []
+  let provenanceInserted = false
 
   parts.push(metadataMarkdown(summary, labels, sessionStats))
   parts.push("\n\n---\n")
 
   for (const turn of turns) {
+    if (!provenanceInserted && provenance && turn.role === "user") {
+      provenanceInserted = true
+      parts.push(`> ${relayMetadata(provenance)}`)
+      parts.push("")
+    }
     parts.push(`## ${localizeRole(turn.role, labels)}`)
     const meta: string[] = []
     meta.push(formatTimestamp(turn.timestamp))
@@ -517,7 +609,7 @@ export async function exportAsHtml(
   data: ExportConversationData
 ): Promise<ExportResult> {
   return saveTextFile({
-    content: buildHtmlDocument(data),
+    content: await buildHtmlDocument(data),
     suggestedName: makeExportFilename(data.summary.title, "html"),
     mimeType: "text/html",
     filterName: "HTML",
@@ -538,7 +630,7 @@ export class ExportTooLongError extends Error {
 export async function exportAsImage(
   data: ExportConversationData
 ): Promise<ExportResult> {
-  const html = buildHtmlDocument(data)
+  const html = await buildHtmlDocument(data)
 
   const iframe = document.createElement("iframe")
   iframe.style.cssText =

@@ -87,6 +87,7 @@ pub async fn set_relay_enabled(
             ConversationRelayChange {
                 relay_id: pack.id,
                 target_draft_id: pack.target_draft_id,
+                target_conversation_id: pack.target_conversation_id,
                 status: "removed".to_owned(),
                 error_code: None,
             },

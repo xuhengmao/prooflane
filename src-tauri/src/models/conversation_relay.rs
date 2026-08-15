@@ -109,15 +109,26 @@ pub struct RelayContextPackView {
     pub consumed_at: Option<DateTime<Utc>>,
 }
 
-/// Minimal source record shown after a relay pack has been consumed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayProvenanceSourceView {
+    pub conversation_id: i32,
+    pub folder_id: i32,
+    pub title: String,
+}
+
+/// Immutable source record shown after a relay pack has been consumed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelayProvenanceView {
     pub relay_id: i32,
-    pub source_conversation_id: i32,
-    pub source_folder_id: i32,
+    pub snapshot_sha256: String,
+    pub source: RelayProvenanceSourceView,
     pub scope: RelayScopeSelection,
-    pub selected_round_ids: Vec<String>,
+    pub summary: Option<RelaySummary>,
+    pub included_rounds: Vec<RelayRound>,
+    pub files: Vec<RelayFileReference>,
+    pub stats: RelayStats,
     pub consumed_at: Option<DateTime<Utc>>,
 }
 

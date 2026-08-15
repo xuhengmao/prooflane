@@ -423,6 +423,8 @@ async fn seed_api_relay_pack(
         },
         canonical_context: "previous context".to_owned(),
     };
+    let snapshot_json = serde_json::to_string(&snapshot).unwrap();
+    let consumed_at = (status == "consumed").then(chrono::Utc::now);
     relay_context_pack::ActiveModel {
         target_draft_id: Set(target_draft_id.to_owned()),
         target_conversation_id: Set(target_conversation_id),
@@ -430,7 +432,7 @@ async fn seed_api_relay_pack(
         source_folder_id: Set(source_folder_id),
         scope_type: Set("recent_rounds".to_owned()),
         selected_round_ids_json: Set(serde_json::to_string(&scope.selected_round_ids).unwrap()),
-        snapshot_json: Set(serde_json::to_string(&snapshot).unwrap()),
+        snapshot_json: Set(snapshot_json.clone()),
         source_fingerprint: Set(fingerprint_rounds(&snapshot.available_rounds)),
         estimated_tokens: Set(20),
         context_window_tokens: Set(None),
@@ -439,10 +441,10 @@ async fn seed_api_relay_pack(
         invalid_reason: Set(None),
         consume_client_message_id: Set(None),
         consume_attempt_state: Set(None),
-        consumed_snapshot_json: Set(None),
+        consumed_snapshot_json: Set((status == "consumed").then_some(snapshot_json)),
         created_at: Set(chrono::Utc::now()),
         updated_at: Set(chrono::Utc::now()),
-        consumed_at: Set(None),
+        consumed_at: Set(consumed_at),
         ..Default::default()
     }
     .insert(&state.db.conn)

@@ -20,13 +20,14 @@ use crate::db::service::{conversation_capability_service, relay_context_pack_ser
 use crate::db::AppDatabase;
 use crate::models::agent::AgentType;
 use crate::models::conversation_relay::{
-    RelayContextPackView, RelayErrorCode, RelayProvenanceView, RelayScopeSelection, RelayScopeType,
-    RelaySnapshot, RelaySnapshotSource, RelaySummary,
+    RelayContextPackView, RelayErrorCode, RelayProvenanceSourceView, RelayProvenanceView,
+    RelayScopeSelection, RelayScopeType, RelaySnapshot, RelaySnapshotSource, RelaySummary,
 };
 use crate::web::event_bridge::{
     emit_event, ConversationRelayChange, EventEmitter, CONVERSATION_RELAY_CHANGED_EVENT,
 };
 
+use super::context::marker_for_snapshot;
 use super::summarizer::{CodexRelaySummarizer, RelayStructuredSummary, RelaySummarizer};
 use super::{
     build_relay_snapshot, estimate_relay_tokens, fingerprint_rounds, normalize_relay_rounds,
@@ -821,6 +822,7 @@ pub async fn remove_relay_context_core(
         ConversationRelayChange {
             relay_id: removed.id,
             target_draft_id: removed.target_draft_id.clone(),
+            target_conversation_id: removed.target_conversation_id,
             status: removed.status.clone(),
             error_code: None,
         },
@@ -850,28 +852,43 @@ pub async fn get_conversation_relay_core(
     conn: &DatabaseConnection,
     conversation_id: i32,
 ) -> Result<Option<RelayProvenanceView>, AppCommandError> {
-    let model = relay_context_pack::Entity::find()
-        .filter(relay_context_pack::Column::TargetConversationId.eq(conversation_id))
-        .filter(relay_context_pack::Column::Status.eq("consumed"))
+    let Some(model) = relay_context_pack_service::get_consumed_by_target(conn, conversation_id)
+        .await
+        .map_err(|_| storage_error())?
+    else {
+        return Ok(None);
+    };
+    let snapshot_json = model
+        .consumed_snapshot_json
+        .as_deref()
+        .ok_or_else(|| relay_error(RelayErrorCode::RelaySourceUnavailable))?;
+    let snapshot = serde_json::from_str::<RelaySnapshot>(snapshot_json)
+        .map_err(|_| relay_error(RelayErrorCode::RelaySourceUnavailable))?;
+    let source_model = conversation::Entity::find_by_id(snapshot.source.conversation_id)
         .one(conn)
         .await
         .map_err(|_| storage_error())?;
-    model
-        .map(|model| {
-            let selected_round_ids =
-                serde_json::from_str::<Vec<String>>(&model.selected_round_ids_json)
-                    .map_err(|_| relay_error(RelayErrorCode::RelaySourceUnavailable))?;
-            Ok(RelayProvenanceView {
-                relay_id: model.id,
-                source_conversation_id: model.source_conversation_id,
-                source_folder_id: model.source_folder_id,
-                scope: RelayScopeSelection {
-                    scope_type: parse_scope_type(&model.scope_type)?,
-                    selected_round_ids: selected_round_ids.clone(),
-                },
-                selected_round_ids,
-                consumed_at: model.consumed_at,
-            })
-        })
-        .transpose()
+    let source_title = source_model
+        .filter(|source| source.deleted_at.is_none())
+        .and_then(|source| source.title)
+        .filter(|title| !title.trim().is_empty())
+        .unwrap_or_else(|| format!("会话 #{}", snapshot.source.conversation_id));
+
+    let snapshot_sha256 =
+        marker_for_snapshot(model.id, &snapshot.canonical_context).snapshot_sha256;
+    Ok(Some(RelayProvenanceView {
+        relay_id: model.id,
+        snapshot_sha256,
+        source: RelayProvenanceSourceView {
+            conversation_id: snapshot.source.conversation_id,
+            folder_id: snapshot.source.folder_id,
+            title: source_title,
+        },
+        scope: snapshot.scope,
+        summary: snapshot.summary,
+        included_rounds: snapshot.included_rounds,
+        files: snapshot.files,
+        stats: snapshot.stats,
+        consumed_at: model.consumed_at,
+    }))
 }

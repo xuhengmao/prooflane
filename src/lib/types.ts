@@ -364,10 +364,13 @@ export interface RelayContextPack {
 
 export interface RelayProvenance {
   relayId: number
-  sourceConversationId: number
-  sourceFolderId: number
+  snapshotSha256: string
+  source: { conversationId: number; folderId: number; title: string }
   scope: RelayScopeSelection
-  selectedRoundIds: string[]
+  summary: RelaySummary | null
+  includedRounds: RelayRound[]
+  files: RelayFileReference[]
+  stats: { messageCount: number; fileCount: number; todoCount: number }
   consumedAt: string | null
 }
 
@@ -384,6 +387,7 @@ export const RELAY_BUDGET_EXCEEDED = "relay_budget_exceeded"
 export interface ConversationRelayChange {
   relayId: number
   targetDraftId: string
+  targetConversationId?: number | null
   status: string
   errorCode?: string
 }

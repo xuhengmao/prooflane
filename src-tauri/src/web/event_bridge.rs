@@ -162,6 +162,8 @@ pub const CONVERSATION_RELAY_CHANGED_EVENT: &str = "conversation-relay://changed
 pub struct ConversationRelayChange {
     pub relay_id: i32,
     pub target_draft_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_conversation_id: Option<i32>,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<crate::models::conversation_relay::RelayErrorCode>,

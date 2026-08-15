@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -14,6 +15,8 @@ import {
   useConversationRuntimeActions,
   useConversationRuntimeStore,
 } from "@/stores/conversation-runtime-store"
+import { RelayProvenanceItem } from "@/components/conversations/relay/relay-provenance"
+import { useConversationRelay } from "@/hooks/use-conversation-relay"
 import { isWindowedDetail } from "@/lib/turn-window"
 import { ContentPartsRenderer } from "./content-parts-renderer"
 import { ContextCompactionCard } from "./context-compaction-card"
@@ -69,7 +72,12 @@ import {
   buildPlanKey,
   extractLatestPlanEntriesFromMessages,
 } from "@/lib/agent-plan"
-import type { AgentType, ConnectionStatus, MessageTurn } from "@/lib/types"
+import type {
+  AgentType,
+  ConnectionStatus,
+  MessageTurn,
+  RelayProvenance,
+} from "@/lib/types"
 import { copyTextToClipboard } from "@/lib/utils"
 import { VirtualizedMessageThread } from "@/components/message/virtualized-message-thread"
 import {
@@ -164,6 +172,11 @@ export type ThreadRenderItem =
       kind: "typing"
     }
   | {
+      key: string
+      kind: "relay_provenance"
+      provenance: RelayProvenance
+    }
+  | {
       // A context-compaction event hoisted OUT of an assistant turn into its own
       // standalone timeline element. In history the compaction lands as its own
       // (assistant-role) turn between the reply that preceded `/compact` and the
@@ -176,6 +189,63 @@ export type ThreadRenderItem =
       kind: "compaction"
       meta: Record<string, unknown> | null
     }
+
+export function insertRelayProvenance(
+  items: ThreadRenderItem[],
+  provenance: RelayProvenance | null
+): ThreadRenderItem[] {
+  if (!provenance) return items
+  const firstUserIndex = items.findIndex(
+    (item) => item.kind === "turn" && item.group.role === "user"
+  )
+  if (firstUserIndex < 0) return items
+  const next = items.slice()
+  next.splice(firstUserIndex, 0, {
+    key: `relay-provenance-${provenance.relayId}`,
+    kind: "relay_provenance",
+    provenance,
+  })
+  return next
+}
+
+export interface ThreadRenderRow {
+  key: string
+  items: ThreadRenderItem[]
+}
+
+export function buildThreadRenderRows(
+  items: ThreadRenderItem[]
+): ThreadRenderRow[] {
+  const rows: ThreadRenderRow[] = []
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]
+    const next = items[index + 1]
+    if (
+      item.kind === "relay_provenance" &&
+      next?.kind === "turn" &&
+      next.group.role === "user"
+    ) {
+      rows.push({ key: next.key, items: [item, next] })
+      index += 1
+      continue
+    }
+    rows.push({ key: item.key, items: [item] })
+  }
+  return rows
+}
+
+export function toConversationNotificationLocatableRows(
+  rows: readonly ThreadRenderRow[]
+): ConversationNotificationLocatableItem[] {
+  return rows.map((row) => {
+    const messageIds = row.items.flatMap((item) =>
+      item.kind === "turn"
+        ? [item.group.id, ...item.sourceTurns.map((turn) => turn.id)]
+        : []
+    )
+    return { key: row.key, messageIds: Array.from(new Set(messageIds)) }
+  })
+}
 
 export function toConversationNotificationLocatableItems(
   items: readonly ThreadRenderItem[]
@@ -192,9 +262,7 @@ export function toConversationNotificationLocatableItems(
   )
 }
 
-// Module-scope so the reference is stable across renders — lets the memoized
-// VirtualizedMessageThread bail out when `items` is unchanged.
-const getThreadItemKey = (item: ThreadRenderItem) => item.key
+const getThreadRowKey = (row: ThreadRenderRow) => row.key
 
 // Stable empty reference so the SubAgentOverlay memo can bail out when there
 // are no delegations in the last reply.
@@ -721,6 +789,10 @@ export function MessageListView({
   const session = useConversationRuntimeStore(
     (s) => s.byConversationId.get(conversationId) ?? null
   )
+  const relayConversationId =
+    session?.dbConversationId ?? (conversationId > 0 ? conversationId : null)
+  const { provenance: relayProvenance } =
+    useConversationRelay(relayConversationId)
   const liveMessage = session?.liveMessage ?? null
   const timelineTurns = useConversationRuntimeStore((s) =>
     selectTimelineTurns(s, conversationId)
@@ -850,7 +922,10 @@ export function MessageListView({
 
     // Collapse consecutive assistant turn render items into a single rendered
     // turn, so tool-groups straddling a turn boundary fold into one collapsible.
-    const items = mergeConsecutiveAssistantTurns(rawItems, mergedRunCache)
+    const items = insertRelayProvenance(
+      mergeConsecutiveAssistantTurns(rawItems, mergedRunCache),
+      relayProvenance
+    )
 
     // Compute showStats, isRoleTransition, and previousUserIndex for each turn.
     // previousUserIndex points at the closest preceding user turn (used by the
@@ -905,6 +980,7 @@ export function MessageListView({
     turnAdapter,
     groupCache,
     mergedRunCache,
+    relayProvenance,
   ])
 
   const historicalPlanEntries = useMemo(
@@ -949,6 +1025,8 @@ export function MessageListView({
         }
         case "typing":
           return <PendingTypingIndicator />
+        case "relay_provenance":
+          return <RelayProvenanceItem provenance={item.provenance} />
         case "compaction":
           // Chrome-less centered divider between turns (no avatar / stats footer).
           return (
@@ -961,6 +1039,20 @@ export function MessageListView({
       }
     },
     [userTurnHeader]
+  )
+  const threadRows = useMemo(
+    () => buildThreadRenderRows(threadItems),
+    [threadItems]
+  )
+  const renderThreadRow = useCallback(
+    (row: ThreadRenderRow) => (
+      <>
+        {row.items.map((item) => (
+          <Fragment key={item.key}>{renderThreadItem(item)}</Fragment>
+        ))}
+      </>
+    ),
+    [renderThreadItem]
   )
 
   const emptyState = useMemo(
@@ -1023,8 +1115,8 @@ export function MessageListView({
     getConversationNotificationLocationVersion
   )
   const notificationLocatableItems = useMemo(
-    () => toConversationNotificationLocatableItems(threadItems),
-    [threadItems]
+    () => toConversationNotificationLocatableRows(threadRows),
+    [threadRows]
   )
   useEffect(() => {
     const request = getConversationNotificationLocation(conversationId)
@@ -1071,10 +1163,11 @@ export function MessageListView({
     if (groups.length === 0) return EMPTY_NAV_ENTRIES
 
     const indexByTurnId = new Map<string, number>()
-    for (let i = 0; i < threadItems.length; i++) {
-      const item = threadItems[i]
-      if (item.kind === "turn" && item.group.role === "user") {
-        indexByTurnId.set(item.group.id, i)
+    for (let rowIndex = 0; rowIndex < threadRows.length; rowIndex++) {
+      for (const item of threadRows[rowIndex].items) {
+        if (item.kind === "turn" && item.group.role === "user") {
+          indexByTurnId.set(item.group.id, rowIndex)
+        }
       }
     }
 
@@ -1100,7 +1193,7 @@ export function MessageListView({
       })
     }
     return entries.length > 0 ? entries : EMPTY_NAV_ENTRIES
-  }, [showMessageNav, navExpanded, timelineTurns, threadItems])
+  }, [showMessageNav, navExpanded, timelineTurns, threadRows])
 
   const hasRenderableContent = threadItems.length > 0 || Boolean(liveMessage)
 
@@ -1182,9 +1275,9 @@ export function MessageListView({
       >
         <AutoScrollOnSend signal={sendSignal} />
         <VirtualizedMessageThread
-          items={threadItems}
-          getItemKey={getThreadItemKey}
-          renderItem={renderThreadItem}
+          items={threadRows}
+          getItemKey={getThreadRowKey}
+          renderItem={renderThreadRow}
           emptyState={emptyState}
           scrollApiRef={scrollApiRef}
           hasOlder={hasOlderTurns}
