@@ -833,11 +833,36 @@ impl ConnectionManager {
         &self,
         db: &AppDatabase,
         conn_id: &str,
+        blocks: Vec<PromptInputBlock>,
+        folder_id: Option<i32>,
+        conversation_id: Option<i32>,
+        delegation: Option<crate::acp::delegation::spawner::DelegationLink>,
+        client_message_id: Option<String>,
+    ) -> Result<Option<i32>, AcpError> {
+        self.send_prompt_linked_with_message_id_and_relay_marker(
+            db,
+            conn_id,
+            blocks,
+            folder_id,
+            conversation_id,
+            delegation,
+            client_message_id,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_prompt_linked_with_message_id_and_relay_marker(
+        &self,
+        db: &AppDatabase,
+        conn_id: &str,
         mut blocks: Vec<PromptInputBlock>,
         folder_id: Option<i32>,
         conversation_id: Option<i32>,
         delegation: Option<crate::acp::delegation::spawner::DelegationLink>,
         client_message_id: Option<String>,
+        expected_relay_marker: Option<crate::conversation_relay::context::RelayContextMarker>,
     ) -> Result<Option<i32>, AcpError> {
         // Reject an empty prompt up front, BEFORE any side effects: linking /
         // creating the conversation row, flipping it to InProgress, or emitting
@@ -1093,8 +1118,17 @@ impl ConnectionManager {
         // (`delegation.is_none()`): delegation / sub-agent prompts are not user
         // messages. Emitted after the send succeeds (below) so a prompt that
         // never reached the agent produces no "user message" notification.
+        // The relay block is wire-only context. It must reach the agent but
+        // never leak into the persisted/chat-visible user prompt projections.
+        // Stripping is conditional on the exact marker supplied by the relay
+        // orchestration, so ordinary text that merely resembles a marker stays
+        // visible.
+        let display_blocks = crate::conversation_relay::context::strip_hidden_relay_context(
+            &blocks,
+            expected_relay_marker.as_ref(),
+        );
         let user_prompt_preview = if delegation.is_none() {
-            user_prompt_text_preview(&blocks)
+            user_prompt_text_preview(&display_blocks)
         } else {
             None
         };
@@ -1112,7 +1146,7 @@ impl ConnectionManager {
         // dedup), falling back to a connection-scoped id for non-UI senders.
         let user_message: Option<(String, Vec<crate::acp::UserMessageBlock>)> =
             if delegation.is_none() && conversation_id_for_status.is_some() {
-                let user_blocks = crate::acp::user_blocks_from_prompt(&blocks);
+                let user_blocks = crate::acp::user_blocks_from_prompt(&display_blocks);
                 if user_blocks.is_empty() {
                     None
                 } else {

@@ -15,6 +15,7 @@ const STATUS_CONSUMED: &str = "consumed";
 const STATUS_REMOVED: &str = "removed";
 const STATUS_INVALID: &str = "invalid";
 const CLAIMED: &str = "claimed";
+const UNCERTAIN: &str = "uncertain";
 
 #[derive(Debug, Clone)]
 pub struct NewRelayPack {
@@ -267,6 +268,34 @@ pub async fn release_claim(
         return Err(relay_error(RelayErrorCode::RelayConsumeConflict));
     }
 
+    let pack = find_pack(&txn, relay_id).await?;
+    txn.commit().await.map_err(relay_db_error)?;
+    Ok(pack)
+}
+
+pub async fn mark_uncertain(
+    conn: &DatabaseConnection,
+    relay_id: i32,
+    client_message_id: &str,
+) -> Result<relay_context_pack::Model, RelayError> {
+    let txn = conn.begin().await.map_err(relay_db_error)?;
+    let updated = relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::ConsumeAttemptState,
+            Expr::value(Some(UNCERTAIN.to_owned())),
+        )
+        .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(relay_context_pack::Column::Id.eq(relay_id))
+        .filter(relay_context_pack::Column::Status.eq(STATUS_ATTACHED))
+        .filter(relay_context_pack::Column::ConsumeClientMessageId.eq(client_message_id))
+        .filter(relay_context_pack::Column::ConsumeAttemptState.eq(CLAIMED))
+        .exec(&txn)
+        .await
+        .map_err(relay_db_error)?;
+    if updated.rows_affected != 1 {
+        txn.rollback().await.map_err(relay_db_error)?;
+        return Err(relay_error(RelayErrorCode::RelayConsumeConflict));
+    }
     let pack = find_pack(&txn, relay_id).await?;
     txn.commit().await.map_err(relay_db_error)?;
     Ok(pack)

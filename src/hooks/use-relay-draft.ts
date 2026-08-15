@@ -94,6 +94,7 @@ export function useRelayDraft({
   remove: () => Promise<void>
   undoRemove: () => Promise<void>
   retry: () => Promise<void>
+  clear: () => void
 } {
   const [relay, setRelay] = useState<RelayContextPack | null>(null)
   const [loading, setLoading] = useState(false)
@@ -130,6 +131,11 @@ export function useRelayDraft({
     relayRef.current = next
     setRelay(next)
   }, [])
+
+  const clear = useCallback(() => {
+    retryOperationRef.current = null
+    commitRelay(null)
+  }, [commitRelay])
 
   const clearUndoTimer = useCallback(() => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
@@ -543,5 +549,14 @@ export function useRelayDraft({
     }
   }, [relay, targetAgentType, targetModel, updateScope])
 
-  return { relay, loading, preview, updateScope, remove, undoRemove, retry }
+  return {
+    relay,
+    loading,
+    preview,
+    updateScope,
+    remove,
+    undoRemove,
+    retry,
+    clear,
+  }
 }

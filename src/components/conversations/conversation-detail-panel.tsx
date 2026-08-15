@@ -383,6 +383,11 @@ const ConversationTabView = memo(function ConversationTabView({
   const mountedRef = useRef(true)
   const selectedAgentRef = useRef(selectedAgent)
   const createConversationPendingRef = useRef(false)
+  const relayForSendRef = useRef<{
+    relayId: number
+    targetDraftId: string
+  } | null>(null)
+  const clearRelayRef = useRef<() => void>(() => {})
   // Single-flight guard for the eager scratch-dir prepare (on chat-mode select).
   const prepareChatDirPendingRef = useRef(false)
   const sessionIdRef = useRef<string | null>(null)
@@ -1075,6 +1080,9 @@ const ConversationTabView = memo(function ConversationTabView({
       ).slice(0, 80)
       const chatSend = sendOwnTab?.isChat === true
       const chatExistingDir = sendOwnTab?.workingDir
+      // Only a first-send draft may carry relay metadata. Existing rows and
+      // ordinary new drafts keep the legacy create/send payload unchanged.
+      const relayBinding = relayForSendRef.current ?? undefined
 
       void (async () => {
         try {
@@ -1086,7 +1094,8 @@ const ConversationTabView = memo(function ConversationTabView({
             const res = await createChatConversation(
               selectedAgent,
               title,
-              chatExistingDir
+              chatExistingDir,
+              relayBinding
             )
             newConversationId = res.conversationId
             sendFolderId = res.folderId
@@ -1120,7 +1129,8 @@ const ConversationTabView = memo(function ConversationTabView({
             newConversationId = await createConversation(
               folderId,
               selectedAgent,
-              title
+              title,
+              relayBinding
             )
             dbConvIdRef.current = newConversationId
             // Set external ID on the stable virtual session (no migration needed —
@@ -1147,6 +1157,7 @@ const ConversationTabView = memo(function ConversationTabView({
             )
           }
           clearMessageInputDraft(buildNewConversationDraftStorageKey(tabId))
+          if (relayBinding) clearRelayRef.current()
           refreshConversations()
 
           // Now that the row exists, kick off the actual prompt with the
@@ -1156,6 +1167,8 @@ const ConversationTabView = memo(function ConversationTabView({
             folderId: sendFolderId,
             conversationId: newConversationId,
             clientMessageId: optimisticTurn.id,
+            relayId: relayBinding?.relayId,
+            targetDraftId: relayBinding?.targetDraftId,
             onTurnInProgress,
             onSendFailed,
           })
@@ -1561,7 +1574,14 @@ const ConversationTabView = memo(function ConversationTabView({
     updateScope,
     remove,
     undoRemove,
+    clear: clearRelay,
   } = relayDraft
+  useEffect(() => {
+    relayForSendRef.current = relay
+      ? { relayId: relay.id, targetDraftId: tabId }
+      : null
+    clearRelayRef.current = clearRelay
+  }, [clearRelay, relay, tabId])
   useEffect(() => {
     const consumeQueuedIntent = () => {
       const intent = consumeRelayIntent(tabId)

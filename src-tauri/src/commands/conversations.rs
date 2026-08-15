@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 use crate::app_error::AppCommandError;
 use crate::db::entities::conversation;
 use crate::db::entities::folder::FolderKind;
-use crate::db::service::{conversation_service, folder_service, import_service, tab_service};
+use crate::db::service::{
+    conversation_service, folder_service, import_service, relay_context_pack_service, tab_service,
+};
 #[cfg(feature = "tauri-runtime")]
 use crate::db::AppDatabase;
 use crate::models::*;
@@ -1573,6 +1575,22 @@ pub async fn create_conversation_core(
     agent_type: AgentType,
     title: Option<String>,
 ) -> Result<i32, AppCommandError> {
+    create_conversation_with_relay_core(conn, folder_id, agent_type, title, None).await
+}
+
+#[derive(Debug, Clone)]
+pub struct RelayBindingInput {
+    pub relay_id: i32,
+    pub target_draft_id: String,
+}
+
+pub async fn create_conversation_with_relay_core(
+    conn: &sea_orm::DatabaseConnection,
+    folder_id: i32,
+    agent_type: AgentType,
+    title: Option<String>,
+    relay: Option<RelayBindingInput>,
+) -> Result<i32, AppCommandError> {
     let git_branch = if let Some(folder) = folder_service::get_folder_by_id(conn, folder_id)
         .await
         .map_err(AppCommandError::from)?
@@ -1582,9 +1600,25 @@ pub async fn create_conversation_core(
         None
     };
 
-    let model = conversation_service::create(conn, folder_id, agent_type, title, git_branch)
+    let txn = sea_orm::TransactionTrait::begin(conn)
+        .await
+        .map_err(|error| AppCommandError::database_error(error.to_string()))?;
+    let model = conversation_service::create(&txn, folder_id, agent_type, title, git_branch)
         .await
         .map_err(AppCommandError::from)?;
+    if let Some(relay) = relay {
+        relay_context_pack_service::bind_to_conversation(
+            &txn,
+            relay.relay_id,
+            &relay.target_draft_id,
+            model.id,
+        )
+        .await
+        .map_err(|error| AppCommandError::invalid_input(error.code.to_string()))?;
+    }
+    txn.commit()
+        .await
+        .map_err(|error| AppCommandError::database_error(error.to_string()))?;
     Ok(model.id)
 }
 
@@ -1596,8 +1630,14 @@ pub async fn create_conversation(
     folder_id: i32,
     agent_type: AgentType,
     title: Option<String>,
+    relay_id: Option<i32>,
+    target_draft_id: Option<String>,
 ) -> Result<i32, AppCommandError> {
-    let id = create_conversation_core(&db.conn, folder_id, agent_type, title).await?;
+    let relay = relay_id.zip(target_draft_id).map(|(relay_id, target_draft_id)| RelayBindingInput {
+        relay_id,
+        target_draft_id,
+    });
+    let id = create_conversation_with_relay_core(&db.conn, folder_id, agent_type, title, relay).await?;
     emit_conversation_upsert(&EventEmitter::Tauri(app), &db.conn, id).await;
     Ok(id)
 }
@@ -1800,6 +1840,18 @@ pub async fn create_chat_conversation_core(
     title: Option<String>,
     existing_dir: Option<&str>,
 ) -> Result<CreateChatConversationResult, AppCommandError> {
+    create_chat_conversation_with_relay_core(conn, data_dir, agent_type, title, existing_dir, None)
+        .await
+}
+
+pub async fn create_chat_conversation_with_relay_core(
+    conn: &sea_orm::DatabaseConnection,
+    data_dir: &std::path::Path,
+    agent_type: AgentType,
+    title: Option<String>,
+    existing_dir: Option<&str>,
+    relay: Option<RelayBindingInput>,
+) -> Result<CreateChatConversationResult, AppCommandError> {
     let path = match existing_dir {
         Some(dir) => {
             std::fs::create_dir_all(dir).map_err(AppCommandError::io)?;
@@ -1808,7 +1860,10 @@ pub async fn create_chat_conversation_core(
         None => create_chat_dir_core(data_dir)?,
     };
 
-    let folder = folder_service::add_chat_folder(conn, &path)
+    let txn = sea_orm::TransactionTrait::begin(conn)
+        .await
+        .map_err(|error| AppCommandError::database_error(error.to_string()))?;
+    let folder = folder_service::add_chat_folder(&txn, &path)
         .await
         .map_err(AppCommandError::from)?;
 
@@ -1820,18 +1875,26 @@ pub async fn create_chat_conversation_core(
     // an orphan (active, conversation-less, never reached by the delete path) and
     // pollute the active-folder scope.
     let model =
-        match conversation_service::create_chat(conn, folder.id, agent_type, title, None).await {
+        match conversation_service::create_chat(&txn, folder.id, agent_type, title, None).await {
             Ok(model) => model,
             Err(create_err) => {
-                if let Err(cleanup_err) = folder_service::remove_folder(conn, &folder.path).await {
-                    tracing::error!(
-                        "[conversations] failed to clean up orphan chat folder {} after conversation create error: {cleanup_err}",
-                        folder.id
-                    );
-                }
                 return Err(AppCommandError::from(create_err));
             }
         };
+
+    if let Some(relay) = relay {
+        relay_context_pack_service::bind_to_conversation(
+            &txn,
+            relay.relay_id,
+            &relay.target_draft_id,
+            model.id,
+        )
+        .await
+        .map_err(|error| AppCommandError::invalid_input(error.code.to_string()))?;
+    }
+    txn.commit()
+        .await
+        .map_err(|error| AppCommandError::database_error(error.to_string()))?;
 
     Ok(CreateChatConversationResult {
         conversation_id: model.id,
@@ -1848,6 +1911,8 @@ pub async fn create_chat_conversation(
     agent_type: AgentType,
     title: Option<String>,
     existing_dir: Option<String>,
+    relay_id: Option<i32>,
+    target_draft_id: Option<String>,
 ) -> Result<CreateChatConversationResult, AppCommandError> {
     use tauri::Manager;
     let data_dir = app
@@ -1855,12 +1920,17 @@ pub async fn create_chat_conversation(
         .app_data_dir()
         .map(|p| crate::paths::resolve_effective_data_dir(&p))
         .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let result = create_chat_conversation_core(
+    let relay = relay_id.zip(target_draft_id).map(|(relay_id, target_draft_id)| RelayBindingInput {
+        relay_id,
+        target_draft_id,
+    });
+    let result = create_chat_conversation_with_relay_core(
         &db.conn,
         &data_dir,
         agent_type,
         title,
         existing_dir.as_deref(),
+        relay,
     )
     .await?;
     emit_conversation_upsert(&EventEmitter::Tauri(app), &db.conn, result.conversation_id).await;
@@ -2002,7 +2072,15 @@ pub async fn delete_conversation_core(
 ) -> Result<(), AppCommandError> {
     conversation_service::soft_delete(conn, conversation_id)
         .await
-        .map_err(AppCommandError::from)
+        .map_err(AppCommandError::from)?;
+    relay_context_pack_service::invalidate_unconsumed_by_source(
+        conn,
+        conversation_id,
+        "relay_source_deleted",
+    )
+    .await
+    .map_err(AppCommandError::from)?;
+    Ok(())
 }
 
 /// When the deleted conversation was backed by a dedicated hidden chat folder,

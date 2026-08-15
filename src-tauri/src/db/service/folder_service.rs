@@ -161,10 +161,13 @@ async fn add_folder_inner(
 /// folder-bound chrome. `path` is a freshly generated per-conversation scratch dir, so it
 /// never collides on the `UNIQUE(path)` constraint. Returns the full
 /// [`FolderDetail`] so the caller can hand it straight to the frontend.
-pub async fn add_chat_folder(
-    conn: &DatabaseConnection,
+pub async fn add_chat_folder<C>(
+    conn: &C,
     path: &str,
-) -> Result<FolderDetail, DbError> {
+) -> Result<FolderDetail, DbError>
+where
+    C: ConnectionTrait,
+{
     let now = Utc::now();
     let max_order = folder::Entity::find()
         .order_by_desc(folder::Column::SortOrder)

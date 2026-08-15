@@ -1,3 +1,6 @@
+use codeg_lib::conversation_relay::context::{
+    build_hidden_relay_block, marker_for_snapshot, strip_hidden_relay_context, RelayContextMarker,
+};
 use codeg_lib::conversation_relay::fingerprint_rounds;
 use codeg_lib::conversation_relay::service::{
     cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
@@ -20,6 +23,10 @@ use codeg_lib::db::service::relay_context_pack_service::{
     invalidate_unconsumed_by_source, mark_consumed, release_claim, ConsumeClaim, NewRelayPack,
 };
 use codeg_lib::db::test_helpers::{fresh_in_memory_db, seed_conversation, seed_folder};
+use codeg_lib::commands::conversations::{
+    create_conversation_with_relay_core, RelayBindingInput,
+};
+use codeg_lib::acp::types::PromptInputBlock;
 use codeg_lib::models::agent::AgentType;
 use codeg_lib::models::conversation_relay::{
     RelayError, RelayErrorCode, RelayRound, RelayScopeSelection, RelayScopeType, RelaySnapshot,
@@ -232,6 +239,66 @@ async fn seeded_relay_db() -> codeg_lib::db::AppDatabase {
         .await
         .unwrap();
     db
+}
+
+#[tokio::test]
+async fn first_create_and_relay_bind_are_atomic() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-first-create").await;
+    let source = seed_conversation(&db, folder_id, AgentType::ClaudeCode).await;
+    let pack = insert_pack(&db.conn, "draft-a", source, None, "draft")
+        .await
+        .unwrap();
+
+    let result = create_conversation_with_relay_core(
+        &db.conn,
+        folder_id,
+        AgentType::Codex,
+        Some("first".into()),
+        Some(RelayBindingInput {
+            relay_id: pack.id,
+            target_draft_id: "draft-a".into(),
+        }),
+    )
+    .await
+    .unwrap();
+
+    let bound = relay_context_pack::Entity::find_by_id(pack.id)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(bound.target_conversation_id, Some(result));
+    assert_eq!(bound.status, "attached");
+}
+
+#[test]
+fn hidden_context_round_trips_without_changing_user_blocks() {
+    let snapshot = "deterministic relay context";
+    let marker = marker_for_snapshot(7, snapshot);
+    let user = vec![PromptInputBlock::Text {
+        text: "fix login".into(),
+    }];
+    let mut wire = vec![build_hidden_relay_block(&marker, snapshot)];
+    wire.extend(user.clone());
+
+    assert_eq!(
+        serde_json::to_value(strip_hidden_relay_context(&wire, Some(&marker))).unwrap(),
+        serde_json::to_value(&user).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(strip_hidden_relay_context(&wire, None)).unwrap(),
+        serde_json::to_value(&wire).unwrap()
+    );
+
+    let forged = RelayContextMarker {
+        relay_id: 8,
+        snapshot_sha256: marker.snapshot_sha256.clone(),
+    };
+    assert_eq!(
+        serde_json::to_value(strip_hidden_relay_context(&wire, Some(&forged))).unwrap(),
+        serde_json::to_value(&wire).unwrap()
+    );
 }
 
 async fn seeded_draft_and_consumed_packs() -> codeg_lib::db::AppDatabase {

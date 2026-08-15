@@ -156,36 +156,30 @@ pub struct AcpPromptParams {
     pub conversation_id: Option<i32>,
     #[serde(default)]
     pub client_message_id: Option<String>,
+    #[serde(default)]
+    pub relay_id: Option<i32>,
+    #[serde(default)]
+    pub target_draft_id: Option<String>,
 }
 
 pub async fn acp_prompt(
     Extension(state): Extension<Arc<AppState>>,
     Json(params): Json<AcpPromptParams>,
 ) -> Result<Json<()>, AppCommandError> {
-    state
-        .connection_manager
-        .send_prompt_linked_with_message_id(
-            &state.db,
-            &params.connection_id,
-            params.blocks,
-            params.folder_id,
-            params.conversation_id,
-            None,
-            params.client_message_id,
-        )
-        .await
-        .map_err(|e| {
-            let message = e.to_string();
-            // A concurrent send while a turn is in flight is an expected,
-            // recoverable condition (409), not a server fault (500). The
-            // frontend re-queues the draft. Other errors stay 500.
-            match e {
-                AcpError::TurnInProgress => {
-                    AppCommandError::new(AppErrorCode::TurnInProgress, message)
-                }
-                _ => AppCommandError::task_execution_failed(message),
-            }
-        })?;
+    crate::commands::acp::send_prompt_with_relay_core(
+        &state.connection_manager,
+        &state.db,
+        crate::commands::acp::AcpPromptRequest {
+            connection_id: params.connection_id,
+            blocks: params.blocks,
+            folder_id: params.folder_id,
+            conversation_id: params.conversation_id,
+            client_message_id: params.client_message_id,
+            relay_id: params.relay_id,
+            target_draft_id: params.target_draft_id,
+        },
+    )
+    .await?;
     Ok(Json(()))
 }
 

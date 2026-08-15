@@ -242,6 +242,8 @@ pub struct CreateConversationParams {
     pub folder_id: i32,
     pub agent_type: AgentType,
     pub title: Option<String>,
+    pub relay_id: Option<i32>,
+    pub target_draft_id: Option<String>,
 }
 
 pub async fn create_conversation(
@@ -249,11 +251,15 @@ pub async fn create_conversation(
     Json(params): Json<CreateConversationParams>,
 ) -> Result<Json<i32>, AppCommandError> {
     let db = &state.db;
-    let result = conv_commands::create_conversation_core(
+    let relay = params.relay_id.zip(params.target_draft_id).map(|(relay_id, target_draft_id)| {
+        conv_commands::RelayBindingInput { relay_id, target_draft_id }
+    });
+    let result = conv_commands::create_conversation_with_relay_core(
         &db.conn,
         params.folder_id,
         params.agent_type,
         params.title,
+        relay,
     )
     .await?;
     conv_commands::emit_conversation_upsert(&state.emitter, &db.conn, result).await;
@@ -268,18 +274,24 @@ pub struct CreateChatConversationParams {
     /// Reuse an eagerly-created scratch dir (from `create_chat_dir`) instead of
     /// minting a new one, so the ACP cwd stays put across the first send.
     pub existing_dir: Option<String>,
+    pub relay_id: Option<i32>,
+    pub target_draft_id: Option<String>,
 }
 
 pub async fn create_chat_conversation(
     Extension(state): Extension<Arc<AppState>>,
     Json(params): Json<CreateChatConversationParams>,
 ) -> Result<Json<conv_commands::CreateChatConversationResult>, AppCommandError> {
-    let result = conv_commands::create_chat_conversation_core(
+    let relay = params.relay_id.zip(params.target_draft_id).map(|(relay_id, target_draft_id)| {
+        conv_commands::RelayBindingInput { relay_id, target_draft_id }
+    });
+    let result = conv_commands::create_chat_conversation_with_relay_core(
         &state.db.conn,
         &state.data_dir,
         params.agent_type,
         params.title,
         params.existing_dir.as_deref(),
+        relay,
     )
     .await?;
     conv_commands::emit_conversation_upsert(&state.emitter, &state.db.conn, result.conversation_id)
