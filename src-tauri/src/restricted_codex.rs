@@ -258,7 +258,7 @@ pub fn normalize_restricted_codex_output(operation: &str, raw: &str) -> String {
 
 fn usable_assistant_output(operation: &str, raw: &str) -> Option<String> {
     let normalized = normalize_restricted_codex_output(operation, raw);
-    (!normalized.is_empty()).then_some(normalized)
+    (!normalized.is_empty()).then(|| raw.trim().to_string())
 }
 
 async fn await_with_cleanup<T, Run, Cleanup, CleanupFuture>(
@@ -421,6 +421,8 @@ mod tests {
     use std::time::Duration;
 
     use tokio_util::sync::CancellationToken;
+
+    use crate::commands::prompt_optimization::normalize_optimized_prompt;
 
     use super::{
         await_with_cleanup, prepare_restricted_codex_environment, restricted_codex_config,
@@ -615,11 +617,24 @@ trust_level = "trusted"
         );
         assert_eq!(
             usable_assistant_output("prompt-optimization", "```text\nresult\n```"),
-            Some("result".into())
+            Some("```text\nresult\n```".into())
         );
         assert_eq!(
             usable_assistant_output("conversation-relay-summary", "{}"),
             Some("{}".into())
         );
+    }
+
+    #[test]
+    fn prompt_optimization_pipeline_preserves_a_complete_inner_markdown_fence() {
+        let runner_output = usable_assistant_output(
+            "prompt-optimization",
+            "```\n```rust\nfn main() {}\n```\n```",
+        )
+        .expect("outer fence contains usable prompt content");
+
+        let final_prompt = normalize_optimized_prompt(&runner_output);
+
+        assert_eq!(final_prompt, "```rust\nfn main() {}\n```");
     }
 }
