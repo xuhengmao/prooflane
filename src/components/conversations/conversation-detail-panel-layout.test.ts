@@ -559,6 +559,25 @@ describe("ConversationDetailPanel send-path hardening", () => {
     expect(callback).toContain("setComposerRestoreNonce((value) => value + 1)")
     expect(callback).not.toContain("clearRelayRef.current()")
   })
+
+  it("retries a bound relay from the persisted conversation path", () => {
+    const persistedStart = source.indexOf("if (persistedId) {")
+    const persistedEnd = source.indexOf("// New-tab path", persistedStart)
+    expect(persistedStart).toBeGreaterThan(-1)
+    expect(persistedEnd).toBeGreaterThan(persistedStart)
+    const persistedBlock = source.slice(persistedStart, persistedEnd)
+
+    expect(persistedBlock).toContain("relayId: relayBindingForAttempt?.relayId")
+    expect(persistedBlock).toContain(
+      "targetDraftId: relayBindingForAttempt?.targetDraftId"
+    )
+    expect(persistedBlock).toContain("onSendSucceeded:")
+    expect(persistedBlock).toContain("setRelaySendPending(false)")
+    expect(persistedBlock).toMatch(
+      /clearMessageInputDraft\(\s*buildConversationDraftStorageKey\(persistedId\)\s*\)/
+    )
+    expect(persistedBlock).toContain("clearRelayRef.current()")
+  })
 })
 
 describe("ConversationDetailPanel session-load failure surface", () => {

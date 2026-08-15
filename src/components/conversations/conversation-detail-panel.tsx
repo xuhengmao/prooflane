@@ -1050,10 +1050,7 @@ const ConversationTabView = memo(function ConversationTabView({
               dbConvIdRef.current != null
                 ? buildConversationDraftStorageKey(dbConvIdRef.current)
                 : buildNewConversationDraftStorageKey(tabId)
-            saveMessageInputDraft(
-              recoveryKey,
-              draftText
-            )
+            saveMessageInputDraft(recoveryKey, draftText)
             // MessageInput clears itself synchronously on submit. Remount its
             // small composer surface so the saved draft is hydrated into the
             // currently mounted input, not merely persisted for a later tab.
@@ -1079,8 +1076,19 @@ const ConversationTabView = memo(function ConversationTabView({
           // so viewers' synthesized user turn dedups against our own optimistic
           // turn by exact id (and never suppresses a different sender's prompt).
           clientMessageId: optimisticTurn.id,
+          relayId: relayBindingForAttempt?.relayId,
+          targetDraftId: relayBindingForAttempt?.targetDraftId,
           onTurnInProgress,
           onSendFailed,
+          onSendSucceeded: relayBindingForAttempt
+            ? () => {
+                setRelaySendPending(false)
+                clearMessageInputDraft(
+                  buildConversationDraftStorageKey(persistedId)
+                )
+                clearRelayRef.current()
+              }
+            : undefined,
         })
         return
       }
