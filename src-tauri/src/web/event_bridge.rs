@@ -149,6 +149,24 @@ impl EventEmitter {
 /// Global side-channel for cross-client conversation list/status sync.
 pub const CONVERSATION_CHANGED_EVENT: &str = "conversation://changed";
 
+/// Cross-window relay capability setting synchronization event.
+pub const CONVERSATION_CAPABILITIES_CHANGED_EVENT: &str = "conversation-capabilities://changed";
+
+/// Cross-window relay state synchronization event.
+pub const CONVERSATION_RELAY_CHANGED_EVENT: &str = "conversation-relay://changed";
+
+/// Safe relay-state payload. Context content and source metadata never cross
+/// this boundary; clients refetch the permitted view when necessary.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationRelayChange {
+    pub relay_id: i32,
+    pub target_draft_id: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<crate::models::conversation_relay::RelayErrorCode>,
+}
+
 /// Global side-channel announcing a live-feedback enable/disable. The settings
 /// UI runs in a SEPARATE window (`openSettingsWindow`), so the conversation
 /// feedback bar can't learn about a save through any frontend-only cache — it
