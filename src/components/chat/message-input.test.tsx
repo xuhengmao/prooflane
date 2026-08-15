@@ -177,6 +177,25 @@ function renderInput(
 }
 
 describe("MessageInput (RichComposer integration)", () => {
+  it("routes relay drag data without invoking file drop", async () => {
+    const onRelayDrop = vi.fn()
+    const { RELAY_DRAG_MIME } = await import("@/lib/conversation-relay")
+    const { container } = renderInput({ onRelayDrop })
+    const composer =
+      container.querySelector("[data-tree-drop-composer]") ??
+      container.querySelector("[data-composer-state]")
+    const dataTransfer = {
+      types: [RELAY_DRAG_MIME],
+      getData: (type: string) =>
+        type === RELAY_DRAG_MIME
+          ? JSON.stringify({ conversationId: 42, folderId: 1 })
+          : "",
+      files: [],
+    }
+    fireEvent.drop(composer as Element, { dataTransfer })
+    expect(onRelayDrop).toHaveBeenCalledWith(42)
+  })
+
   afterEach(() => {
     vi.useRealTimers()
     cleanup()

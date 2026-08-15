@@ -65,6 +65,8 @@ interface ChatInputProps {
   onSteer?: (text: string) => Promise<void>
   onAddFeedback?: () => void
   feedbackAddDisabled?: boolean
+  onAddRelay?: () => void
+  onRelayDrop?: (sourceConversationId: number) => void
   /**
    * Keep the composer usable even while disconnected. Set for a folderless chat
    * draft: it has no working dir yet (so it never auto-connects), and the FIRST
@@ -128,6 +130,8 @@ export const ChatInput = memo(function ChatInput({
   onSteer,
   onAddFeedback,
   feedbackAddDisabled,
+  onAddRelay,
+  onRelayDrop,
   allowOfflineCompose = false,
   injectContent,
   onInjectConsumed,
@@ -218,6 +222,8 @@ export const ChatInput = memo(function ChatInput({
         onSteer={onSteer}
         onAddFeedback={onAddFeedback}
         feedbackAddDisabled={feedbackAddDisabled}
+        onAddRelay={onAddRelay}
+        onRelayDrop={onRelayDrop}
         conversationId={conversationId}
         isNewConversation={isNewConversation}
         promptStartedAt={promptStartedAt}

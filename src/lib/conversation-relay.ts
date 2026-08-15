@@ -10,6 +10,59 @@ import type {
 
 const RELAY_PREVIEW_TIMEOUT_MS = 60 * 60_000
 
+export const RELAY_DRAG_MIME = "application/x-prooflane-conversation-relay+json"
+
+export interface RelayDragData {
+  conversationId: number
+  folderId: number
+}
+
+export function writeRelayDragData(
+  dataTransfer: DataTransfer,
+  data: RelayDragData
+): void {
+  dataTransfer.setData(RELAY_DRAG_MIME, JSON.stringify(data))
+}
+
+export function readRelayDragData(
+  dataTransfer: Pick<DataTransfer, "types" | "getData">
+): RelayDragData | null {
+  if (!Array.from(dataTransfer.types).includes(RELAY_DRAG_MIME)) return null
+  try {
+    const value: unknown = JSON.parse(dataTransfer.getData(RELAY_DRAG_MIME))
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !Number.isInteger((value as RelayDragData).conversationId) ||
+      !Number.isInteger((value as RelayDragData).folderId)
+    ) {
+      return null
+    }
+    return value as RelayDragData
+  } catch {
+    return null
+  }
+}
+
+export interface RelayIntent {
+  tabId: string
+  sourceConversationId: number
+}
+
+const relayIntentByTab = new Map<string, RelayIntent>()
+
+/** Queue the source selected before its target draft has mounted. */
+export function queueRelayIntent(intent: RelayIntent): void {
+  relayIntentByTab.set(intent.tabId, intent)
+}
+
+/** Intents are intentionally single-use: a remount must never re-preview. */
+export function consumeRelayIntent(tabId: string): RelayIntent | null {
+  const intent = relayIntentByTab.get(tabId) ?? null
+  relayIntentByTab.delete(tabId)
+  return intent
+}
+
 function abortError(): DOMException {
   return new DOMException("Aborted", "AbortError")
 }

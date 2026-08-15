@@ -1,6 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+} from "react"
 import { useTranslations } from "next-intl"
 import { isImeCompositionKey } from "@/lib/ime-composition"
 import { Button } from "@/components/ui/button"
@@ -125,6 +132,7 @@ import type { Editor, JSONContent } from "@tiptap/core"
 import { useReferenceSearch } from "@/components/chat/composer/use-reference-search"
 import { useComposerMentionLabels } from "@/components/chat/composer/use-composer-mention-labels"
 import { ComposerAddMenu } from "@/components/chat/composer/composer-add-menu"
+import { readRelayDragData } from "@/lib/conversation-relay"
 import { ComposerImageThumbnails } from "@/components/chat/composer/composer-image-thumbnails"
 import { useComposerAttachments } from "@/components/chat/composer/use-composer-attachments"
 import { useComposerShortcuts } from "@/components/chat/composer/use-composer-shortcuts"
@@ -226,6 +234,8 @@ interface MessageInputProps {
   /** Grey out the live-feedback "+" entry when a note can't be sent right now
    *  (no active turn / agent lacks the tool). */
   feedbackAddDisabled?: boolean
+  onAddRelay?: () => void
+  onRelayDrop?: (sourceConversationId: number) => void
   injectContent?: ComposerInjectContent | null
   onInjectConsumed?: () => void
   speechTranscriptionProvider?: SpeechTranscriptionProvider
@@ -358,6 +368,8 @@ export function MessageInput({
   onSteer,
   onAddFeedback,
   feedbackAddDisabled,
+  onAddRelay,
+  onRelayDrop,
   injectContent,
   onInjectConsumed,
   speechTranscriptionProvider,
@@ -2263,6 +2275,17 @@ export function MessageInput({
     </div>
   )
 
+  const handleContainerDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    const relayData = readRelayDragData(event.dataTransfer)
+    if (relayData) {
+      event.preventDefault()
+      event.stopPropagation()
+      onRelayDrop?.(relayData.conversationId)
+      return
+    }
+    attach.containerDragProps.onDrop(event)
+  }
+
   return (
     <div
       ref={containerRef}
@@ -2274,7 +2297,9 @@ export function MessageInput({
       // tab's desktop commit). Absent when there's no tab to attach to.
       data-tree-drop-composer={attachmentTabId ?? undefined}
       onKeyDown={handleContainerKeyDown}
-      {...attach.containerDragProps}
+      onDragOver={attach.containerDragProps.onDragOver}
+      onDragLeave={attach.containerDragProps.onDragLeave}
+      onDrop={handleContainerDrop}
     >
       {slashMenuOpen && slashAutocompleteCount > 0 && (
         <div className="absolute bottom-full left-0 right-0 mb-1 z-50 flex max-h-[min(16rem,40dvh)] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
@@ -2479,6 +2504,7 @@ export function MessageInput({
                     slashCommands={slashCommands}
                     onAddFeedback={onAddFeedback}
                     feedbackAddDisabled={feedbackAddDisabled}
+                    onAddRelay={onAddRelay}
                   />
                   {hasInlineSelectors && (
                     <div className="hidden min-w-0 items-end gap-1 @[30rem]:flex">

@@ -28,6 +28,13 @@ import {
   updateConversationCapabilities,
   updateRelayContext,
 } from "@/lib/api"
+import {
+  consumeRelayIntent,
+  RELAY_DRAG_MIME,
+  queueRelayIntent,
+  readRelayDragData,
+  writeRelayDragData,
+} from "@/lib/conversation-relay"
 import type {
   RelayContextPack,
   RelayPatchInput,
@@ -88,6 +95,31 @@ describe("conversation relay transport API", () => {
       ["get_conversation_capabilities"],
       ["update_conversation_capabilities", { relayEnabled: false }],
     ])
+  })
+
+  it("uses a dedicated MIME type and consumes handoff intents once", () => {
+    const setData = vi.fn()
+    writeRelayDragData({ setData } as unknown as DataTransfer, {
+      conversationId: 42,
+      folderId: 3,
+    })
+    expect(setData).toHaveBeenCalledWith(
+      RELAY_DRAG_MIME,
+      JSON.stringify({ conversationId: 42, folderId: 3 })
+    )
+    expect(
+      readRelayDragData({
+        types: [RELAY_DRAG_MIME],
+        getData: () => JSON.stringify({ conversationId: 42, folderId: 3 }),
+      })
+    ).toEqual({ conversationId: 42, folderId: 3 })
+
+    queueRelayIntent({ tabId: "draft-42", sourceConversationId: 42 })
+    expect(consumeRelayIntent("draft-42")).toEqual({
+      tabId: "draft-42",
+      sourceConversationId: 42,
+    })
+    expect(consumeRelayIntent("draft-42")).toBeNull()
   })
 
   it("previews an explicitly selected cross-project source", async () => {

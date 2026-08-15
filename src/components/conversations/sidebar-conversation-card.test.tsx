@@ -7,6 +7,7 @@ import { SidebarConversationCard } from "./sidebar-conversation-card"
 import { formatRelative } from "./sidebar-conversation-grouping"
 import type { DbConversationSummary } from "@/lib/types"
 import enMessages from "@/i18n/messages/en.json"
+import { RELAY_DRAG_MIME } from "@/lib/conversation-relay"
 
 // AgentIcon renders exactly once per card body execution, so counting its
 // renders counts how many cards actually re-rendered (a card that bails out via
@@ -198,6 +199,35 @@ describe("SidebarConversationCard pin action", () => {
     fireEvent.contextMenu(getByText("conv-2"))
     fireEvent.click(getByText("Unpin"))
     expect(onTogglePin).toHaveBeenCalledWith(2, false)
+  })
+})
+
+describe("SidebarConversationCard relay entry", () => {
+  it("writes only the dedicated relay MIME on drag start", () => {
+    const setData = vi.fn()
+    const { container } = renderWithIntl(
+      <SidebarConversationCard
+        conversation={conv(7)}
+        isSelected={false}
+        timeLabel=""
+        onSelect={onSelect}
+        onDoubleClick={onDoubleClick}
+        onRename={onRename}
+        onDelete={onDelete}
+        onStatusChange={onStatusChange}
+        onRelayContinue={vi.fn()}
+      />
+    )
+
+    fireEvent.dragStart(container.querySelector("[data-conversation-id]")!, {
+      dataTransfer: { setData },
+    })
+
+    expect(setData).toHaveBeenCalledTimes(1)
+    expect(setData).toHaveBeenCalledWith(
+      RELAY_DRAG_MIME,
+      JSON.stringify({ conversationId: 7, folderId: 1 })
+    )
   })
 })
 

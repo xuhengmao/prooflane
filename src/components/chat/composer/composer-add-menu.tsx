@@ -9,6 +9,7 @@ import {
   FolderSearch,
   Lock,
   MessageSquarePlus,
+  History,
   MessageSquareText,
   Paperclip,
   Plus,
@@ -60,6 +61,8 @@ export interface ComposerAddMenuProps {
   /** Open the live-feedback dialog. Conversation-only; omitted elsewhere. */
   onAddFeedback?: () => void
   feedbackAddDisabled?: boolean
+  /** Open the optional historical-conversation relay picker. */
+  onAddRelay?: () => void
   triggerClassName?: string
 }
 
@@ -79,6 +82,7 @@ export function ComposerAddMenu({
   slashCommands,
   onAddFeedback,
   feedbackAddDisabled,
+  onAddRelay,
   triggerClassName,
 }: ComposerAddMenuProps) {
   const t = useTranslations("Folder.chat.messageInput")
@@ -221,6 +225,12 @@ export function ComposerAddMenu({
           >
             <MessageSquarePlus className="size-4" />
             {t("liveFeedback")}
+          </DropdownMenuItem>
+        )}
+        {onAddRelay && (
+          <DropdownMenuItem onClick={onAddRelay}>
+            <History className="size-4" />
+            接入历史会话
           </DropdownMenuItem>
         )}
         <DropdownMenuSub open={slashOpen} onOpenChange={handleSlashOpenChange}>

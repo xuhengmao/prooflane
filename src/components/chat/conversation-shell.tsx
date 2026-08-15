@@ -85,6 +85,9 @@ interface ConversationShellProps {
   onAddFeedback?: () => void
   /** Grey out the live-feedback "+" entry when a note can't be sent right now. */
   feedbackAddDisabled?: boolean
+  relaySlot?: ReactNode
+  onAddRelay?: () => void
+  onRelayDrop?: (sourceConversationId: number) => void
   isActive?: boolean
   /** Show the composer's flowing active-session border (tiled multi-session
    *  active tab only). Threaded straight through to the composer. */
@@ -154,6 +157,9 @@ export function ConversationShell({
   feedbackList,
   onAddFeedback,
   feedbackAddDisabled,
+  relaySlot,
+  onAddRelay,
+  onRelayDrop,
   isActive,
   showActiveFlow,
   queue,
@@ -287,6 +293,12 @@ export function ConversationShell({
           <div className="mx-auto w-full max-w-3xl px-4">{feedbackList}</div>
         )}
 
+        {!hideInput && relaySlot && (
+          <div data-relay-slot className="mx-auto w-full max-w-3xl px-4 pb-2">
+            {relaySlot}
+          </div>
+        )}
+
         {!hideInput && (
           <div className="mx-auto w-full max-w-3xl">
             <ChatInput
@@ -326,6 +338,8 @@ export function ConversationShell({
               onSteer={onSteer}
               onAddFeedback={onAddFeedback}
               feedbackAddDisabled={feedbackAddDisabled}
+              onAddRelay={onAddRelay}
+              onRelayDrop={onRelayDrop}
               conversationId={conversationId}
               promptStartedAt={promptStartedAt}
               activeToolTitle={activeToolTitle}
