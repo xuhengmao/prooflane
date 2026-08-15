@@ -37,7 +37,9 @@ const RELAY_STORAGE_UNAVAILABLE: &str = "relay_storage_unavailable";
 const MAX_PREVIEW_REQUEST_ID_BYTES: usize = 128;
 const MAX_PENDING_PREVIEW_REQUESTS: usize = 1_024;
 const MAX_ACTIVE_PREVIEWS: usize = 32;
-const PREVIEW_TOMBSTONE_TTL: Duration = Duration::from_secs(125);
+// A cancel may arrive before its preview request. Keep that tombstone for the
+// full client preview window so the delayed request cannot become a new draft.
+const PREVIEW_TOMBSTONE_TTL: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Clone)]
 struct RelayPreviewEntry {

@@ -30,6 +30,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set, TransactionTrait,
 };
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Notify;
 
 struct BlockingSummarizer {
@@ -807,6 +808,61 @@ async fn late_cancel_for_an_old_request_does_not_cancel_the_latest_preview() {
 
     assert!(cancel_relay_preview_core("finished-old-request").await);
     let active = get_relay_context_by_draft_core(&db.conn, "draft-late-cancel")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(active.id, latest.id);
+    assert_eq!(active.status, "draft");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn cancelled_tombstone_rejects_a_late_preview_past_the_legacy_ttl() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-cancel-tombstone").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let rounds = vec![relay_round(
+        "round-1",
+        "cancelled request must stay cancelled",
+    )];
+
+    assert!(cancel_relay_preview_core("cancelled-before-preview").await);
+    let latest = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        preview_request(
+            "latest-valid-preview",
+            "draft-cancel-tombstone",
+            source,
+            RelayScopeType::RecentRounds,
+        ),
+        rounds.clone(),
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+
+    tokio::time::pause();
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_secs(60 * 60 - 1)).await;
+
+    let late_error = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        preview_request(
+            "cancelled-before-preview",
+            "draft-cancel-tombstone",
+            source,
+            RelayScopeType::RecentRounds,
+        ),
+        rounds,
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        late_error.message,
+        RelayErrorCode::RelaySourceUnavailable.to_string()
+    );
+    let active = get_relay_context_by_draft_core(&db.conn, "draft-cancel-tombstone")
         .await
         .unwrap()
         .unwrap();
