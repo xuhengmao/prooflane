@@ -203,6 +203,48 @@ describe("SidebarConversationCard pin action", () => {
 })
 
 describe("SidebarConversationCard relay entry", () => {
+  it("continues the selected history in a new conversation from the menu", () => {
+    const onRelayContinue = vi.fn()
+    const { getByText } = renderWithIntl(
+      <SidebarConversationCard
+        conversation={conv(7)}
+        isSelected={false}
+        timeLabel=""
+        onSelect={onSelect}
+        onDoubleClick={onDoubleClick}
+        onRename={onRename}
+        onDelete={onDelete}
+        onStatusChange={onStatusChange}
+        onRelayContinue={onRelayContinue}
+      />
+    )
+
+    fireEvent.contextMenu(getByText("conv-7"))
+    fireEvent.click(getByText("在新会话中继续"))
+
+    expect(onRelayContinue).toHaveBeenCalledWith(7)
+  })
+
+  it("hides menu and drag entry when relay is disabled", () => {
+    const { container, getByText, queryByText } = renderWithIntl(
+      <SidebarConversationCard
+        conversation={conv(7)}
+        isSelected={false}
+        timeLabel=""
+        onSelect={onSelect}
+        onDoubleClick={onDoubleClick}
+        onRename={onRename}
+        onDelete={onDelete}
+        onStatusChange={onStatusChange}
+      />
+    )
+
+    const conversationButton = container.querySelector("[data-conversation-id]")
+    expect(conversationButton).not.toHaveAttribute("draggable", "true")
+    fireEvent.contextMenu(getByText("conv-7"))
+    expect(queryByText("在新会话中继续")).not.toBeInTheDocument()
+  })
+
   it("writes only the dedicated relay MIME on drag start", () => {
     const setData = vi.fn()
     const { container } = renderWithIntl(

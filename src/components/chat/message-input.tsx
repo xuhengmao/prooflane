@@ -132,7 +132,7 @@ import type { Editor, JSONContent } from "@tiptap/core"
 import { useReferenceSearch } from "@/components/chat/composer/use-reference-search"
 import { useComposerMentionLabels } from "@/components/chat/composer/use-composer-mention-labels"
 import { ComposerAddMenu } from "@/components/chat/composer/composer-add-menu"
-import { readRelayDragData } from "@/lib/conversation-relay"
+import { hasRelayDragType, readRelayDragData } from "@/lib/conversation-relay"
 import { ComposerImageThumbnails } from "@/components/chat/composer/composer-image-thumbnails"
 import { useComposerAttachments } from "@/components/chat/composer/use-composer-attachments"
 import { useComposerShortcuts } from "@/components/chat/composer/use-composer-shortcuts"
@@ -2275,12 +2275,22 @@ export function MessageInput({
     </div>
   )
 
-  const handleContainerDrop = (event: ReactDragEvent<HTMLDivElement>) => {
-    const relayData = readRelayDragData(event.dataTransfer)
-    if (relayData) {
+  const handleContainerDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (hasRelayDragType(event.dataTransfer) && onRelayDrop) {
       event.preventDefault()
       event.stopPropagation()
-      onRelayDrop?.(relayData.conversationId)
+      event.dataTransfer.dropEffect = "copy"
+      return
+    }
+    attach.containerDragProps.onDragOver(event)
+  }
+
+  const handleContainerDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    const relayData = readRelayDragData(event.dataTransfer)
+    if (relayData && onRelayDrop) {
+      event.preventDefault()
+      event.stopPropagation()
+      onRelayDrop(relayData.conversationId)
       return
     }
     attach.containerDragProps.onDrop(event)
@@ -2297,7 +2307,7 @@ export function MessageInput({
       // tab's desktop commit). Absent when there's no tab to attach to.
       data-tree-drop-composer={attachmentTabId ?? undefined}
       onKeyDown={handleContainerKeyDown}
-      onDragOver={attach.containerDragProps.onDragOver}
+      onDragOver={handleContainerDragOver}
       onDragLeave={attach.containerDragProps.onDragLeave}
       onDrop={handleContainerDrop}
     >

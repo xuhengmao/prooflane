@@ -29,6 +29,13 @@ const conversationShellSource = readFileSync(
   resolve(process.cwd(), "src/components/chat/conversation-shell.tsx"),
   "utf8"
 )
+const sidebarConversationListSource = readFileSync(
+  resolve(
+    process.cwd(),
+    "src/components/conversations/sidebar-conversation-list.tsx"
+  ),
+  "utf8"
+)
 const globalsCssSource = readFileSync(
   resolve(process.cwd(), "src/app/globals.css"),
   "utf8"
@@ -108,6 +115,50 @@ describe("ConversationDetailPanel new conversation layout", () => {
     expect(welcomeBranch).toContain("tall")
   })
 
+  it("keeps relay context above the input in the same composer dock on both layouts", () => {
+    const welcomeBranchStart = source.indexOf("{isWelcomeMode ? (")
+    const nextBranchStart = source.indexOf(
+      ") : showDraftHeader ?",
+      welcomeBranchStart
+    )
+    const welcomeBranch = source.slice(welcomeBranchStart, nextBranchStart)
+    const welcomeDockStart = welcomeBranch.indexOf(
+      "<div data-relay-composer-dock"
+    )
+    const relayCardStart = welcomeBranch.indexOf(
+      "{relayCard &&",
+      welcomeDockStart
+    )
+    const chatInputStart = welcomeBranch.indexOf("<ChatInput", welcomeDockStart)
+
+    expect(conversationShellSource).toContain("data-relay-composer-dock")
+    expect(welcomeDockStart).toBeGreaterThan(-1)
+    expect(relayCardStart).toBeGreaterThan(welcomeDockStart)
+    expect(chatInputStart).toBeGreaterThan(relayCardStart)
+    expect(welcomeBranch).not.toContain(
+      '<div className="w-full">{relayCard}</div>'
+    )
+  })
+
+  it("only exposes relay actions and drop handling while a new draft can accept one", () => {
+    const gateStart = source.indexOf("const canAddRelay =")
+    const gateEnd = source.indexOf("const handleRelayDrop", gateStart)
+    const gate = source.slice(gateStart, gateEnd)
+
+    expect(gate).toContain("composerState.isNewConversation")
+    expect(gate).toContain("conversationCapabilities.relayEnabled")
+    expect(gate).toContain("relay === null")
+    expect(
+      source.match(
+        /onRelayDrop=\{canAddRelay \? handleRelayDrop : undefined\}/g
+      )
+    ).toHaveLength(2)
+    expect(source).not.toContain("onRelayDrop={handleRelayDrop}")
+    expect(sidebarConversationListSource).toContain(
+      "conversationCapabilities.relayEnabled\n            ? handleRelayContinue\n            : undefined"
+    )
+  })
+
   it("derives the new-conversation input flag for the welcome and ordinary render paths", () => {
     expect(resolveConversationComposerState(true)).toEqual({
       isNewConversation: true,
@@ -180,6 +231,21 @@ describe("ConversationDetailPanel new conversation layout", () => {
       globalsCssSource.indexOf(".conversation-tab-hidden,") + 200
     )
     expect(rule).toContain("transition-property: none !important")
+  })
+
+  it("subscribes keep-alive drafts to relay intents queued after mount", () => {
+    expect(source).toContain("subscribeRelayIntent(tabId")
+    expect(source).toContain("consumeRelayIntent(tabId)")
+  })
+
+  it("routes picker, drag-and-drop, and queued sidebar intents through one preview flow", () => {
+    expect(source).toContain(
+      "void previewRelay(intent.sourceConversationId).catch(() => {})"
+    )
+    expect(source).toContain(
+      "void previewRelay(sourceConversationId).catch(() => {})"
+    )
+    expect(source).toContain("onPreview={previewRelay}")
   })
 
   // Regression: with a workspace background image on, every covering surface is

@@ -421,10 +421,21 @@ async fn find_source(
 async fn build_snapshot_with_summarizer(
     source_conversation_id: i32,
     source_folder_id: i32,
-    scope: RelayScopeSelection,
+    mut scope: RelayScopeSelection,
     available_rounds: Vec<crate::models::conversation_relay::RelayRound>,
     summarizer: Option<&dyn RelaySummarizer>,
 ) -> Result<RelaySnapshot, AppCommandError> {
+    if scope.selected_round_ids.is_empty() {
+        let first_included = match scope.scope_type {
+            RelayScopeType::Summary => 0,
+            RelayScopeType::RecentRounds => available_rounds.len().saturating_sub(10),
+            RelayScopeType::CustomRounds => available_rounds.len(),
+        };
+        scope.selected_round_ids = available_rounds[first_included..]
+            .iter()
+            .map(|round| round.id.clone())
+            .collect();
+    }
     let selected =
         select_relay_rounds(&available_rounds, &scope).map_err(|error| relay_error(error.code))?;
     let summary = if scope.scope_type == RelayScopeType::Summary {

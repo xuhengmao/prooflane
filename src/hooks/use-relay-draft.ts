@@ -23,7 +23,7 @@ import {
 
 const UNDO_REMOVE_WINDOW_MS = 10_000
 const DEFAULT_SCOPE: RelayScopeSelection = {
-  scopeType: "summary",
+  scopeType: "recent_rounds",
   selectedRoundIds: [],
 }
 

@@ -74,6 +74,21 @@ impl RelaySummarizer for RunnerBackedFailingSummarizer {
     }
 }
 
+struct SuccessfulSummarizer;
+
+#[async_trait::async_trait]
+impl RelaySummarizer for SuccessfulSummarizer {
+    async fn summarize(&self, rounds: &[RelayRound]) -> Result<RelayStructuredSummary, RelayError> {
+        Ok(RelayStructuredSummary {
+            goal: vec![RelaySummaryItem {
+                text: "continue the selected work".to_owned(),
+                source_round_ids: rounds.iter().map(|round| round.id.clone()).collect(),
+            }],
+            ..RelayStructuredSummary::default()
+        })
+    }
+}
+
 fn relay_round(id: &str, user_text: &str) -> RelayRound {
     RelayRound {
         id: id.to_owned(),
@@ -613,6 +628,72 @@ async fn explicit_preview_failure_does_not_persist_an_empty_pack() {
             .unwrap(),
         0
     );
+}
+
+#[tokio::test]
+async fn empty_recent_scope_freezes_the_last_ten_complete_rounds() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-default-range").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let mut request = preview_request(
+        "default-recent-preview",
+        "draft-default-recent",
+        source,
+        RelayScopeType::RecentRounds,
+    );
+    request.scope.selected_round_ids.clear();
+    let rounds = (1..=12)
+        .map(|index| relay_round(&format!("round-{index}"), &format!("question {index}")))
+        .collect::<Vec<_>>();
+
+    let preview = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(request).await,
+        rounds,
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        preview.scope.selected_round_ids,
+        (3..=12)
+            .map(|index| format!("round-{index}"))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(preview.snapshot.included_rounds.len(), 10);
+}
+
+#[tokio::test]
+async fn empty_summary_scope_freezes_all_complete_rounds() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-summary-range").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let mut request = preview_request(
+        "default-summary-preview",
+        "draft-default-summary",
+        source,
+        RelayScopeType::Summary,
+    );
+    request.scope.selected_round_ids.clear();
+
+    let preview = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(request).await,
+        vec![
+            relay_round("round-1", "first question"),
+            relay_round("round-2", "second question"),
+        ],
+        &SuccessfulSummarizer,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        preview.scope.selected_round_ids,
+        vec!["round-1".to_owned(), "round-2".to_owned()]
+    );
+    assert_eq!(preview.snapshot.included_rounds.len(), 2);
 }
 
 #[tokio::test]

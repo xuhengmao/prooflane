@@ -262,7 +262,7 @@ export function ConversationShell({
           feedback list and input — like the permission/question dialogs — so it
           shrinks the message list instead of covering it, while staying aligned
           to the input width. */}
-      <div>
+      <div data-relay-composer-dock>
         {pendingAskQuestion && pendingAskQuestion.questions.length > 0 && (
           <div className="mx-auto w-full max-w-3xl px-4">
             <AskQuestionCard

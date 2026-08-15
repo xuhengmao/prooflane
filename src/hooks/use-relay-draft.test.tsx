@@ -522,6 +522,21 @@ describe("useRelayDraft", () => {
     expect(result.current.relay).toEqual(pack)
   })
 
+  it("defaults an initial preview to the recent-rounds range", async () => {
+    const { api, useRelayDraft } = await setup()
+    const { result } = renderHook(() => useRelayDraft(defaultOptions))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => result.current.preview(44))
+
+    expect(api.previewRelayContext).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        scope: { scopeType: "recent_rounds", selectedRoundIds: [] },
+      }),
+      expect.any(AbortSignal)
+    )
+  })
+
   it("passes a null target folder through for an unscoped draft", async () => {
     const { api, useRelayDraft } = await setup()
     const { result } = renderHook(() =>

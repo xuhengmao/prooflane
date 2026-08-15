@@ -153,7 +153,10 @@ import { ConversationDetailHeader } from "./conversation-detail-header"
 import { SessionDetailsDialog } from "./session-details-dialog"
 import { RelayContextCard } from "./relay/relay-context-card"
 import { RelayDialogController } from "./relay/relay-dialog-controller"
-import { consumeRelayIntent } from "@/lib/conversation-relay"
+import {
+  consumeRelayIntent,
+  subscribeRelayIntent,
+} from "@/lib/conversation-relay"
 import { isModelConfigOption } from "@/lib/model-config-groups"
 
 interface ConversationTabViewProps {
@@ -1560,9 +1563,14 @@ const ConversationTabView = memo(function ConversationTabView({
     undoRemove,
   } = relayDraft
   useEffect(() => {
-    const intent = consumeRelayIntent(tabId)
-    if (!intent || !conversationCapabilities.relayEnabled) return
-    void previewRelay(intent.sourceConversationId).catch(() => {})
+    const consumeQueuedIntent = () => {
+      const intent = consumeRelayIntent(tabId)
+      if (!intent || !conversationCapabilities.relayEnabled) return
+      void previewRelay(intent.sourceConversationId).catch(() => {})
+    }
+    const unsubscribe = subscribeRelayIntent(tabId, consumeQueuedIntent)
+    consumeQueuedIntent()
+    return unsubscribe
   }, [conversationCapabilities.relayEnabled, previewRelay, tabId])
   const canAddRelay =
     composerState.isNewConversation &&
@@ -1575,9 +1583,15 @@ const ConversationTabView = memo(function ConversationTabView({
     },
     [canAddRelay, previewRelay]
   )
+  const relaySourceTitle = relay
+    ? relayConversations.find(
+        (conversation) => conversation.id === relay.sourceConversationId
+      )?.title
+    : null
   const relayCard = relay ? (
     <RelayContextCard
       relay={relay}
+      sourceTitle={relaySourceTitle}
       onPreview={() => setRelayPreviewOpen(true)}
       onAdjust={() => setRelayDialogOpen(true)}
       onRemove={() => void remove()}
@@ -1807,7 +1821,7 @@ const ConversationTabView = memo(function ConversationTabView({
       feedbackAddDisabled={!feedback.canSubmit}
       relaySlot={relayCard}
       onAddRelay={canAddRelay ? () => setRelayDialogOpen(true) : undefined}
-      onRelayDrop={handleRelayDrop}
+      onRelayDrop={canAddRelay ? handleRelayDrop : undefined}
       isActive={isActive}
       showActiveFlow={showActiveFlow}
       queue={msgQueue}
@@ -1896,47 +1910,53 @@ const ConversationTabView = memo(function ConversationTabView({
                   ) : null}
                 </div>
               ) : null}
-              <ChatInput
-                {...composerErrorState}
-                // composerConnStatus (not connStatus): a chat draft mid-reconnect
-                // reads "connecting" until the connection's cwd matches, so the
-                // send affordance stays disabled until handleSend would accept it.
-                status={composerConnStatus}
-                promptCapabilities={conn.promptCapabilities}
-                defaultPath={workingDirForConnection}
-                agentName={getAgentLabel(selectedAgent)}
-                onFocus={handleFocus}
-                onSend={handleSend}
-                onCancel={handleCancel}
-                modes={connectionModes}
-                configOptions={connectionConfigOptions}
-                modeLoading={modeLoading}
-                configOptionsLoading={configOptionsLoading}
-                selectorsLoading={selectorsLoading}
-                selectedModeId={selectedModeId}
-                onModeChange={handleModeChange}
-                onConfigOptionChange={handleSetConfigOption}
-                agentType={selectedAgent}
-                availableCommands={connectionCommands}
-                attachmentTabId={tabId}
-                draftStorageKey={draftStorageKey}
-                isActive={isActive}
-                showActiveFlow={showActiveFlow}
-                onAddFeedback={
-                  feedback.featureEnabled ? feedback.openDialog : undefined
-                }
-                feedbackAddDisabled={!feedback.canSubmit}
-                onAddRelay={
-                  canAddRelay ? () => setRelayDialogOpen(true) : undefined
-                }
-                onRelayDrop={handleRelayDrop}
-                injectContent={quickActionInject}
-                onInjectConsumed={handleQuickActionConsumed}
-                isNewConversation={composerState.isNewConversation}
-                flush
-                tall
-              />
-              {relayCard && <div className="w-full">{relayCard}</div>}
+              <div data-relay-composer-dock className="flex w-full flex-col">
+                {relayCard && (
+                  <div data-relay-slot className="w-full pb-2">
+                    {relayCard}
+                  </div>
+                )}
+                <ChatInput
+                  {...composerErrorState}
+                  // composerConnStatus (not connStatus): a chat draft mid-reconnect
+                  // reads "connecting" until the connection's cwd matches, so the
+                  // send affordance stays disabled until handleSend would accept it.
+                  status={composerConnStatus}
+                  promptCapabilities={conn.promptCapabilities}
+                  defaultPath={workingDirForConnection}
+                  agentName={getAgentLabel(selectedAgent)}
+                  onFocus={handleFocus}
+                  onSend={handleSend}
+                  onCancel={handleCancel}
+                  modes={connectionModes}
+                  configOptions={connectionConfigOptions}
+                  modeLoading={modeLoading}
+                  configOptionsLoading={configOptionsLoading}
+                  selectorsLoading={selectorsLoading}
+                  selectedModeId={selectedModeId}
+                  onModeChange={handleModeChange}
+                  onConfigOptionChange={handleSetConfigOption}
+                  agentType={selectedAgent}
+                  availableCommands={connectionCommands}
+                  attachmentTabId={tabId}
+                  draftStorageKey={draftStorageKey}
+                  isActive={isActive}
+                  showActiveFlow={showActiveFlow}
+                  onAddFeedback={
+                    feedback.featureEnabled ? feedback.openDialog : undefined
+                  }
+                  feedbackAddDisabled={!feedback.canSubmit}
+                  onAddRelay={
+                    canAddRelay ? () => setRelayDialogOpen(true) : undefined
+                  }
+                  onRelayDrop={canAddRelay ? handleRelayDrop : undefined}
+                  injectContent={quickActionInject}
+                  onInjectConsumed={handleQuickActionConsumed}
+                  isNewConversation={composerState.isNewConversation}
+                  flush
+                  tall
+                />
+              </div>
             </div>
             <div className="flex-1" />
             <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-6">

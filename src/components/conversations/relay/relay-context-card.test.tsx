@@ -11,11 +11,16 @@ describe("RelayContextCard", () => {
     const onUndo = vi.fn()
     const { rerender } = render(
       <RelayContextCard
+        sourceTitle="产品需求讨论"
         relay={{
+          sourceConversationId: 42,
           estimatedTokens: 1200,
           allowedTokens: 4000,
           invalidReason: "relay_budget_exceeded",
           status: "draft",
+          snapshot: {
+            stats: { messageCount: 32, fileCount: 4, todoCount: 3 },
+          },
         }}
         onPreview={onPreview}
         onAdjust={onAdjust}
@@ -23,6 +28,10 @@ describe("RelayContextCard", () => {
         onUndo={onUndo}
       />
     )
+    expect(screen.getByText("产品需求讨论")).toBeInTheDocument()
+    expect(
+      screen.getByText("32 条消息 · 4 个文件 · 3 项待办")
+    ).toBeInTheDocument()
     expect(screen.getByText("1,200 / 4,000")).toBeInTheDocument()
     expect(screen.getByText("上下文预算超限")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "查看" }))
@@ -34,11 +43,16 @@ describe("RelayContextCard", () => {
 
     rerender(
       <RelayContextCard
+        sourceTitle="产品需求讨论"
         relay={{
+          sourceConversationId: 42,
           estimatedTokens: 1200,
           allowedTokens: 4000,
           invalidReason: null,
           status: "removed",
+          snapshot: {
+            stats: { messageCount: 32, fileCount: 4, todoCount: 3 },
+          },
         }}
         onPreview={onPreview}
         onAdjust={onAdjust}

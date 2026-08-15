@@ -24,10 +24,16 @@ export function writeRelayDragData(
   dataTransfer.setData(RELAY_DRAG_MIME, JSON.stringify(data))
 }
 
+export function hasRelayDragType(
+  dataTransfer: Pick<DataTransfer, "types">
+): boolean {
+  return Array.from(dataTransfer.types).includes(RELAY_DRAG_MIME)
+}
+
 export function readRelayDragData(
   dataTransfer: Pick<DataTransfer, "types" | "getData">
 ): RelayDragData | null {
-  if (!Array.from(dataTransfer.types).includes(RELAY_DRAG_MIME)) return null
+  if (!hasRelayDragType(dataTransfer)) return null
   try {
     const value: unknown = JSON.parse(dataTransfer.getData(RELAY_DRAG_MIME))
     if (
@@ -50,10 +56,14 @@ export interface RelayIntent {
 }
 
 const relayIntentByTab = new Map<string, RelayIntent>()
+const relayIntentListenersByTab = new Map<string, Set<() => void>>()
 
 /** Queue the source selected before its target draft has mounted. */
 export function queueRelayIntent(intent: RelayIntent): void {
   relayIntentByTab.set(intent.tabId, intent)
+  for (const listener of relayIntentListenersByTab.get(intent.tabId) ?? []) {
+    listener()
+  }
 }
 
 /** Intents are intentionally single-use: a remount must never re-preview. */
@@ -61,6 +71,20 @@ export function consumeRelayIntent(tabId: string): RelayIntent | null {
   const intent = relayIntentByTab.get(tabId) ?? null
   relayIntentByTab.delete(tabId)
   return intent
+}
+
+/** Notify a keep-alive draft when a handoff is queued after it mounted. */
+export function subscribeRelayIntent(
+  tabId: string,
+  listener: () => void
+): () => void {
+  const listeners = relayIntentListenersByTab.get(tabId) ?? new Set()
+  listeners.add(listener)
+  relayIntentListenersByTab.set(tabId, listeners)
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) relayIntentListenersByTab.delete(tabId)
+  }
 }
 
 function abortError(): DOMException {

@@ -10,9 +10,7 @@ const conversations = [
 ]
 
 describe("RelayConversationPicker", () => {
-  it("默认当前项目、可切换全部项目并按标题项目和智能体单选", async () => {
-    const onSelect = vi.fn()
-    const user = userEvent.setup()
+  function renderPicker(onSelect = vi.fn()) {
     render(
       <RelayConversationPicker
         conversations={conversations}
@@ -25,13 +23,52 @@ describe("RelayConversationPicker", () => {
         onSelect={onSelect}
       />
     )
+    return onSelect
+  }
+
+  it("默认当前项目、可切换全部项目并单选", async () => {
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+    renderPicker(onSelect)
 
     expect(screen.getByText("当前项目会话")).toBeInTheDocument()
     expect(screen.queryByText("跨项目会话")).toBeNull()
     await user.click(screen.getByRole("button", { name: "全部项目" }))
-    await user.type(screen.getByRole("searchbox"), "claude")
     await user.click(screen.getByText("跨项目会话"))
     expect(onSelect).toHaveBeenCalledWith(2)
+  })
+
+  it("按会话标题搜索", async () => {
+    const user = userEvent.setup()
+    renderPicker()
+
+    await user.click(screen.getByRole("button", { name: "全部项目" }))
+    await user.type(screen.getByRole("searchbox"), "跨项目会话")
+
+    expect(screen.getByText("跨项目会话")).toBeInTheDocument()
+    expect(screen.queryByText("当前项目会话")).not.toBeInTheDocument()
+  })
+
+  it("按项目名称搜索", async () => {
+    const user = userEvent.setup()
+    renderPicker()
+
+    await user.click(screen.getByRole("button", { name: "全部项目" }))
+    await user.type(screen.getByRole("searchbox"), "其他项目")
+
+    expect(screen.getByText("跨项目会话")).toBeInTheDocument()
+    expect(screen.queryByText("当前项目会话")).not.toBeInTheDocument()
+  })
+
+  it("按智能体类型搜索", async () => {
+    const user = userEvent.setup()
+    renderPicker()
+
+    await user.click(screen.getByRole("button", { name: "全部项目" }))
+    await user.type(screen.getByRole("searchbox"), "claude")
+
+    expect(screen.getByText("跨项目会话")).toBeInTheDocument()
+    expect(screen.queryByText("当前项目会话")).not.toBeInTheDocument()
   })
 
   it("无项目聊天草稿明确落到全部项目", () => {

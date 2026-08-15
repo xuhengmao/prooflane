@@ -3,14 +3,23 @@
 import { Eye, Pencil, RotateCcw, Trash2 } from "lucide-react"
 
 interface RelayCardData {
+  sourceConversationId: number
   estimatedTokens: number
   allowedTokens: number
   invalidReason: string | null
   status: string
+  snapshot: {
+    stats: {
+      messageCount: number
+      fileCount: number
+      todoCount: number
+    }
+  }
 }
 
 interface RelayContextCardProps {
   relay: RelayCardData
+  sourceTitle?: string | null
   onPreview: () => void
   onAdjust: () => void
   onRemove: () => void
@@ -23,11 +32,14 @@ function formatTokens(value: number): string {
 
 export function RelayContextCard({
   relay,
+  sourceTitle,
   onPreview,
   onAdjust,
   onRemove,
   onUndo,
 }: RelayContextCardProps) {
+  const sourceLabel =
+    sourceTitle?.trim() || `会话 #${relay.sourceConversationId}`
   if (relay.status === "removed") {
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
@@ -46,16 +58,30 @@ export function RelayContextCard({
   }
 
   const overBudget = relay.invalidReason === "relay_budget_exceeded"
+  const { messageCount, fileCount, todoCount } = relay.snapshot.stats
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs">
-      <span className="font-medium">历史接力</span>
-      <span
-        className={overBudget ? "text-destructive" : "text-muted-foreground"}
-      >
-        {formatTokens(relay.estimatedTokens)} /{" "}
-        {formatTokens(relay.allowedTokens)}
-      </span>
-      {overBudget && <span className="text-destructive">上下文预算超限</span>}
+      <div className="min-w-0 flex-1 basis-48">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="max-w-full truncate font-medium" title={sourceLabel}>
+            {sourceLabel}
+          </span>
+          <span
+            className={
+              overBudget ? "text-destructive" : "text-muted-foreground"
+            }
+          >
+            {formatTokens(relay.estimatedTokens)} /{" "}
+            {formatTokens(relay.allowedTokens)}
+          </span>
+          {overBudget && (
+            <span className="text-destructive">上下文预算超限</span>
+          )}
+        </div>
+        <p className="mt-1 text-muted-foreground">
+          {messageCount} 条消息 · {fileCount} 个文件 · {todoCount} 项待办
+        </p>
+      </div>
       <span className="ml-auto flex items-center gap-1">
         <button
           type="button"

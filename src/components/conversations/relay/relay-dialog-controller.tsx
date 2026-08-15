@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -49,16 +49,49 @@ export function RelayDialogController({
   const [selectedConversationId, setSelectedConversationId] = useState<
     number | null
   >(null)
+  const [previewPending, setPreviewPending] = useState(false)
+  const [operationError, setOperationError] = useState<string | null>(null)
+  const [summaryState, setSummaryState] = useState<
+    "idle" | "loading" | "error"
+  >("idle")
+  const operationGenerationRef = useRef(0)
   const sourceId = relay?.sourceConversationId ?? selectedConversationId
   const rounds = relay?.snapshot.availableRounds ?? []
 
   const select = async (conversationId: number) => {
+    const generation = ++operationGenerationRef.current
     setSelectedConversationId(conversationId)
+    setOperationError(null)
+    setPreviewPending(true)
     try {
       await onPreview(conversationId)
-      onOpenChange(false)
+      if (operationGenerationRef.current === generation) onOpenChange(false)
     } catch {
-      // The persisted hook keeps the failed operation available for retry.
+      if (operationGenerationRef.current === generation) {
+        setOperationError("接力上下文准备失败，请重试")
+      }
+    } finally {
+      if (operationGenerationRef.current === generation) {
+        setPreviewPending(false)
+      }
+    }
+  }
+
+  const changeScope = async (scope: RelayScopeSelection) => {
+    const generation = ++operationGenerationRef.current
+    const updatingSummary = scope.scopeType === "summary"
+    setOperationError(null)
+    setSummaryState(updatingSummary ? "loading" : "idle")
+    try {
+      await onUpdateScope(scope)
+      if (operationGenerationRef.current === generation) {
+        setSummaryState("idle")
+      }
+    } catch {
+      if (operationGenerationRef.current === generation) {
+        setSummaryState(updatingSummary ? "error" : "idle")
+        setOperationError("接力范围更新失败，请重试")
+      }
     }
   }
 
@@ -74,7 +107,8 @@ export function RelayDialogController({
               <RelayScopeEditor
                 rounds={rounds}
                 value={relay.scope}
-                onChange={(scope) => void onUpdateScope(scope)}
+                summaryState={summaryState}
+                onChange={(scope) => void changeScope(scope)}
               />
               <button
                 type="button"
@@ -93,7 +127,24 @@ export function RelayDialogController({
               onSelect={(conversationId) => void select(conversationId)}
             />
           )}
-          {loading && (
+          {operationError && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-2 text-xs text-destructive"
+            >
+              <span>{operationError}</span>
+              {!relay && selectedConversationId != null && (
+                <button
+                  type="button"
+                  onClick={() => void select(selectedConversationId)}
+                  className="rounded px-1.5 py-1 font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  重试
+                </button>
+              )}
+            </div>
+          )}
+          {(loading || previewPending) && summaryState !== "loading" && (
             <p className="text-xs text-muted-foreground">正在准备接力上下文</p>
           )}
         </DialogContent>

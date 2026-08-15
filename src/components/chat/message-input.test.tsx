@@ -177,23 +177,46 @@ function renderInput(
 }
 
 describe("MessageInput (RichComposer integration)", () => {
-  it("routes relay drag data without invoking file drop", async () => {
+  it("accepts relay dragover and routes the drop without invoking file handling", async () => {
     const onRelayDrop = vi.fn()
     const { RELAY_DRAG_MIME } = await import("@/lib/conversation-relay")
+    const { uploadAttachment } = await import("@/lib/api")
+    vi.mocked(uploadAttachment).mockClear()
     const { container } = renderInput({ onRelayDrop })
     const composer =
       container.querySelector("[data-tree-drop-composer]") ??
       container.querySelector("[data-composer-state]")
-    const dataTransfer = {
+    let payloadReadable = false
+    const dataTransfer: {
+      types: string[]
+      getData: (type: string) => string
+      dropEffect: string
+      files: File[]
+    } = {
       types: [RELAY_DRAG_MIME],
       getData: (type: string) =>
-        type === RELAY_DRAG_MIME
+        payloadReadable && type === RELAY_DRAG_MIME
           ? JSON.stringify({ conversationId: 42, folderId: 1 })
           : "",
+      dropEffect: "none",
       files: [],
     }
+    const dragOverBubble = vi.fn()
+    const parent = container.parentElement!
+    parent.addEventListener("dragover", dragOverBubble)
+
+    expect(fireEvent.dragOver(composer as Element, { dataTransfer })).toBe(
+      false
+    )
+    expect(dragOverBubble).not.toHaveBeenCalled()
+    parent.removeEventListener("dragover", dragOverBubble)
+    payloadReadable = true
+    dataTransfer.files = [
+      new File(["ignored"], "ignored.txt", { type: "text/plain" }),
+    ]
     fireEvent.drop(composer as Element, { dataTransfer })
     expect(onRelayDrop).toHaveBeenCalledWith(42)
+    expect(uploadAttachment).not.toHaveBeenCalled()
   })
 
   afterEach(() => {

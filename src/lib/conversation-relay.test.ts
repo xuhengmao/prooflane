@@ -30,9 +30,11 @@ import {
 } from "@/lib/api"
 import {
   consumeRelayIntent,
+  hasRelayDragType,
   RELAY_DRAG_MIME,
   queueRelayIntent,
   readRelayDragData,
+  subscribeRelayIntent,
   writeRelayDragData,
 } from "@/lib/conversation-relay"
 import type {
@@ -113,6 +115,8 @@ describe("conversation relay transport API", () => {
         getData: () => JSON.stringify({ conversationId: 42, folderId: 3 }),
       })
     ).toEqual({ conversationId: 42, folderId: 3 })
+    expect(hasRelayDragType({ types: [RELAY_DRAG_MIME] })).toBe(true)
+    expect(hasRelayDragType({ types: ["Files"] })).toBe(false)
 
     queueRelayIntent({ tabId: "draft-42", sourceConversationId: 42 })
     expect(consumeRelayIntent("draft-42")).toEqual({
@@ -120,6 +124,31 @@ describe("conversation relay transport API", () => {
       sourceConversationId: 42,
     })
     expect(consumeRelayIntent("draft-42")).toBeNull()
+  })
+
+  it("notifies an already-mounted draft when an intent is queued", () => {
+    const observed: unknown[] = []
+    const unsubscribe = subscribeRelayIntent("mounted-draft", () => {
+      observed.push(consumeRelayIntent("mounted-draft"))
+    })
+
+    queueRelayIntent({
+      tabId: "mounted-draft",
+      sourceConversationId: 71,
+    })
+
+    expect(observed).toEqual([
+      { tabId: "mounted-draft", sourceConversationId: 71 },
+    ])
+    expect(consumeRelayIntent("mounted-draft")).toBeNull()
+
+    unsubscribe()
+    queueRelayIntent({
+      tabId: "mounted-draft",
+      sourceConversationId: 72,
+    })
+    expect(observed).toHaveLength(1)
+    expect(consumeRelayIntent("mounted-draft")?.sourceConversationId).toBe(72)
   })
 
   it("previews an explicitly selected cross-project source", async () => {
