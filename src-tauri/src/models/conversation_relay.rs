@@ -178,13 +178,46 @@ mod tests {
 
     #[test]
     fn relay_error_codes_serialize_to_stable_wire_values() {
-        assert_eq!(
-            serde_json::to_string(&RelayErrorCode::RelayRoundsChanged).unwrap(),
-            "\"relay_rounds_changed\""
-        );
-        assert_eq!(
-            RelayErrorCode::RelayBudgetExceeded.to_string(),
-            "relay_budget_exceeded"
-        );
+        let cases = [
+            (RelayErrorCode::RelayDisabled, "relay_disabled"),
+            (
+                RelayErrorCode::RelaySourceNotFound,
+                "relay_source_not_found",
+            ),
+            (
+                RelayErrorCode::RelaySourceUnavailable,
+                "relay_source_unavailable",
+            ),
+            (RelayErrorCode::RelayRoundsChanged, "relay_rounds_changed"),
+            (RelayErrorCode::RelayScopeEmpty, "relay_scope_empty"),
+            (RelayErrorCode::RelayBudgetExceeded, "relay_budget_exceeded"),
+            (
+                RelayErrorCode::RelaySummaryUnavailable,
+                "relay_summary_unavailable",
+            ),
+            (RelayErrorCode::RelaySummaryInvalid, "relay_summary_invalid"),
+            (
+                RelayErrorCode::RelaySummaryInputTooLarge,
+                "relay_summary_input_too_large",
+            ),
+            (RelayErrorCode::RelayModelChanged, "relay_model_changed"),
+            (
+                RelayErrorCode::RelayConsumeConflict,
+                "relay_consume_conflict",
+            ),
+            (RelayErrorCode::RelaySendUncertain, "relay_send_uncertain"),
+            (
+                RelayErrorCode::RelayImmutableSnapshot,
+                "relay_immutable_snapshot",
+            ),
+        ];
+
+        for (code, wire_value) in cases {
+            assert_eq!(
+                serde_json::to_string(&code).unwrap(),
+                format!("\"{wire_value}\"")
+            );
+            assert_eq!(code.to_string(), wire_value);
+        }
     }
 }

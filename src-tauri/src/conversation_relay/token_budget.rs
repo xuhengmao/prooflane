@@ -29,4 +29,12 @@ mod tests {
         assert_eq!(estimate_relay_tokens("abcd"), 2);
         assert_eq!(estimate_relay_tokens("你好"), 3);
     }
+
+    #[test]
+    fn budget_handles_the_cap_boundary_small_windows_and_u32_max() {
+        assert_eq!(relay_budget(Some(1)), 0);
+        assert_eq!(relay_budget(Some(59_999)), 11_999);
+        assert_eq!(relay_budget(Some(60_000)), 12_000);
+        assert_eq!(relay_budget(Some(u32::MAX)), 12_000);
+    }
 }
