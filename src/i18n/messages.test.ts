@@ -116,10 +116,14 @@ describe("conversation relay release copy", () => {
     (_locale, messages) => {
       const referenceMessages = zhCN as MessageNode
       const localeMessages = messages as MessageNode
-      const referenceRelay = (referenceMessages as Record<string, MessageNode>)
+      const referenceFolder = (referenceMessages as Record<string, MessageNode>)
         .Folder as Record<string, MessageNode>
-      const localeRelay = (localeMessages as Record<string, MessageNode>)
+      const localeFolder = (localeMessages as Record<string, MessageNode>)
         .Folder as Record<string, MessageNode>
+      const referenceChat = referenceFolder.chat as Record<string, MessageNode>
+      const localeChat = localeFolder.chat as Record<string, MessageNode>
+      const referenceRelay = referenceChat.relay
+      const localeRelay = localeChat.relay
 
       const referenceCapabilities = (
         referenceMessages as Record<string, MessageNode>
@@ -132,13 +136,8 @@ describe("conversation relay release copy", () => {
       ).toEqual(
         collectKeys(localeCapabilities, "ConversationCapabilities").sort()
       )
-      expect(
-        collectKeys(
-          referenceRelay.chat as MessageNode,
-          "Folder.chat.relay"
-        ).sort()
-      ).toEqual(
-        collectKeys(localeRelay.chat as MessageNode, "Folder.chat.relay").sort()
+      expect(collectKeys(referenceRelay, "Folder.chat.relay").sort()).toEqual(
+        collectKeys(localeRelay, "Folder.chat.relay").sort()
       )
     }
   )

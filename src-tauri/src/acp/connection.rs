@@ -7040,7 +7040,7 @@ async fn run_conversation_loop<'a>(
                                     if let Some(reply) = relay_outcome.take() {
                                         let _ = reply.send(RelayPromptOutcome::Uncertain);
                                     }
-                                    return Err(error.into());
+                                    return Err(error);
                                 }
                             };
                             report_relay_prompt_accepted(&mut relay_outcome);
@@ -14201,7 +14201,7 @@ mod tests {
             .read()
             .await
             .recent_events_after(0)
-            .map_or(true, |events| events.is_empty()));
+            .is_none_or(|events| events.is_empty()));
     }
 
     #[tokio::test]

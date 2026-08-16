@@ -1846,9 +1846,11 @@ export function SidebarConversationList({
 
   const handleRelayContinue = useCallback(
     (sourceConversationId: number) => {
-      const source = conversations.find(
-        (conversation) => conversation.id === sourceConversationId
-      )
+      const source = useAppWorkspaceStore
+        .getState()
+        .conversations.find(
+          (conversation) => conversation.id === sourceConversationId
+        )
       if (!source) return
       openConversations()
       const folder = folderIndex.get(source.folder_id)
@@ -1857,13 +1859,7 @@ export function SidebarConversationList({
         : openChatModeTab()
       queueRelayIntent({ tabId, sourceConversationId })
     },
-    [
-      conversations,
-      folderIndex,
-      openChatModeTab,
-      openConversations,
-      openNewConversationTab,
-    ]
+    [folderIndex, openChatModeTab, openConversations, openNewConversationTab]
   )
 
   // "Import local sessions" now lives in a dedicated picker window (scan →

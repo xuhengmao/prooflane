@@ -8809,6 +8809,7 @@ pub async fn acp_connect(
 
 #[cfg(feature = "tauri-runtime")]
 #[cfg_attr(feature = "tauri-runtime", tauri::command)]
+#[allow(clippy::too_many_arguments)]
 pub async fn acp_prompt(
     app: tauri::AppHandle,
     connection_id: String,

@@ -2085,7 +2085,7 @@ async fn seed_relay_send_core_source(
     .unwrap();
     update.await.unwrap();
 
-    let source = seed_conversation(&db, folder_id, agent_type).await;
+    let source = seed_conversation(db, folder_id, agent_type).await;
     update_external_id(&db.conn, source, session_id.to_owned())
         .await
         .unwrap();

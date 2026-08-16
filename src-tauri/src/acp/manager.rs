@@ -693,6 +693,7 @@ impl ConnectionManager {
     /// `send_prompt_linked` acquire the lock externally and then call
     /// this. Re-entering through `send_prompt` from `send_prompt_linked`
     /// while holding the lock would deadlock, hence the split.
+    #[allow(clippy::too_many_arguments)]
     async fn send_prompt_inner(
         &self,
         conn_id: &str,

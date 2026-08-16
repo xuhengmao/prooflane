@@ -4,6 +4,10 @@ import { Eye, Pencil, RotateCcw, Trash2 } from "lucide-react"
 
 interface RelayCardData {
   sourceConversationId: number
+  scope: {
+    scopeType: "summary" | "recent_rounds" | "custom_rounds"
+    selectedRoundIds: string[]
+  }
   estimatedTokens: number
   allowedTokens: number
   invalidReason: string | null
@@ -29,6 +33,17 @@ interface RelayContextCardProps {
 
 function formatTokens(value: number): string {
   return new Intl.NumberFormat("en-US").format(value)
+}
+
+function formatScope(scope: RelayCardData["scope"]): string {
+  switch (scope.scopeType) {
+    case "recent_rounds":
+      return "最近 10 轮"
+    case "custom_rounds":
+      return `自定义 ${scope.selectedRoundIds.length} 轮`
+    case "summary":
+      return "摘要"
+  }
 }
 
 export function RelayContextCard({
@@ -74,7 +89,7 @@ export function RelayContextCard({
               overBudget ? "text-destructive" : "text-muted-foreground"
             }
           >
-            {formatTokens(relay.estimatedTokens)} /{" "}
+            Token 预算：{formatTokens(relay.estimatedTokens)} /{" "}
             {formatTokens(relay.allowedTokens)}
           </span>
           {overBudget && (
@@ -82,7 +97,11 @@ export function RelayContextCard({
           )}
         </div>
         <p className="mt-1 text-muted-foreground">
-          {messageCount} 条消息 · {fileCount} 个文件 · {todoCount} 项待办
+          <span>范围：{formatScope(relay.scope)}</span>
+          <span aria-hidden> · </span>
+          <span>
+            {messageCount} 条消息 · {fileCount} 个文件 · {todoCount} 项待办
+          </span>
         </p>
       </div>
       <span className="ml-auto flex items-center gap-1">
