@@ -53,7 +53,20 @@
       "office_tools": "办公工具",
       "skill_packs": "技能包",
       "quick_messages": "快捷消息",
-      "logs": "运行日志"
+      "logs": "运行日志",
+      "conversation_capabilities": "会话能力"
+    }
+  },
+  "ConversationCapabilities": {
+    "title": "会话能力",
+    "description": "在新会话开始前，按需携带已选择会话的上下文。",
+    "relay": {
+      "title": "会话接力",
+      "description": "允许在创建新会话时预览和附加选定的历史上下文。",
+      "enabled": "启用会话接力",
+      "loading": "正在读取设置",
+      "saving": "正在保存设置",
+      "saveFailed": "保存会话接力设置失败：{message}"
     }
   },
   "AppearanceSettings": {
@@ -2506,6 +2519,40 @@
       "diffDescriptionConflict": "{path} · 磁盘与未保存内容"
     },
     "chat": {
+      "relay": {
+        "title": "会话接力",
+        "add": "接入历史会话",
+        "source": "来源会话",
+        "scope": "接力范围",
+        "currentProject": "当前项目",
+        "allProjects": "全部项目",
+        "search": "搜索会话",
+        "recentRounds": "最近 10 轮",
+        "customRounds": "自定义轮次",
+        "summary": "摘要",
+        "summaryLoading": "正在生成摘要",
+        "summaryUnavailable": "摘要暂不可用",
+        "preview": "接力上下文预览",
+        "budgetExceeded": "上下文预算超限",
+        "sourceUnavailable": "接力上下文准备失败，请重试",
+        "removed": "10 秒内可撤销",
+        "undo": "撤销移除",
+        "errors": {
+          "relay_disabled": "会话接力已关闭。",
+          "relay_source_not_found": "找不到来源会话。",
+          "relay_source_unavailable": "来源会话暂不可用。",
+          "relay_rounds_changed": "来源会话轮次已变化，请重新选择范围。",
+          "relay_scope_empty": "请选择至少一个完整轮次。",
+          "relay_budget_exceeded": "接力上下文超过 Token 预算。",
+          "relay_summary_unavailable": "摘要暂不可用。",
+          "relay_summary_invalid": "摘要内容无效，请重新生成。",
+          "relay_summary_input_too_large": "摘要输入超过允许大小。",
+          "relay_model_changed": "目标模型已变化，请重新预览接力内容。",
+          "relay_consume_conflict": "接力内容已被其他发送操作使用。",
+          "relay_send_uncertain": "发送结果不明确，请刷新后检查来源。",
+          "relay_immutable_snapshot": "接力快照不可修改。"
+        }
+      },
       "acpConnections": {
         "actions": {
           "openAgentsSettings": "打开 Agents 管理",

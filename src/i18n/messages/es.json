@@ -53,7 +53,20 @@
       "office_tools": "Herramientas de oficina",
       "skill_packs": "Paquetes de habilidades",
       "quick_messages": "Mensajes rápidos",
-      "logs": "Registros de ejecución"
+      "logs": "Registros de ejecución",
+      "conversation_capabilities": "Funciones de conversación"
+    }
+  },
+  "ConversationCapabilities": {
+    "title": "Funciones de conversación",
+    "description": "Incluye el contexto de una conversación seleccionada en una nueva conversación solo cuando lo elijas.",
+    "relay": {
+      "title": "Relevo de conversación",
+      "description": "Obtén una vista previa y adjunta el contexto histórico seleccionado al crear una conversación nueva.",
+      "enabled": "Activar relevo de conversación",
+      "loading": "Cargando configuración",
+      "saving": "Guardando configuración",
+      "saveFailed": "No se pudo guardar la configuración del relevo de conversación: {message}"
     }
   },
   "AppearanceSettings": {
@@ -2506,6 +2519,40 @@
       "diffDescriptionConflict": "{path} · disco vs sin guardar"
     },
     "chat": {
+      "relay": {
+        "title": "Relevo de conversación",
+        "add": "Añadir conversación anterior",
+        "source": "Conversación de origen",
+        "scope": "Alcance del relevo",
+        "currentProject": "Proyecto actual",
+        "allProjects": "Todos los proyectos",
+        "search": "Buscar conversaciones",
+        "recentRounds": "Últimas 10 rondas",
+        "customRounds": "Rondas personalizadas",
+        "summary": "Resumen",
+        "summaryLoading": "Generando resumen",
+        "summaryUnavailable": "El resumen no está disponible",
+        "preview": "Vista previa del contexto de relevo",
+        "budgetExceeded": "Se superó el presupuesto de contexto",
+        "sourceUnavailable": "No se pudo preparar el contexto de relevo. Inténtalo de nuevo.",
+        "removed": "Puedes deshacerlo durante 10 segundos",
+        "undo": "Deshacer eliminación",
+        "errors": {
+          "relay_disabled": "El relevo de conversación está desactivado.",
+          "relay_source_not_found": "No se encontró la conversación de origen.",
+          "relay_source_unavailable": "La conversación de origen no está disponible.",
+          "relay_rounds_changed": "La conversación de origen cambió. Vuelve a seleccionar el alcance.",
+          "relay_scope_empty": "Selecciona al menos una ronda completa.",
+          "relay_budget_exceeded": "El contexto de relevo supera el presupuesto de Token.",
+          "relay_summary_unavailable": "El resumen no está disponible.",
+          "relay_summary_invalid": "El resumen no es válido. Vuelve a generarlo.",
+          "relay_summary_input_too_large": "La entrada del resumen supera el tamaño permitido.",
+          "relay_model_changed": "El modelo de destino cambió. Vuelve a previsualizar el contexto de relevo.",
+          "relay_consume_conflict": "El contexto de relevo fue usado por otra operación de envío.",
+          "relay_send_uncertain": "El resultado del envío es incierto. Actualiza y revisa el origen.",
+          "relay_immutable_snapshot": "La instantánea de relevo no se puede cambiar."
+        }
+      },
       "acpConnections": {
         "actions": {
           "openAgentsSettings": "Abrir ajustes de agentes",

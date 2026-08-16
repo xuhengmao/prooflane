@@ -53,7 +53,20 @@
       "office_tools": "أدوات المكتب",
       "skill_packs": "حزم المهارات",
       "quick_messages": "رسائل سريعة",
-      "logs": "سجلات التشغيل"
+      "logs": "سجلات التشغيل",
+      "conversation_capabilities": "إمكانات المحادثة"
+    }
+  },
+  "ConversationCapabilities": {
+    "title": "إمكانات المحادثة",
+    "description": "أضف سياق المحادثة المحددة إلى محادثة جديدة فقط عند اختيارك ذلك.",
+    "relay": {
+      "title": "ترحيل المحادثة",
+      "description": "عاين وأرفق السياق التاريخي المحدد عند إنشاء محادثة جديدة.",
+      "enabled": "تمكين ترحيل المحادثة",
+      "loading": "جارٍ تحميل الإعدادات",
+      "saving": "جارٍ حفظ الإعدادات",
+      "saveFailed": "تعذر حفظ إعدادات ترحيل المحادثة: {message}"
     }
   },
   "AppearanceSettings": {
@@ -2506,6 +2519,40 @@
       "diffDescriptionConflict": "{path} · القرص مقابل غير المحفوظ"
     },
     "chat": {
+      "relay": {
+        "title": "ترحيل المحادثة",
+        "add": "إضافة محادثة سابقة",
+        "source": "المحادثة المصدر",
+        "scope": "نطاق الترحيل",
+        "currentProject": "المشروع الحالي",
+        "allProjects": "كل المشاريع",
+        "search": "البحث في المحادثات",
+        "recentRounds": "آخر 10 جولات",
+        "customRounds": "جولات مخصصة",
+        "summary": "ملخص",
+        "summaryLoading": "جارٍ إنشاء الملخص",
+        "summaryUnavailable": "الملخص غير متاح",
+        "preview": "معاينة سياق الترحيل",
+        "budgetExceeded": "تم تجاوز ميزانية السياق",
+        "sourceUnavailable": "تعذر تجهيز سياق الترحيل. حاول مرة أخرى.",
+        "removed": "يمكن التراجع خلال 10 ثوانٍ",
+        "undo": "التراجع عن الإزالة",
+        "errors": {
+          "relay_disabled": "ترحيل المحادثة معطل.",
+          "relay_source_not_found": "لم يتم العثور على المحادثة المصدر.",
+          "relay_source_unavailable": "المحادثة المصدر غير متاحة.",
+          "relay_rounds_changed": "تغيرت جولات المحادثة المصدر. اختر النطاق مرة أخرى.",
+          "relay_scope_empty": "اختر جولة مكتملة واحدة على الأقل.",
+          "relay_budget_exceeded": "يتجاوز سياق الترحيل ميزانية Token.",
+          "relay_summary_unavailable": "الملخص غير متاح.",
+          "relay_summary_invalid": "الملخص غير صالح. أنشئه مرة أخرى.",
+          "relay_summary_input_too_large": "يتجاوز إدخال الملخص الحجم المسموح به.",
+          "relay_model_changed": "تغير النموذج الهدف. عاين سياق الترحيل مرة أخرى.",
+          "relay_consume_conflict": "استخدمت عملية إرسال أخرى سياق الترحيل.",
+          "relay_send_uncertain": "نتيجة الإرسال غير مؤكدة. حدّث الصفحة وتحقق من المصدر.",
+          "relay_immutable_snapshot": "لا يمكن تغيير لقطة الترحيل."
+        }
+      },
       "acpConnections": {
         "actions": {
           "openAgentsSettings": "فتح إعدادات الوكلاء",

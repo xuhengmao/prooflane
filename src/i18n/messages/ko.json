@@ -53,7 +53,20 @@
       "office_tools": "오피스 도구",
       "skill_packs": "스킬 팩",
       "quick_messages": "빠른 메시지",
-      "logs": "실행 로그"
+      "logs": "실행 로그",
+      "conversation_capabilities": "대화 기능"
+    }
+  },
+  "ConversationCapabilities": {
+    "title": "대화 기능",
+    "description": "새 대화를 시작하기 전에 선택한 대화의 컨텍스트를 필요할 때만 가져옵니다.",
+    "relay": {
+      "title": "대화 이어가기",
+      "description": "새 대화를 만들 때 선택한 이전 컨텍스트를 미리 보고 첨부할 수 있습니다.",
+      "enabled": "대화 이어가기 사용",
+      "loading": "설정을 불러오는 중",
+      "saving": "설정을 저장하는 중",
+      "saveFailed": "대화 이어가기 설정을 저장하지 못했습니다: {message}"
     }
   },
   "AppearanceSettings": {
@@ -2506,6 +2519,40 @@
       "diffDescriptionConflict": "{path} · 디스크 vs 저장되지 않음"
     },
     "chat": {
+      "relay": {
+        "title": "대화 이어가기",
+        "add": "이전 대화 추가",
+        "source": "원본 대화",
+        "scope": "이어가기 범위",
+        "currentProject": "현재 프로젝트",
+        "allProjects": "모든 프로젝트",
+        "search": "대화 검색",
+        "recentRounds": "최근 10개 라운드",
+        "customRounds": "라운드 직접 선택",
+        "summary": "요약",
+        "summaryLoading": "요약을 생성하는 중",
+        "summaryUnavailable": "요약을 사용할 수 없습니다",
+        "preview": "이어가기 컨텍스트 미리보기",
+        "budgetExceeded": "컨텍스트 예산을 초과했습니다",
+        "sourceUnavailable": "이어가기 컨텍스트를 준비하지 못했습니다. 다시 시도하세요.",
+        "removed": "10초 안에 실행 취소할 수 있습니다",
+        "undo": "제거 실행 취소",
+        "errors": {
+          "relay_disabled": "대화 이어가기가 비활성화되었습니다.",
+          "relay_source_not_found": "원본 대화를 찾을 수 없습니다.",
+          "relay_source_unavailable": "원본 대화를 사용할 수 없습니다.",
+          "relay_rounds_changed": "원본 대화의 라운드가 변경되었습니다. 범위를 다시 선택하세요.",
+          "relay_scope_empty": "하나 이상의 완료된 라운드를 선택하세요.",
+          "relay_budget_exceeded": "이어가기 컨텍스트가 Token 예산을 초과했습니다.",
+          "relay_summary_unavailable": "요약을 사용할 수 없습니다.",
+          "relay_summary_invalid": "요약이 유효하지 않습니다. 다시 생성하세요.",
+          "relay_summary_input_too_large": "요약 입력이 허용 크기를 초과했습니다.",
+          "relay_model_changed": "대상 모델이 변경되었습니다. 이어가기 컨텍스트를 다시 미리 보세요.",
+          "relay_consume_conflict": "이어가기 컨텍스트가 다른 전송 작업에서 사용되었습니다.",
+          "relay_send_uncertain": "전송 결과가 확실하지 않습니다. 새로 고친 뒤 원본을 확인하세요.",
+          "relay_immutable_snapshot": "이어가기 스냅샷은 변경할 수 없습니다."
+        }
+      },
       "acpConnections": {
         "actions": {
           "openAgentsSettings": "에이전트 설정 열기",

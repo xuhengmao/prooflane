@@ -53,7 +53,20 @@
       "office_tools": "Office Tools",
       "skill_packs": "Skill Packs",
       "quick_messages": "Quick Messages",
-      "logs": "Runtime Logs"
+      "logs": "Runtime Logs",
+      "conversation_capabilities": "Conversation Capabilities"
+    }
+  },
+  "ConversationCapabilities": {
+    "title": "Conversation Capabilities",
+    "description": "Bring selected conversation context into a new conversation only when you choose to.",
+    "relay": {
+      "title": "Conversation Relay",
+      "description": "Preview and attach selected historical context when creating a new conversation.",
+      "enabled": "Enable conversation relay",
+      "loading": "Loading settings",
+      "saving": "Saving settings",
+      "saveFailed": "Failed to save conversation relay settings: {message}"
     }
   },
   "AppearanceSettings": {
@@ -2506,6 +2519,40 @@
       "diffDescriptionConflict": "{path} · disk vs unsaved"
     },
     "chat": {
+      "relay": {
+        "title": "Conversation Relay",
+        "add": "Add historical conversation",
+        "source": "Source conversation",
+        "scope": "Relay scope",
+        "currentProject": "Current project",
+        "allProjects": "All projects",
+        "search": "Search conversations",
+        "recentRounds": "Latest 10 rounds",
+        "customRounds": "Custom rounds",
+        "summary": "Summary",
+        "summaryLoading": "Generating summary",
+        "summaryUnavailable": "Summary is unavailable",
+        "preview": "Relay context preview",
+        "budgetExceeded": "Context budget exceeded",
+        "sourceUnavailable": "Could not prepare relay context. Try again.",
+        "removed": "Undo available for 10 seconds",
+        "undo": "Undo removal",
+        "errors": {
+          "relay_disabled": "Conversation relay is disabled.",
+          "relay_source_not_found": "The source conversation was not found.",
+          "relay_source_unavailable": "The source conversation is unavailable.",
+          "relay_rounds_changed": "The source conversation changed. Select the scope again.",
+          "relay_scope_empty": "Select at least one complete round.",
+          "relay_budget_exceeded": "Relay context exceeds the Token budget.",
+          "relay_summary_unavailable": "The summary is unavailable.",
+          "relay_summary_invalid": "The summary is invalid. Generate it again.",
+          "relay_summary_input_too_large": "The summary input exceeds the allowed size.",
+          "relay_model_changed": "The target model changed. Preview relay context again.",
+          "relay_consume_conflict": "Relay context was used by another send operation.",
+          "relay_send_uncertain": "The send result is uncertain. Refresh and check the source.",
+          "relay_immutable_snapshot": "The relay snapshot cannot be changed."
+        }
+      },
       "acpConnections": {
         "actions": {
           "openAgentsSettings": "Open Agents settings",

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import ar from "./messages/ar.json"
@@ -39,6 +41,32 @@ const locales = [
   ["zh-TW", zhTW],
 ] as const
 
+const relayErrorCodes = [
+  "relay_disabled",
+  "relay_source_not_found",
+  "relay_source_unavailable",
+  "relay_rounds_changed",
+  "relay_scope_empty",
+  "relay_budget_exceeded",
+  "relay_summary_unavailable",
+  "relay_summary_invalid",
+  "relay_summary_input_too_large",
+  "relay_model_changed",
+  "relay_consume_conflict",
+  "relay_send_uncertain",
+  "relay_immutable_snapshot",
+] as const
+
+const requiredReadmeClaims = [
+  "主动接力",
+  "跨智能体",
+  "范围预览",
+  "Token 预算",
+  "来源追溯",
+  "默认不会读取全部历史会话",
+  "默认不会写入长期记忆",
+]
+
 // `en.json` is the source of truth. Any missing key in another locale fails
 // the test with the exact dotted path, making translation gaps grep-able.
 describe("i18n locale key parity vs en.json", () => {
@@ -60,4 +88,66 @@ describe("i18n locale key parity vs en.json", () => {
       )
     }
   )
+})
+
+describe("conversation relay release copy", () => {
+  it("defines the required relay keys in the zh-CN reference locale", () => {
+    const referenceRelay = (zhCN as Record<string, unknown>).Folder as {
+      chat?: { relay?: { errors?: Record<string, string> } }
+    }
+    const referenceCapabilities = (zhCN as Record<string, unknown>)
+      .ConversationCapabilities
+    const referenceNav = (zhCN as Record<string, unknown>).SettingsShell as {
+      nav?: { conversation_capabilities?: string }
+    }
+
+    expect(referenceNav.nav?.conversation_capabilities).toEqual(
+      expect.any(String)
+    )
+    expect(referenceCapabilities).toEqual(expect.any(Object))
+    expect(referenceRelay.chat?.relay).toEqual(expect.any(Object))
+    expect(
+      Object.keys(referenceRelay.chat?.relay?.errors ?? {}).sort()
+    ).toEqual([...relayErrorCodes].sort())
+  })
+
+  it.each(locales)(
+    "%s matches the zh-CN conversation relay key sets",
+    (_locale, messages) => {
+      const referenceMessages = zhCN as MessageNode
+      const localeMessages = messages as MessageNode
+      const referenceRelay = (referenceMessages as Record<string, MessageNode>)
+        .Folder as Record<string, MessageNode>
+      const localeRelay = (localeMessages as Record<string, MessageNode>)
+        .Folder as Record<string, MessageNode>
+
+      const referenceCapabilities = (
+        referenceMessages as Record<string, MessageNode>
+      ).ConversationCapabilities
+      const localeCapabilities = (localeMessages as Record<string, MessageNode>)
+        .ConversationCapabilities
+
+      expect(
+        collectKeys(referenceCapabilities, "ConversationCapabilities").sort()
+      ).toEqual(
+        collectKeys(localeCapabilities, "ConversationCapabilities").sort()
+      )
+      expect(
+        collectKeys(
+          referenceRelay.chat as MessageNode,
+          "Folder.chat.relay"
+        ).sort()
+      ).toEqual(
+        collectKeys(localeRelay.chat as MessageNode, "Folder.chat.relay").sort()
+      )
+    }
+  )
+
+  it("documents the controllable relay guarantees in README", () => {
+    const readme = readFileSync(resolve(process.cwd(), "README.md"), "utf8")
+
+    for (const claim of requiredReadmeClaims) {
+      expect(readme).toContain(claim)
+    }
+  })
 })

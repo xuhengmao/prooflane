@@ -53,7 +53,20 @@
       "office_tools": "Ferramentas de escritório",
       "skill_packs": "Pacotes de habilidades",
       "quick_messages": "Mensagens rápidas",
-      "logs": "Registros de execução"
+      "logs": "Registros de execução",
+      "conversation_capabilities": "Recursos de conversa"
+    }
+  },
+  "ConversationCapabilities": {
+    "title": "Recursos de conversa",
+    "description": "Leve o contexto de uma conversa selecionada para uma nova conversa somente quando você escolher.",
+    "relay": {
+      "title": "Revezamento de conversa",
+      "description": "Visualize e anexe o contexto histórico selecionado ao criar uma nova conversa.",
+      "enabled": "Ativar revezamento de conversa",
+      "loading": "Carregando configurações",
+      "saving": "Salvando configurações",
+      "saveFailed": "Falha ao salvar as configurações do revezamento de conversa: {message}"
     }
   },
   "AppearanceSettings": {
@@ -2506,6 +2519,40 @@
       "diffDescriptionConflict": "{path} · disco vs não salvo"
     },
     "chat": {
+      "relay": {
+        "title": "Revezamento de conversa",
+        "add": "Adicionar conversa anterior",
+        "source": "Conversa de origem",
+        "scope": "Escopo do revezamento",
+        "currentProject": "Projeto atual",
+        "allProjects": "Todos os projetos",
+        "search": "Pesquisar conversas",
+        "recentRounds": "Últimas 10 rodadas",
+        "customRounds": "Rodadas personalizadas",
+        "summary": "Resumo",
+        "summaryLoading": "Gerando resumo",
+        "summaryUnavailable": "O resumo não está disponível",
+        "preview": "Prévia do contexto de revezamento",
+        "budgetExceeded": "Orçamento de contexto excedido",
+        "sourceUnavailable": "Não foi possível preparar o contexto de revezamento. Tente novamente.",
+        "removed": "Desfazer disponível por 10 segundos",
+        "undo": "Desfazer remoção",
+        "errors": {
+          "relay_disabled": "O revezamento de conversa está desativado.",
+          "relay_source_not_found": "A conversa de origem não foi encontrada.",
+          "relay_source_unavailable": "A conversa de origem não está disponível.",
+          "relay_rounds_changed": "A conversa de origem mudou. Selecione o escopo novamente.",
+          "relay_scope_empty": "Selecione ao menos uma rodada completa.",
+          "relay_budget_exceeded": "O contexto de revezamento excede o orçamento de Token.",
+          "relay_summary_unavailable": "O resumo não está disponível.",
+          "relay_summary_invalid": "O resumo é inválido. Gere-o novamente.",
+          "relay_summary_input_too_large": "A entrada do resumo excede o tamanho permitido.",
+          "relay_model_changed": "O modelo de destino mudou. Visualize o contexto de revezamento novamente.",
+          "relay_consume_conflict": "O contexto de revezamento foi usado por outra operação de envio.",
+          "relay_send_uncertain": "O resultado do envio é incerto. Atualize e verifique a origem.",
+          "relay_immutable_snapshot": "A captura do revezamento não pode ser alterada."
+        }
+      },
       "acpConnections": {
         "actions": {
           "openAgentsSettings": "Abrir configurações de agentes",
