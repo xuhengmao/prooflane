@@ -135,35 +135,39 @@ export function ComposerRuntimeBarContent({
       </div>
 
       <div
-        className="prooflane-composer-runtime-secondary flex shrink-0 items-center gap-x-3"
+        className="prooflane-composer-runtime-secondary flex min-w-0 shrink items-center gap-x-3 overflow-hidden"
         data-testid="composer-runtime-secondary"
       >
         {editStats.files > 0 && (
-          <span className="inline-flex items-center gap-1">
+          <span className="prooflane-composer-runtime-secondary-stat flex min-w-0 items-center gap-1">
             <FilePenLine aria-hidden="true" className="h-3 w-3 shrink-0" />
-            {editSummary}
+            <span className="prooflane-composer-runtime-secondary-label truncate">
+              {editSummary}
+            </span>
           </span>
         )}
 
         {toolCallLabel !== null && (
-          <span className="inline-flex items-center gap-1">
+          <span className="prooflane-composer-runtime-secondary-stat flex min-w-0 items-center gap-1">
             <Wrench aria-hidden="true" className="h-3 w-3 shrink-0" />
-            {toolCallLabel}
+            <span className="prooflane-composer-runtime-secondary-label truncate">
+              {toolCallLabel}
+            </span>
           </span>
         )}
-
-        {status === "failed" && onRetry && (
-          <button
-            aria-label={retryLabel}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onRetry}
-            title={retryLabel}
-            type="button"
-          >
-            <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-          </button>
-        )}
       </div>
+
+      {status === "failed" && onRetry && (
+        <button
+          aria-label={retryLabel}
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={onRetry}
+          title={retryLabel}
+          type="button"
+        >
+          <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   )
 }

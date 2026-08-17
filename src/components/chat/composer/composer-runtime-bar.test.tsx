@@ -94,6 +94,42 @@ describe("ComposerRuntimeBarContent", () => {
     await user.click(screen.getByRole("button", { name: "Retry" }))
     expect(onRetry).toHaveBeenCalledOnce()
   })
+
+  it("keeps primary details and retry available in a narrow runtime bar", () => {
+    const onRetry = vi.fn()
+
+    render(
+      <div style={{ width: "18rem" }}>
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <ComposerRuntimeBarContent
+            {...defaultProps}
+            editStats={{ files: 2, additions: 500, deletions: 100 }}
+            onRetry={onRetry}
+            phase="streaming"
+            status="failed"
+            statusLabel="Connection failed while waiting for the agent response"
+            toolCallCount={20}
+          />
+        </NextIntlClientProvider>
+      </div>
+    )
+
+    const bar = screen.getByTestId("composer-runtime-bar")
+    const primary = screen.getByTestId("composer-runtime-primary")
+    const secondary = screen.getByTestId("composer-runtime-secondary")
+    const retry = screen.getByRole("button", { name: "Retry" })
+
+    expect(primary).toContainElement(screen.getByRole("status"))
+    expect(primary).toContainElement(
+      screen.getByTestId("composer-status-elapsed")
+    )
+    expect(secondary).toHaveClass("min-w-0", "shrink")
+    expect(
+      secondary.querySelectorAll(".prooflane-composer-runtime-secondary-label")
+    ).toHaveLength(2)
+    expect(retry).toHaveClass("shrink-0")
+    expect(retry.parentElement).toBe(bar)
+  })
 })
 
 describe("isComposerRuntimeStatus", () => {

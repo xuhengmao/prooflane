@@ -2261,7 +2261,17 @@ div.monaco-diff-editor.side-by-side .editor.modified {
 
 @container (max-width: 28rem) {
   .prooflane-composer-runtime-secondary {
-    font-size: 0.6875rem;
+    gap: 0.5rem;
+  }
+
+  .prooflane-composer-runtime-secondary-label {
+    max-width: 4.5rem;
+  }
+}
+
+@container (max-width: 22rem) {
+  .prooflane-composer-runtime-secondary-label {
+    display: none;
   }
 }
 
