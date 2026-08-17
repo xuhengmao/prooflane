@@ -30,6 +30,14 @@ describe("estimateVisibleTokens", () => {
     expect(estimateVisibleTokens("こんにちは 한글")).toBe(5 + 2)
     expect(estimateVisibleTokens("  \n\t")).toBe(0)
   })
+
+  it("counts Han script ranges and Japanese/Korean scripts directly", () => {
+    expect(estimateVisibleTokens("𠀀豈")).toBe(2)
+    expect(estimateVisibleTokens("あア가")).toBe(3)
+    expect(estimateVisibleTokens("ab𠀀 cd")).toBe(
+      1 + Math.ceil("abcd".length / 4)
+    )
+  })
 })
 
 describe("extractVisibleAssistantText", () => {
@@ -160,6 +168,57 @@ describe("LiveTokenRateSampler", () => {
         now: 3000,
       })
     ).toEqual({ tokensPerSecond: 1, source: "estimated" })
+
+    expect(
+      update(sampler, {
+        providerSample: { runId: "run-1", outputTokens: -1 },
+        visibleText: "abcd1234wxyz00000000",
+        now: 4000,
+      })
+    ).toEqual({ tokensPerSecond: 1, source: "estimated" })
+  })
+
+  it("resets the sample window and published snapshot when switching sources in either direction", () => {
+    const sampler = new LiveTokenRateSampler()
+
+    update(sampler, {
+      providerSample: { runId: "run-1", outputTokens: 0 },
+      now: 0,
+    })
+    expect(
+      update(sampler, {
+        providerSample: { runId: "run-1", outputTokens: 10 },
+        now: 1000,
+      })
+    ).toEqual({ tokensPerSecond: 10, source: "provider" })
+
+    expect(
+      update(sampler, {
+        visibleText: "abcd1234",
+        now: 1200,
+      })
+    ).toEqual({ tokensPerSecond: null, source: "estimated" })
+    expect(
+      update(sampler, {
+        visibleText: "abcd1234wxyz",
+        now: 1700,
+      })
+    ).toEqual({ tokensPerSecond: 2, source: "estimated" })
+
+    expect(
+      update(sampler, {
+        providerSample: { runId: "run-1", outputTokens: 30 },
+        visibleText: "abcd1234wxyz0000",
+        now: 1900,
+      })
+    ).toEqual({ tokensPerSecond: null, source: "provider" })
+    expect(
+      update(sampler, {
+        providerSample: { runId: "run-1", outputTokens: 36 },
+        visibleText: "abcd1234wxyz00000000",
+        now: 2400,
+      })
+    ).toEqual({ tokensPerSecond: 12, source: "provider" })
   })
 
   it("publishes zero for active windows with no token growth", () => {
@@ -239,6 +298,46 @@ describe("LiveTokenRateSampler", () => {
         runId: "run-2",
         visibleText: "abcd1234wxyz",
         now: 12_000,
+      })
+    ).toEqual({ tokensPerSecond: null, source: "estimated" })
+  })
+
+  it("resets when visible text shrinks even if estimated tokens stay the same", () => {
+    const sampler = new LiveTokenRateSampler()
+
+    update(sampler, { visibleText: "abcd", now: 0 })
+    expect(update(sampler, { visibleText: "abcdefgh", now: 1000 })).toEqual({
+      tokensPerSecond: 1,
+      source: "estimated",
+    })
+
+    expect(update(sampler, { visibleText: "abc", now: 1500 })).toEqual({
+      tokensPerSecond: null,
+      source: "estimated",
+    })
+  })
+
+  it("rejects non-finite timestamps without publishing invalid rates", () => {
+    const sampler = new LiveTokenRateSampler()
+
+    update(sampler, { visibleText: "abcd", now: 0 })
+
+    expect(
+      update(sampler, {
+        providerSample: { runId: "run-1", outputTokens: 10 },
+        now: Number.NaN,
+      })
+    ).toEqual({ tokensPerSecond: null, source: "estimated" })
+    expect(
+      update(sampler, {
+        providerSample: { runId: "run-1", outputTokens: 10 },
+        now: Number.POSITIVE_INFINITY,
+      })
+    ).toEqual({ tokensPerSecond: null, source: "estimated" })
+    expect(
+      update(sampler, {
+        providerSample: { runId: "run-1", outputTokens: 10 },
+        now: Number.NEGATIVE_INFINITY,
       })
     ).toEqual({ tokensPerSecond: null, source: "estimated" })
   })

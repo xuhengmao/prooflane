@@ -27,6 +27,10 @@ interface TokenSample {
 
 const WINDOW_MS = 3_000
 const PUBLISH_THROTTLE_MS = 500
+const HAN_SCRIPT = /^\p{Script=Han}$/u
+const HIRAGANA_SCRIPT = /^\p{Script=Hiragana}$/u
+const KATAKANA_SCRIPT = /^\p{Script=Katakana}$/u
+const HANGUL_SCRIPT = /^\p{Script=Hangul}$/u
 
 function isFiniteNumber(value: number): boolean {
   return Number.isFinite(value)
@@ -36,13 +40,12 @@ function isWhitespace(codePoint: number): boolean {
   return /\s/u.test(String.fromCodePoint(codePoint))
 }
 
-function isDirectlyCountedCjk(codePoint: number): boolean {
+function isDirectlyCountedScript(char: string): boolean {
   return (
-    (codePoint >= 0x4e00 && codePoint <= 0x9fff) ||
-    (codePoint >= 0x3400 && codePoint <= 0x4dbf) ||
-    (codePoint >= 0x3040 && codePoint <= 0x309f) ||
-    (codePoint >= 0x30a0 && codePoint <= 0x30ff) ||
-    (codePoint >= 0xac00 && codePoint <= 0xd7af)
+    HAN_SCRIPT.test(char) ||
+    HIRAGANA_SCRIPT.test(char) ||
+    KATAKANA_SCRIPT.test(char) ||
+    HANGUL_SCRIPT.test(char)
   )
 }
 
@@ -65,7 +68,7 @@ function tokensFromText(text: string): number {
   for (const char of text) {
     const codePoint = char.codePointAt(0)
     if (codePoint === undefined || isWhitespace(codePoint)) continue
-    if (isDirectlyCountedCjk(codePoint)) {
+    if (isDirectlyCountedScript(char)) {
       cjk += 1
     } else {
       other += 1
@@ -73,6 +76,10 @@ function tokensFromText(text: string): number {
   }
 
   return cjk + Math.ceil(other / 4)
+}
+
+function visibleTextLength(text: string): number {
+  return Array.from(text).length
 }
 
 function hasReadableProviderSample(
@@ -108,6 +115,7 @@ export class LiveTokenRateSampler {
   private runId: string | null = null
   private samples: TokenSample[] = []
   private lastVisibleTokens = 0
+  private lastVisibleTextLength = 0
   private lastObservedAt = Number.NEGATIVE_INFINITY
   private lastPublishedAt: number | null = null
   private lastPublishedSnapshot: LiveTokenRateSnapshot = buildSnapshot(
@@ -115,19 +123,23 @@ export class LiveTokenRateSampler {
     "estimated"
   )
   private lastProviderTokens: number | null = null
+  private currentSource: LiveTokenRateSource | null = null
 
   reset(): void {
     this.runId = null
     this.samples = []
     this.lastVisibleTokens = 0
+    this.lastVisibleTextLength = 0
     this.lastObservedAt = Number.NEGATIVE_INFINITY
     this.lastPublishedAt = null
     this.lastPublishedSnapshot = buildSnapshot(null, "estimated")
     this.lastProviderTokens = null
+    this.currentSource = null
   }
 
   update(input: LiveTokenRateInput): LiveTokenRateSnapshot {
     const visibleTokens = estimateVisibleTokens(input.visibleText)
+    const visibleLength = visibleTextLength(input.visibleText)
     const providerIsReadable = hasReadableProviderSample(input)
     const providerRolledBack =
       providerIsReadable &&
@@ -141,7 +153,7 @@ export class LiveTokenRateSampler {
 
     if (!input.active || !input.runId || !Number.isFinite(input.now)) {
       this.reset()
-      return buildSnapshot(null, source)
+      return buildSnapshot(null, "estimated")
     }
 
     const runChanged = this.runId !== null && this.runId !== input.runId
@@ -149,14 +161,17 @@ export class LiveTokenRateSampler {
     const gapExceeded =
       this.lastObservedAt !== Number.NEGATIVE_INFINITY &&
       input.now - this.lastObservedAt > WINDOW_MS
-    const textShrank = visibleTokens < this.lastVisibleTokens
+    const sourceChanged =
+      this.currentSource !== null && this.currentSource !== source
+    const textShrank = visibleLength < this.lastVisibleTextLength
 
     if (
       runChanged ||
       timeRolledBack ||
       gapExceeded ||
       textShrank ||
-      providerRolledBack
+      providerRolledBack ||
+      sourceChanged
     ) {
       this.reset()
     }
@@ -170,7 +185,9 @@ export class LiveTokenRateSampler {
 
     this.runId = input.runId
     this.lastVisibleTokens = visibleTokens
+    this.lastVisibleTextLength = visibleLength
     this.lastObservedAt = input.now
+    this.currentSource = sampleSource
     this.samples.push({ now: input.now, tokens: sampleTokens })
     this.pruneSamples(input.now)
 
