@@ -3022,7 +3022,10 @@
         "elapsedHours": "{value}時間",
         "elapsedMinutes": "{value}分",
         "elapsedSeconds": "{value}秒",
-        "toolUseCount": "{count} 回のツール使用"
+        "toolUseCount": "{count} 回のツール使用",
+        "outputRatePending": "出力速度の取得中",
+        "outputRateEstimated": "推定出力速度: {value} トークン/秒",
+        "outputRateMeasured": "実測出力速度: {value} トークン/秒"
       },
       "jsonTree": {
         "viewRaw": "生の JSON を表示",

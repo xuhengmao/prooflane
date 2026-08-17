@@ -3022,7 +3022,10 @@
         "elapsedHours": "{value} 小時",
         "elapsedMinutes": "{value} 分鐘",
         "elapsedSeconds": "{value} 秒",
-        "toolUseCount": "{count} 次工具呼叫"
+        "toolUseCount": "{count} 次工具呼叫",
+        "outputRatePending": "輸出速度待定",
+        "outputRateEstimated": "估算輸出速度：{value} 個 tokens/s",
+        "outputRateMeasured": "實測輸出速度：{value} 個 tokens/s"
       },
       "jsonTree": {
         "viewRaw": "檢視原始 JSON",

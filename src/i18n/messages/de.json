@@ -3022,7 +3022,10 @@
         "elapsedHours": "{value} Std",
         "elapsedMinutes": "{value} Min",
         "elapsedSeconds": "{value} Sek",
-        "toolUseCount": "{count, plural, one {# Tool-Aufruf} other {# Tool-Aufrufe}}"
+        "toolUseCount": "{count, plural, one {# Tool-Aufruf} other {# Tool-Aufrufe}}",
+        "outputRatePending": "Ausgabegeschwindigkeit ausstehend",
+        "outputRateEstimated": "Geschätzte Ausgabegeschwindigkeit: {value} Token pro Sekunde",
+        "outputRateMeasured": "Gemessene Ausgabegeschwindigkeit: {value} Token pro Sekunde"
       },
       "jsonTree": {
         "viewRaw": "Rohes JSON anzeigen",

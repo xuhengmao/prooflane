@@ -2,10 +2,11 @@
 
 import type { JSX } from "react"
 import { useLocale, useTranslations } from "next-intl"
-import { Bot, FilePenLine, RotateCcw, Timer, Wrench } from "lucide-react"
+import { Bot, FilePenLine, Gauge, RotateCcw, Timer, Wrench } from "lucide-react"
 
 import { AgentIcon } from "@/components/agent-icon"
 import type { ComposerStatus } from "@/components/chat/composer/composer-status"
+import { useLiveTokenRate } from "@/components/chat/composer/use-live-token-rate"
 import {
   countLiveToolCalls,
   extractLiveEditStats,
@@ -13,6 +14,7 @@ import {
   type LiveEditStats,
   type LiveTurnPhase,
 } from "@/components/message/live-turn-stats"
+import type { LiveTokenRateSnapshot } from "@/components/chat/composer/live-token-rate"
 import type { AgentType } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { useConversationRuntimeStore } from "@/stores/conversation-runtime-store"
@@ -51,10 +53,20 @@ export interface ComposerRuntimeBarContentProps extends Omit<
   phase: LiveTurnPhase | null
   editStats: LiveEditStats
   toolCallCount: number
+  tokenRate: LiveTokenRateSnapshot
 }
 
 function formatCompactInt(value: number, formatter: Intl.NumberFormat): string {
   return value < 1000 ? String(value) : formatter.format(value)
+}
+
+function formatTokenRate(snapshot: LiveTokenRateSnapshot): string {
+  const { tokensPerSecond, source } = snapshot
+  if (tokensPerSecond === null) return "--/s"
+  if (tokensPerSecond === 0) return "0/s"
+  return source === "estimated"
+    ? `≈${tokensPerSecond}/s`
+    : `${tokensPerSecond}/s`
 }
 
 export function ComposerRuntimeBarContent({
@@ -67,6 +79,7 @@ export function ComposerRuntimeBarContent({
   phase,
   editStats,
   toolCallCount,
+  tokenRate,
 }: ComposerRuntimeBarContentProps): JSX.Element {
   const locale = useLocale()
   const tLive = useTranslations("Folder.chat.liveTurnStats")
@@ -77,6 +90,16 @@ export function ComposerRuntimeBarContent({
   })
   const toolCallLabel =
     toolCallCount > 0 ? tLive("toolUseCount", { count: toolCallCount }) : null
+  const tokenRateLabel =
+    tokenRate.tokensPerSecond === null
+      ? tLive("outputRatePending")
+      : tokenRate.source === "estimated"
+        ? tLive("outputRateEstimated", {
+            value: tokenRate.tokensPerSecond,
+          })
+        : tLive("outputRateMeasured", {
+            value: tokenRate.tokensPerSecond,
+          })
   const editSummary = `${editStats.files}F +${formatCompactInt(
     editStats.additions,
     compactFormatter
@@ -131,6 +154,20 @@ export function ComposerRuntimeBarContent({
           >
             <Timer aria-hidden="true" className="h-3 w-3 shrink-0" />
             {elapsedLabel}
+          </span>
+        )}
+
+        {activeRun && (
+          <span
+            className="prooflane-composer-runtime-token-rate inline-flex shrink-0 items-center gap-1"
+            aria-label={tokenRateLabel}
+            data-testid="composer-token-rate"
+          >
+            <Gauge aria-hidden="true" className="h-3 w-3 shrink-0" />
+            <span aria-hidden="true" dir="ltr">
+              {formatTokenRate(tokenRate)}
+            </span>
+            <span className="sr-only">{tokenRateLabel}</span>
           </span>
         )}
       </div>
@@ -197,6 +234,10 @@ export function ComposerRuntimeBar({
     ? extractLiveEditStats(liveMessage)
     : { files: 0, additions: 0, deletions: 0 }
   const toolCallCount = liveMessage ? countLiveToolCalls(liveMessage) : 0
+  const tokenRate = useLiveTokenRate({
+    active: activeRun,
+    liveMessage,
+  })
 
   return (
     <ComposerRuntimeBarContent
@@ -204,6 +245,7 @@ export function ComposerRuntimeBar({
       editStats={editStats}
       phase={phase}
       toolCallCount={toolCallCount}
+      tokenRate={tokenRate}
     />
   )
 }

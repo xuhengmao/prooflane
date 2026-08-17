@@ -3022,7 +3022,10 @@
         "elapsedHours": "{value} h",
         "elapsedMinutes": "{value} min",
         "elapsedSeconds": "{value} s",
-        "toolUseCount": "{count, plural, one {# appel d'outil} other {# appels d'outil}}"
+        "toolUseCount": "{count, plural, one {# appel d'outil} other {# appels d'outil}}",
+        "outputRatePending": "Vitesse de sortie en attente",
+        "outputRateEstimated": "Vitesse de sortie estimée : {value} jetons par seconde",
+        "outputRateMeasured": "Vitesse de sortie mesurée : {value} jetons par seconde"
       },
       "jsonTree": {
         "viewRaw": "Afficher le JSON brut",

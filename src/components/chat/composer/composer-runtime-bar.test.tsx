@@ -10,6 +10,7 @@ import {
   isComposerRuntimeStatus,
   type ComposerRuntimeBarContentProps,
 } from "./composer-runtime-bar"
+import type { LiveTokenRateSnapshot } from "./live-token-rate"
 import enMessages from "@/i18n/messages/en.json"
 
 const defaultProps: ComposerRuntimeBarContentProps = {
@@ -21,6 +22,7 @@ const defaultProps: ComposerRuntimeBarContentProps = {
   phase: "thinking",
   editStats: { files: 0, additions: 0, deletions: 0 },
   toolCallCount: 0,
+  tokenRate: { tokensPerSecond: null, source: "estimated" },
 }
 
 const runtimeGridColumns = "grid-cols-[minmax(12rem,1fr)_minmax(0,auto)_auto]"
@@ -64,7 +66,79 @@ function renderRuntimeBar(
   )
 }
 
+function makeTokenRate(
+  overrides: Partial<LiveTokenRateSnapshot>
+): LiveTokenRateSnapshot {
+  return {
+    tokensPerSecond: null,
+    source: "estimated",
+    ...overrides,
+  }
+}
+
 describe("ComposerRuntimeBarContent", () => {
+  it("shows a compact token rate without leaking token wording into the visible text", () => {
+    renderRuntimeBar({
+      tokenRate: makeTokenRate({ tokensPerSecond: 96, source: "estimated" }),
+    })
+
+    const rate = screen.getByTestId("composer-token-rate")
+    const visibleRate = rate.querySelector('[aria-hidden="true"][dir="ltr"]')
+
+    expect(rate).toHaveTextContent("≈96/s")
+    expect(visibleRate).toHaveTextContent("≈96/s")
+    expect(visibleRate).not.toHaveTextContent(/token/i)
+    expect(rate).toHaveAccessibleName(
+      "Estimated output speed: 96 tokens per second"
+    )
+    expect(rate).not.toHaveAttribute("aria-live")
+  })
+
+  it("formats pending, measured, and zero-rate states distinctly", () => {
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ComposerRuntimeBarContent
+          {...defaultProps}
+          tokenRate={makeTokenRate({
+            tokensPerSecond: null,
+            source: "estimated",
+          })}
+        />
+      </NextIntlClientProvider>
+    )
+
+    const rate = screen.getByTestId("composer-token-rate")
+    expect(rate).toHaveTextContent("--/s")
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ComposerRuntimeBarContent
+          {...defaultProps}
+          tokenRate={makeTokenRate({ tokensPerSecond: 96, source: "provider" })}
+        />
+      </NextIntlClientProvider>
+    )
+
+    expect(rate).toHaveTextContent("96/s")
+    expect(rate).toHaveAccessibleName(
+      "Measured output speed: 96 tokens per second"
+    )
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ComposerRuntimeBarContent
+          {...defaultProps}
+          tokenRate={makeTokenRate({ tokensPerSecond: 0, source: "estimated" })}
+        />
+      </NextIntlClientProvider>
+    )
+
+    expect(rate).toHaveTextContent("0/s")
+    expect(rate).toHaveAccessibleName(
+      "Estimated output speed: 0 tokens per second"
+    )
+  })
+
   it("shows all runtime details without placing volatile counters in aria-live", () => {
     renderRuntimeBar({
       status: "tool_running",
@@ -73,6 +147,7 @@ describe("ComposerRuntimeBarContent", () => {
       phase: "streaming",
       editStats: { files: 2, additions: 5, deletions: 1 },
       toolCallCount: 2,
+      tokenRate: makeTokenRate({ tokensPerSecond: 96, source: "estimated" }),
     })
 
     const bar = screen.getByTestId("composer-runtime-bar")
@@ -102,6 +177,9 @@ describe("ComposerRuntimeBarContent", () => {
     expect(screen.getByTestId("composer-runtime-agent")).toHaveClass(
       "animate-pulse",
       "motion-reduce:animate-none"
+    )
+    expect(screen.getByTestId("composer-token-rate")).not.toHaveAttribute(
+      "aria-live"
     )
   })
 
@@ -142,6 +220,10 @@ describe("ComposerRuntimeBarContent", () => {
             status="failed"
             statusLabel="Connection failed while waiting for the agent response"
             toolCallCount={20}
+            tokenRate={makeTokenRate({
+              tokensPerSecond: null,
+              source: "estimated",
+            })}
           />
         </NextIntlClientProvider>
       </div>
@@ -183,6 +265,10 @@ describe("ComposerRuntimeBarContent", () => {
             status="failed"
             statusLabel="Connection failed while waiting for the agent response"
             toolCallCount={20}
+            tokenRate={makeTokenRate({
+              tokensPerSecond: null,
+              source: "estimated",
+            })}
           />
         </NextIntlClientProvider>
       </div>

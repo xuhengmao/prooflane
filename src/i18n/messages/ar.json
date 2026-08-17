@@ -3022,7 +3022,10 @@
         "elapsedHours": "{value}س",
         "elapsedMinutes": "{value}د",
         "elapsedSeconds": "{value}ث",
-        "toolUseCount": "{count} استخدام للأداة"
+        "toolUseCount": "{count} استخدام للأداة",
+        "outputRatePending": "سرعة الخرج قيد الانتظار",
+        "outputRateEstimated": "سرعة الخرج المقدرة: {value} رمزًا في الثانية",
+        "outputRateMeasured": "سرعة الخرج المقاسة: {value} رمزًا في الثانية"
       },
       "jsonTree": {
         "viewRaw": "عرض JSON الخام",
