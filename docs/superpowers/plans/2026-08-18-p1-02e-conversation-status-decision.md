@@ -441,7 +441,7 @@ fn parse_questions_accepts_free_text_but_rejects_one_option() {
 ```powershell
 Set-Location src-tauri
 cargo test --features test-utils parse_questions_accepts_free_text_but_rejects_one_option
-cargo test --no-default-features --bin codeg-mcp ask_user_question_schema_supports_structured_decisions_and_free_text
+cargo test --lib --no-default-features ask_user_question_schema_supports_structured_decisions_and_free_text
 ```
 
 预期：第一条因 `MIN_OPTIONS = 2` 失败；第二条因当前 Schema 只有 `minItems: 2` 且描述未禁止手工字母回复而失败。
@@ -487,7 +487,7 @@ if opts.len() == 1 || opts.len() > MAX_OPTIONS {
 Set-Location src-tauri
 cargo fmt --all -- --check
 cargo test --features test-utils parse_questions
-cargo test --no-default-features --bin codeg-mcp ask_user_question
+cargo test --lib --no-default-features ask_user_question
 ```
 
 预期：0 项自由输入通过，1 项和超限继续失败，原有多选/拒绝/渲染测试不回归。
@@ -646,7 +646,7 @@ Set-Location src-tauri
 cargo fmt --all -- --check
 cargo test --features test-utils
 cargo clippy --all-targets --features test-utils -- -D warnings
-cargo test --no-default-features --bin codeg-mcp
+cargo test --lib --no-default-features
 cargo clippy --no-default-features --bin codeg-mcp -- -D warnings
 ```
 
