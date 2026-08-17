@@ -16305,6 +16305,9 @@ model = "gpt"
         drop(finalizer);
         tokio::time::advance(std::time::Duration::from_secs(46)).await;
         tokio::task::yield_now().await;
+        // SQLx also uses Tokio time for its 30-second pool acquisition timeout.
+        // Resume real time before touching the single-connection SQLite test DB.
+        tokio::time::resume();
         let still_claimed = get_by_id(&db.conn, pack.id).await.unwrap();
         assert_eq!(still_claimed.status, "attached");
         assert_eq!(
@@ -16315,7 +16318,6 @@ model = "gpt"
         sender
             .send(crate::acp::connection::RelayPromptOutcome::Accepted)
             .unwrap();
-        tokio::time::resume();
 
         let consumed = tokio::time::timeout(std::time::Duration::from_secs(2), async {
             loop {
