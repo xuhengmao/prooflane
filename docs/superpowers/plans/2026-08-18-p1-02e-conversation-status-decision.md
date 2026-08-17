@@ -44,7 +44,7 @@
 
 ---
 
-### 任务 1：净化工具运行状态并稳定单行布局
+### Task 1：净化工具运行状态并稳定单行布局
 
 **文件：**
 - 修改：`src/components/chat/message-input.tsx:893`
@@ -164,7 +164,7 @@ git commit -m "fix(P1-02E): 净化工具运行状态并稳定布局"
 
 ---
 
-### 任务 2：实现可验证的实时输出速度采样核心
+### Task 2：实现可验证的实时输出速度采样核心
 
 **文件：**
 - 新建：`src/components/chat/composer/live-token-rate.ts`
@@ -286,7 +286,7 @@ git commit -m "feat(P1-02E): 增加实时输出速度采样核心"
 
 ---
 
-### 任务 3：接入 React 生命周期并展示紧凑速度
+### Task 3：接入 React 生命周期并展示紧凑速度
 
 **文件：**
 - 新建：`src/components/chat/composer/use-live-token-rate.ts`
@@ -390,7 +390,7 @@ git commit -m "feat(P1-02E): 在会话状态条展示实时输出速度"
 
 ---
 
-### 任务 4：允许结构化纯自由输入并强化 Agent 调用规则
+### Task 4：允许结构化纯自由输入并强化 Agent 调用规则
 
 **文件：**
 - 修改：`src-tauri/src/acp/question.rs:42`
@@ -501,7 +501,7 @@ git commit -m "feat(P1-02E): 加固结构化决策提问协议"
 
 ---
 
-### 任务 5：加固选择卡片确认、自由输入与失败重试回归
+### Task 5：加固选择卡片确认、自由输入与失败重试回归
 
 **文件：**
 - 修改：`src/components/chat/ask-question-card.test.tsx`
@@ -561,7 +561,7 @@ git commit -m "test(P1-02E): 加固选择卡片确认与重试行为"
 
 ---
 
-### 任务 6：同步 README 的结构化选择卡片能力
+### Task 6：同步 README 的结构化选择卡片能力
 
 **文件：**
 - 修改：`README.md:43`
@@ -617,7 +617,7 @@ git commit -m "docs(P1-02E): 介绍结构化选择卡片能力"
 
 ---
 
-### 任务 7：全量门禁、视觉验收、外部文档同步和 Windows 打包
+### Task 7：全量门禁、视觉验收、外部文档同步和 Windows 打包
 
 **文件：**
 - 修改：`docs/superpowers/specs/2026-08-18-p1-02e-conversation-status-decision-design.md`
