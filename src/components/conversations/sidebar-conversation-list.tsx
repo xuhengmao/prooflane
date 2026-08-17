@@ -151,6 +151,11 @@ import {
 import { cn } from "@/lib/utils"
 import { FolderAliasLabel } from "./folder-alias-label"
 import { toErrorMessage } from "@/lib/app-error"
+import { useConversationCapabilities } from "@/hooks/use-conversation-capabilities"
+import {
+  queueRelayIntent,
+  resolveRelaySourceFolderId,
+} from "@/lib/conversation-relay"
 
 // Layout effect on the client (so the sticky overlay is positioned before
 // paint) but a no-op-safe passive effect during the static-export prerender.
@@ -764,6 +769,7 @@ export function SidebarConversationList({
   const refreshFolder = useAppWorkspaceStore((s) => s.refreshFolder)
   const refreshing = loading
   const { activeFolder } = useActiveFolder()
+  const { settings: conversationCapabilities } = useConversationCapabilities()
 
   const activeTabId = useTabStore((s) => s.activeTabId)
   const tabs = useTabStore((s) => s.tabs)
@@ -1841,6 +1847,24 @@ export function SidebarConversationList({
     [folderIndex, openNewConversationTab, openConversations]
   )
 
+  const handleRelayContinue = useCallback(
+    (sourceConversationId: number, sourceFolderId: number) => {
+      const latestConversations = useAppWorkspaceStore.getState().conversations
+      const resolvedFolderId = resolveRelaySourceFolderId(
+        sourceConversationId,
+        sourceFolderId,
+        latestConversations
+      )
+      openConversations()
+      const folder = folderIndex.get(resolvedFolderId)
+      const tabId = folder
+        ? openNewConversationTab(resolvedFolderId, folder.path)
+        : openChatModeTab()
+      queueRelayIntent({ tabId, sourceConversationId })
+    },
+    [folderIndex, openChatModeTab, openConversations, openNewConversationTab]
+  )
+
   // "Import local sessions" now lives in a dedicated picker window (scan →
   // folder-grouped multi-select → batch import). The folder context-menu entry
   // anchors the picker to its own folder; sidebar refresh arrives via the
@@ -2440,6 +2464,11 @@ export function SidebarConversationList({
         onStatusChange={handleStatusChange}
         onNewConversation={handleNewConversationForFolder}
         onTogglePin={handleTogglePin}
+        onRelayContinue={
+          conversationCapabilities.relayEnabled
+            ? handleRelayContinue
+            : undefined
+        }
         depth={row.depth}
         hasChildren={conv.child_count > 0}
         expanded={conversationExpanded.has(conv.id)}

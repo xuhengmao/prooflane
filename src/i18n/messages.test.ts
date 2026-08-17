@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import ar from "./messages/ar.json"
@@ -39,6 +41,87 @@ const locales = [
   ["zh-TW", zhTW],
 ] as const
 
+const relayErrorCodes = [
+  "relay_disabled",
+  "relay_source_not_found",
+  "relay_source_unavailable",
+  "relay_rounds_changed",
+  "relay_scope_empty",
+  "relay_budget_exceeded",
+  "relay_summary_unavailable",
+  "relay_summary_invalid",
+  "relay_summary_input_too_large",
+  "relay_model_changed",
+  "relay_consume_conflict",
+  "relay_send_uncertain",
+  "relay_immutable_snapshot",
+] as const
+
+const requiredReadmeClaims = [
+  "主动接力",
+  "跨智能体",
+  "范围预览",
+  "Token 预算",
+  "来源追溯",
+  "默认不会读取全部历史会话",
+  "默认不会写入长期记忆",
+]
+
+const requiredRelayUiKeys = [
+  "entryLoading",
+  "entryError",
+  "retry",
+  "scopeUpdateFailed",
+  "preparing",
+  "viewContent",
+  "noProject",
+  "untitledConversation",
+  "unknownProject",
+  "compactSummary",
+  "recentCompleteRounds",
+  "customCompleteRounds",
+  "conversationFallback",
+  "contentStats",
+  "stats",
+  "tokenBudget",
+  "tokenBudgetValue",
+  "conversationSummary",
+  "includedConversation",
+  "userLabel",
+  "assistantLabel",
+  "toolCalls",
+  "toolFailed",
+  "toolCompleted",
+  "input",
+  "noInput",
+  "output",
+  "noOutput",
+  "relatedFiles",
+  "emptyPreview",
+  "customRoundsCount",
+  "emptyRound",
+  "refreshContent",
+  "reprepare",
+  "sourceUpdated",
+  "modelChanged",
+  "sendUncertain",
+  "scopeValue",
+  "view",
+  "adjust",
+  "remove",
+  "continueInNewConversation",
+] as const
+
+const localizedRelayComponents = [
+  "src/components/conversations/relay/relay-entry-status.tsx",
+  "src/components/conversations/relay/relay-preview-drawer.tsx",
+  "src/components/conversations/relay/relay-context-card.tsx",
+  "src/components/conversations/relay/relay-conversation-picker.tsx",
+  "src/components/conversations/relay/relay-scope-editor.tsx",
+  "src/components/conversations/relay/relay-dialog-controller.tsx",
+  "src/components/conversations/sidebar-conversation-card.tsx",
+] as const
+
 // `en.json` is the source of truth. Any missing key in another locale fails
 // the test with the exact dotted path, making translation gaps grep-able.
 describe("i18n locale key parity vs en.json", () => {
@@ -60,4 +143,78 @@ describe("i18n locale key parity vs en.json", () => {
       )
     }
   )
+})
+
+describe("conversation relay release copy", () => {
+  it("defines the required relay keys in the zh-CN reference locale", () => {
+    const referenceRelay = (zhCN as Record<string, unknown>).Folder as {
+      chat?: { relay?: { errors?: Record<string, string> } }
+    }
+    const referenceCapabilities = (zhCN as Record<string, unknown>)
+      .ConversationCapabilities
+    const referenceNav = (zhCN as Record<string, unknown>).SettingsShell as {
+      nav?: { conversation_capabilities?: string }
+    }
+
+    expect(referenceNav.nav?.conversation_capabilities).toEqual(
+      expect.any(String)
+    )
+    expect(referenceCapabilities).toEqual(expect.any(Object))
+    expect(referenceRelay.chat?.relay).toEqual(expect.any(Object))
+    for (const key of requiredRelayUiKeys) {
+      expect(referenceRelay.chat?.relay).toHaveProperty(key)
+    }
+    expect(
+      Object.keys(referenceRelay.chat?.relay?.errors ?? {}).sort()
+    ).toEqual([...relayErrorCodes].sort())
+  })
+
+  it.each(localizedRelayComponents)(
+    "%s uses relay translations instead of visible Chinese literals",
+    (path) => {
+      const source = readFileSync(resolve(process.cwd(), path), "utf8")
+
+      expect(source).toContain('useTranslations("Folder.chat.relay")')
+      expect(source).not.toMatch(/[\u3400-\u9fff]/u)
+    }
+  )
+
+  it.each(locales)(
+    "%s matches the zh-CN conversation relay key sets",
+    (_locale, messages) => {
+      const referenceMessages = zhCN as MessageNode
+      const localeMessages = messages as MessageNode
+      const referenceFolder = (referenceMessages as Record<string, MessageNode>)
+        .Folder as Record<string, MessageNode>
+      const localeFolder = (localeMessages as Record<string, MessageNode>)
+        .Folder as Record<string, MessageNode>
+      const referenceChat = referenceFolder.chat as Record<string, MessageNode>
+      const localeChat = localeFolder.chat as Record<string, MessageNode>
+      const referenceRelay = referenceChat.relay
+      const localeRelay = localeChat.relay
+
+      const referenceCapabilities = (
+        referenceMessages as Record<string, MessageNode>
+      ).ConversationCapabilities
+      const localeCapabilities = (localeMessages as Record<string, MessageNode>)
+        .ConversationCapabilities
+
+      expect(
+        collectKeys(referenceCapabilities, "ConversationCapabilities").sort()
+      ).toEqual(
+        collectKeys(localeCapabilities, "ConversationCapabilities").sort()
+      )
+      expect(collectKeys(referenceRelay, "Folder.chat.relay").sort()).toEqual(
+        collectKeys(localeRelay, "Folder.chat.relay").sort()
+      )
+    }
+  )
+
+  it("documents the controllable relay guarantees in README", () => {
+    const readme = readFileSync(resolve(process.cwd(), "README.md"), "utf8")
+
+    for (const claim of requiredReadmeClaims) {
+      expect(readme).toContain(claim)
+    }
+  })
 })

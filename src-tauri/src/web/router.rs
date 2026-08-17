@@ -5,7 +5,7 @@ use axum::{
     http::{StatusCode, Uri},
     middleware::{self, Next},
     response::IntoResponse,
-    routing::{any, get, post},
+    routing::{any, get, patch, post},
     Json, Router,
 };
 
@@ -68,6 +68,64 @@ pub fn build_router(
         .route(
             "/list_child_conversations",
             post(handlers::conversations::list_child_conversations),
+        )
+        .route(
+            "/get_conversation_capabilities",
+            post(handlers::conversation_relay::get_conversation_capabilities),
+        )
+        .route(
+            "/update_conversation_capabilities",
+            post(handlers::conversation_relay::update_conversation_capabilities),
+        )
+        .route(
+            "/reserve_relay_preview",
+            post(handlers::conversation_relay::reserve_relay_preview),
+        )
+        .route(
+            "/preview_relay_context",
+            post(handlers::conversation_relay::preview_relay_context),
+        )
+        .route(
+            "/cancel_relay_preview",
+            post(handlers::conversation_relay::cancel_relay_preview),
+        )
+        .route(
+            "/get_relay_context_by_draft",
+            post(handlers::conversation_relay::get_relay_context_by_draft),
+        )
+        .route(
+            "/update_relay_context",
+            post(handlers::conversation_relay::update_relay_context),
+        )
+        .route(
+            "/remove_relay_context",
+            post(handlers::conversation_relay::remove_relay_context),
+        )
+        .route(
+            "/get_conversation_relay",
+            post(handlers::conversation_relay::get_conversation_relay),
+        )
+        .route(
+            "/settings/conversation-capabilities",
+            get(handlers::conversation_relay::get_conversation_capabilities)
+                .patch(handlers::conversation_relay::update_conversation_capabilities),
+        )
+        .route(
+            "/relay-context-packs/preview",
+            post(handlers::conversation_relay::preview_relay_context),
+        )
+        .route(
+            "/relay-context-packs/by-draft/{target_draft_id}",
+            get(handlers::conversation_relay::get_relay_context_by_draft_rest),
+        )
+        .route(
+            "/relay-context-packs/{relay_id}",
+            patch(handlers::conversation_relay::update_relay_context_rest)
+                .delete(handlers::conversation_relay::remove_relay_context_rest),
+        )
+        .route(
+            "/conversations/{conversation_id}/relay",
+            get(handlers::conversation_relay::get_conversation_relay_rest),
         )
         .route(
             "/get_delegation_settings",

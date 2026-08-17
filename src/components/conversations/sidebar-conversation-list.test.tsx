@@ -194,6 +194,15 @@ vi.mock("@/hooks/use-sorted-available-agents", () => ({
   }),
 }))
 
+vi.mock("@/hooks/use-conversation-capabilities", () => {
+  const value = {
+    settings: { relayEnabled: true },
+    loading: false,
+    setRelayEnabled: async () => {},
+  }
+  return { useConversationCapabilities: () => value }
+})
+
 vi.mock("@/contexts/terminal-context", () => ({
   useTerminalContext: () => stableTerminal,
 }))

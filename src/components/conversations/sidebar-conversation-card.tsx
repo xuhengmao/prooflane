@@ -53,6 +53,7 @@ import { Input } from "@/components/ui/input"
 import { ConversationStatusDot } from "./conversation-status-dot"
 import { SessionDetailsDialog } from "./session-details-dialog"
 import { AgentIcon } from "@/components/agent-icon"
+import { writeRelayDragData } from "@/lib/conversation-relay"
 
 /**
  * Horizontal indent added per delegation-nesting level. Chosen so a child's
@@ -114,6 +115,10 @@ interface SidebarConversationCardProps {
   onStatusChange: (id: number, status: ConversationStatus) => Promise<void>
   onNewConversation?: (folderId: number) => void
   onTogglePin?: (id: number, nextPinned: boolean) => void
+  onRelayContinue?: (
+    sourceConversationId: number,
+    sourceFolderId: number
+  ) => void
   /** Delegation-tree nesting depth (0 = root). Drives the per-level indent. */
   depth?: number
   /** True when `child_count > 0`: the conversation has delegation children, so
@@ -137,6 +142,7 @@ export const SidebarConversationCard = memo(function SidebarConversationCard({
   onStatusChange,
   onNewConversation,
   onTogglePin,
+  onRelayContinue,
   depth = 0,
   hasChildren = false,
   expanded = false,
@@ -147,6 +153,7 @@ export const SidebarConversationCard = memo(function SidebarConversationCard({
   const tSidebar = useTranslations("Folder.sidebar")
   const tStatus = useTranslations("Folder.statusLabels")
   const tDetails = useTranslations("Folder.sessionDetails")
+  const tRelay = useTranslations("Folder.chat.relay")
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -243,6 +250,13 @@ export const SidebarConversationCard = memo(function SidebarConversationCard({
               )}
             >
               <button
+                draggable={Boolean(onRelayContinue)}
+                onDragStart={(event) => {
+                  writeRelayDragData(event.dataTransfer, {
+                    conversationId: conversation.id,
+                    folderId: conversation.folder_id,
+                  })
+                }}
                 data-conversation-id={conversation.id}
                 onClick={handleClick}
                 onDoubleClick={handleDblClick}
@@ -520,6 +534,16 @@ export const SidebarConversationCard = memo(function SidebarConversationCard({
               </ContextMenuItem>
               <ContextMenuSeparator />
             </>
+          )}
+          {onRelayContinue && (
+            <ContextMenuItem
+              onSelect={() =>
+                onRelayContinue(conversation.id, conversation.folder_id)
+              }
+            >
+              <SquarePen className="h-4 w-4" />
+              {tRelay("continueInNewConversation")}
+            </ContextMenuItem>
           )}
           <ContextMenuItem onSelect={handleRenameOpen}>
             <Pencil className="h-4 w-4" />

@@ -53,6 +53,12 @@ import { FeedbackDialog } from "@/components/chat/feedback-dialog"
 import { AgentDiagnosticsDialog } from "@/components/settings/agent-diagnostics-dialog"
 import { useFeedbackEnabled } from "@/hooks/use-feedback-enabled"
 import { useSessionFeedback } from "@/hooks/use-session-feedback"
+import { useConversationCapabilities } from "@/hooks/use-conversation-capabilities"
+import { useRelayDraft } from "@/hooks/use-relay-draft"
+import {
+  isRelayEntryBlockingFirstSend,
+  useRelayEntryIntent,
+} from "@/hooks/use-relay-entry-intent"
 import { AgentSelector } from "@/components/chat/agent-selector"
 import { ChatInput } from "@/components/chat/chat-input"
 import { WelcomeHero, WelcomeTip } from "@/components/chat/welcome-hero"
@@ -140,6 +146,7 @@ import {
   exportAsMarkdown,
   ExportTooLongError,
 } from "@/lib/export-conversation"
+import { getConversationRelay } from "@/lib/conversation-relay"
 import { useExportLabels } from "@/lib/use-export-labels"
 import { resolveActiveSessionDetails } from "./active-session-details"
 import {
@@ -147,8 +154,17 @@ import {
   resolveConversationComposerState,
   retryConversationComposerError,
 } from "./conversation-composer-state"
+import {
+  createRelaySendAttempt,
+  resolveRelaySendBinding,
+  shouldBlockRelaySend,
+} from "./relay-send-attempt"
 import { ConversationDetailHeader } from "./conversation-detail-header"
 import { SessionDetailsDialog } from "./session-details-dialog"
+import { RelayContextCard } from "./relay/relay-context-card"
+import { RelayDialogController } from "./relay/relay-dialog-controller"
+import { RelayEntryStatus } from "./relay/relay-entry-status"
+import { isModelConfigOption } from "@/lib/model-config-groups"
 
 interface ConversationTabViewProps {
   tabId: string
@@ -248,6 +264,9 @@ const ConversationTabView = memo(function ConversationTabView({
     (s) => s.refreshConversations
   )
   const upsertFolder = useAppWorkspaceStore((s) => s.upsertFolder)
+  const relayConversations = useAppWorkspaceStore((s) => s.conversations)
+  const relayFolders = useAppWorkspaceStore((s) => s.allFolders)
+  const { settings: conversationCapabilities } = useConversationCapabilities()
   // Subscribe to ONLY this tab's own row (identified by `tabId`), not the whole
   // `tabs` array — so a sibling tab changing, or a tab-switch (isActive rides in
   // as a prop), never re-renders this keep-alive panel. `find` returns the same
@@ -371,6 +390,16 @@ const ConversationTabView = memo(function ConversationTabView({
   const mountedRef = useRef(true)
   const selectedAgentRef = useRef(selectedAgent)
   const createConversationPendingRef = useRef(false)
+  const [composerRestoreNonce, setComposerRestoreNonce] = useState(0)
+  const composerRestoreDraftRef = useRef<PromptDraft | null>(null)
+  const [relaySendPending, setRelaySendPending] = useState(false)
+  const relayForSendRef = useRef<{
+    relayId: number
+    targetDraftId: string
+  } | null>(null)
+  const clearRelayRef = useRef<() => void>(() => {})
+  const markRelayInvalidRef = useRef<(error: unknown) => void>(() => {})
+  const relaySendBlockedRef = useRef(false)
   // Single-flight guard for the eager scratch-dir prepare (on chat-mode select).
   const prepareChatDirPendingRef = useRef(false)
   const sessionIdRef = useRef<string | null>(null)
@@ -663,6 +692,10 @@ const ConversationTabView = memo(function ConversationTabView({
     () => effectiveConfigOptions ?? [],
     [effectiveConfigOptions]
   )
+  const relayTargetModel = useMemo(() => {
+    const model = connectionConfigOptions.find(isModelConfigOption)
+    return model?.kind.type === "select" ? model.kind.current_value : null
+  }, [connectionConfigOptions])
   const connectionCommands = useMemo(
     () => (connIsForOtherAgent ? [] : (conn.availableCommands ?? [])),
     [connIsForOtherAgent, conn.availableCommands]
@@ -941,6 +974,8 @@ const ConversationTabView = memo(function ConversationTabView({
       // is live and the prompt is delivered inline — never parked in the queue.
       const sendOwnTab = ownTab
 
+      if (relaySendBlockedRef.current) return
+
       if (!hasPersistedConversation && !canAutoConnect) {
         setAgentConnectError(tWelcome("enableAgentFirstPlaceholder"))
         return
@@ -977,6 +1012,9 @@ const ConversationTabView = memo(function ConversationTabView({
         return
       }
 
+      composerRestoreDraftRef.current = null
+      const relayBindingForAttempt = relayForSendRef.current
+      if (relayBindingForAttempt) setRelaySendPending(true)
       const optimisticTurn = buildOptimisticUserTurnFromDraft(
         draft,
         sharedT("attachedResources")
@@ -1015,9 +1053,26 @@ const ConversationTabView = memo(function ConversationTabView({
       // conversation drops out of `awaiting_persist` so queue auto-flush
       // isn't blocked forever. The draft is NOT re-queued (unlike the busy
       // bounce): a deterministic failure would retry — and toast — forever.
-      const onSendFailed = () => {
-        removeOptimisticTurn(effectiveConversationId, optimisticTurn.id)
-      }
+      const relayAttempt = createRelaySendAttempt({
+        binding: relayBindingForAttempt,
+        draft,
+        getDraftStorageKey: () =>
+          dbConvIdRef.current != null
+            ? buildConversationDraftStorageKey(dbConvIdRef.current)
+            : buildNewConversationDraftStorageKey(tabId),
+        removeOptimisticTurn: () =>
+          removeOptimisticTurn(effectiveConversationId, optimisticTurn.id),
+        setPending: setRelaySendPending,
+        saveDraft: saveMessageInputDraft,
+        restoreDraft: (failedDraft) => {
+          composerRestoreDraftRef.current = failedDraft
+          setComposerRestoreNonce((value) => value + 1)
+        },
+        clearDraft: clearMessageInputDraft,
+        clearRelay: () => clearRelayRef.current(),
+        markRelayInvalid: (error) => markRelayInvalidRef.current(error),
+      })
+      const onSendFailed = relayAttempt.onSendFailed
 
       // Pin the tab if it was a temporary preview (single-click opened)
       if (ownTab && !ownTab.isPinned) {
@@ -1036,8 +1091,11 @@ const ConversationTabView = memo(function ConversationTabView({
           // so viewers' synthesized user turn dedups against our own optimistic
           // turn by exact id (and never suppresses a different sender's prompt).
           clientMessageId: optimisticTurn.id,
+          relayId: relayAttempt.relayId,
+          targetDraftId: relayAttempt.targetDraftId,
           onTurnInProgress,
           onSendFailed,
+          onSendSucceeded: relayAttempt.onSendSucceeded,
         })
         return
       }
@@ -1059,6 +1117,9 @@ const ConversationTabView = memo(function ConversationTabView({
       ).slice(0, 80)
       const chatSend = sendOwnTab?.isChat === true
       const chatExistingDir = sendOwnTab?.workingDir
+      // Only a first-send draft may carry relay metadata. Existing rows and
+      // ordinary new drafts keep the legacy create/send payload unchanged.
+      const relayBinding = relayBindingForAttempt ?? undefined
 
       void (async () => {
         try {
@@ -1070,7 +1131,8 @@ const ConversationTabView = memo(function ConversationTabView({
             const res = await createChatConversation(
               selectedAgent,
               title,
-              chatExistingDir
+              chatExistingDir,
+              relayBinding
             )
             newConversationId = res.conversationId
             sendFolderId = res.folderId
@@ -1104,7 +1166,8 @@ const ConversationTabView = memo(function ConversationTabView({
             newConversationId = await createConversation(
               folderId,
               selectedAgent,
-              title
+              title,
+              relayBinding
             )
             dbConvIdRef.current = newConversationId
             // Set external ID on the stable virtual session (no migration needed —
@@ -1130,7 +1193,6 @@ const ConversationTabView = memo(function ConversationTabView({
               effectiveConversationId
             )
           }
-          clearMessageInputDraft(buildNewConversationDraftStorageKey(tabId))
           refreshConversations()
 
           // Now that the row exists, kick off the actual prompt with the
@@ -1140,8 +1202,15 @@ const ConversationTabView = memo(function ConversationTabView({
             folderId: sendFolderId,
             conversationId: newConversationId,
             clientMessageId: optimisticTurn.id,
+            relayId: relayAttempt.relayId,
+            targetDraftId: relayAttempt.targetDraftId,
             onTurnInProgress,
             onSendFailed,
+            onSendSucceeded: () => {
+              setRelaySendPending(false)
+              clearMessageInputDraft(buildNewConversationDraftStorageKey(tabId))
+              if (relayBinding) clearRelayRef.current()
+            },
           })
         } catch (e) {
           console.error("[ConversationTabView] create conversation:", e)
@@ -1157,12 +1226,17 @@ const ConversationTabView = memo(function ConversationTabView({
           removeOptimisticTurn(effectiveConversationId, optimisticTurn.id)
           setSyncState(effectiveConversationId, "idle")
           setHasSentMessage(false)
+          if (relayBinding) setRelaySendPending(false)
+          composerRestoreDraftRef.current = draft
           const draftText = draft.displayText.trim()
           if (draftText) {
             saveMessageInputDraft(
               buildNewConversationDraftStorageKey(tabId),
               draftText
             )
+            if (mountedRef.current) {
+              setComposerRestoreNonce((value) => value + 1)
+            }
           }
           if (mountedRef.current) {
             setAgentConnectError(tWelcome("createConversationFailed"))
@@ -1529,6 +1603,108 @@ const ConversationTabView = memo(function ConversationTabView({
   const showDraftHeader = !hasPersistedConversation && !hasSentMessage
   const isWelcomeMode = showDraftHeader
   const composerState = resolveConversationComposerState(isWelcomeMode)
+  const [relayDialogOpen, setRelayDialogOpen] = useState(false)
+  const [relayPreviewOpen, setRelayPreviewOpen] = useState(false)
+  const relayDraft = useRelayDraft({
+    targetDraftId: tabId,
+    targetFolderId: ownTab?.isChat ? null : ownFolderId,
+    targetAgentType: selectedAgent,
+    targetModel: relayTargetModel,
+    enabled: conversationCapabilities.relayEnabled,
+  })
+  const {
+    relay,
+    loading: relayLoading,
+    recoveryError: relayRecoveryError,
+    preview: previewRelay,
+    updateScope,
+    remove,
+    undoRemove,
+    refresh: refreshRelay,
+    markSendFailure,
+    retry: retryRelay,
+    clear: clearRelay,
+  } = relayDraft
+  useEffect(() => {
+    relayForSendRef.current = resolveRelaySendBinding(relay, tabId)
+    clearRelayRef.current = clearRelay
+    markRelayInvalidRef.current = markSendFailure
+  }, [clearRelay, markSendFailure, relay, tabId])
+  const relayEntryIntent = useRelayEntryIntent({
+    tabId,
+    enabled: conversationCapabilities.relayEnabled,
+    preview: previewRelay,
+  })
+  const {
+    entry: relayEntry,
+    retry: retryRelayEntry,
+    clear: clearRelayEntry,
+  } = relayEntryIntent
+  const relayEntryBlocksFirstSend = isRelayEntryBlockingFirstSend(
+    relayEntry?.status ?? null,
+    hasPersistedConversation
+  )
+  const relaySendBlocked = shouldBlockRelaySend(relay, {
+    loading: relayLoading,
+    entryBlocked: relayEntryBlocksFirstSend,
+    recoveryError: relayRecoveryError,
+    hasPersistedConversation,
+  })
+  relaySendBlockedRef.current = relaySendBlocked
+  useEffect(() => {
+    if (relay) clearRelayEntry()
+  }, [clearRelayEntry, relay])
+  useEffect(() => {
+    if (hasPersistedConversation && relayEntry) {
+      clearRelayEntry()
+      clearRelay()
+    }
+  }, [clearRelay, clearRelayEntry, hasPersistedConversation, relayEntry])
+  const canAddRelay =
+    composerState.isNewConversation &&
+    conversationCapabilities.relayEnabled &&
+    relay === null &&
+    relayEntry === null &&
+    !relayRecoveryError
+  const handleRelayDrop = useCallback(
+    (sourceConversationId: number) => {
+      if (!canAddRelay) return
+      void previewRelay(sourceConversationId).catch(() => {})
+    },
+    [canAddRelay, previewRelay]
+  )
+  const relaySourceTitle = relay
+    ? relayConversations.find(
+        (conversation) => conversation.id === relay.sourceConversationId
+      )?.title
+    : null
+  const relayCard = relay ? (
+    <RelayContextCard
+      relay={relay}
+      sourceTitle={relaySourceTitle}
+      disabled={relaySendPending || relayLoading}
+      onPreview={() => setRelayPreviewOpen(true)}
+      onAdjust={() => setRelayDialogOpen(true)}
+      onRemove={() => void remove()}
+      onUndo={() => void undoRemove()}
+      onRefresh={() => void refreshRelay().catch(() => {})}
+    />
+  ) : relayEntry ? (
+    <RelayEntryStatus
+      state={relayEntry.status}
+      onRetry={retryRelayEntry}
+      onClear={() => {
+        clearRelayEntry()
+        clearRelay()
+      }}
+    />
+  ) : relayRecoveryError ? (
+    <RelayEntryStatus
+      state="error"
+      onRetry={() => void retryRelay().catch(() => {})}
+      onClear={clearRelay}
+    />
+  ) : null
   const handleComposerRetry = useCallback(() => {
     retryConversationComposerError(
       connStatus,
@@ -1704,6 +1880,7 @@ const ConversationTabView = memo(function ConversationTabView({
 
   return (
     <ConversationShell
+      key={`composer-${composerRestoreNonce}`}
       topBanner={
         <>
           <SessionConfigStaleBanner contextKey={tabId} />
@@ -1742,6 +1919,7 @@ const ConversationTabView = memo(function ConversationTabView({
       draftStorageKey={draftStorageKey}
       hideInput={isWelcomeMode || Boolean(acpLoadError)}
       composerBanner={acpLoadErrorBanner}
+      {...composerErrorState}
       feedbackList={
         feedback.showList ? (
           <FeedbackNotesDisplay notes={feedback.notes} />
@@ -1749,6 +1927,9 @@ const ConversationTabView = memo(function ConversationTabView({
       }
       onAddFeedback={feedback.featureEnabled ? feedback.openDialog : undefined}
       feedbackAddDisabled={!feedback.canSubmit}
+      relaySlot={relayCard}
+      onAddRelay={canAddRelay ? () => setRelayDialogOpen(true) : undefined}
+      onRelayDrop={canAddRelay ? handleRelayDrop : undefined}
       isActive={isActive}
       showActiveFlow={showActiveFlow}
       queue={msgQueue}
@@ -1759,6 +1940,7 @@ const ConversationTabView = memo(function ConversationTabView({
       editingItemId={mqEditingItemId}
       editingDraftText={editingQueueDraftText}
       editingDraftBlocks={editingQueueDraftBlocks}
+      restoredDraftBlocks={composerRestoreDraftRef.current?.blocks ?? null}
       isEditingQueueItem={mqEditingItemId != null}
       onSaveQueueEdit={handleSaveQueueEdit}
       onCancelQueueEdit={handleQueueCancelEdit}
@@ -1780,7 +1962,6 @@ const ConversationTabView = memo(function ConversationTabView({
       }
       promptStartedAt={liveStartedAt}
       activeToolTitle={activeToolTitle}
-      {...composerErrorState}
       isNewConversation={composerState.isNewConversation}
     >
       {isWelcomeMode ? (
@@ -1838,42 +2019,57 @@ const ConversationTabView = memo(function ConversationTabView({
                   ) : null}
                 </div>
               ) : null}
-              <ChatInput
-                {...composerErrorState}
-                // composerConnStatus (not connStatus): a chat draft mid-reconnect
-                // reads "connecting" until the connection's cwd matches, so the
-                // send affordance stays disabled until handleSend would accept it.
-                status={composerConnStatus}
-                promptCapabilities={conn.promptCapabilities}
-                defaultPath={workingDirForConnection}
-                agentName={getAgentLabel(selectedAgent)}
-                onFocus={handleFocus}
-                onSend={handleSend}
-                onCancel={handleCancel}
-                modes={connectionModes}
-                configOptions={connectionConfigOptions}
-                modeLoading={modeLoading}
-                configOptionsLoading={configOptionsLoading}
-                selectorsLoading={selectorsLoading}
-                selectedModeId={selectedModeId}
-                onModeChange={handleModeChange}
-                onConfigOptionChange={handleSetConfigOption}
-                agentType={selectedAgent}
-                availableCommands={connectionCommands}
-                attachmentTabId={tabId}
-                draftStorageKey={draftStorageKey}
-                isActive={isActive}
-                showActiveFlow={showActiveFlow}
-                onAddFeedback={
-                  feedback.featureEnabled ? feedback.openDialog : undefined
-                }
-                feedbackAddDisabled={!feedback.canSubmit}
-                injectContent={quickActionInject}
-                onInjectConsumed={handleQuickActionConsumed}
-                isNewConversation={composerState.isNewConversation}
-                flush
-                tall
-              />
+              <div data-relay-composer-dock className="flex w-full flex-col">
+                {relayCard && (
+                  <div data-relay-slot className="w-full pb-2">
+                    {relayCard}
+                  </div>
+                )}
+                <ChatInput
+                  key={`composer-${composerRestoreNonce}`}
+                  {...composerErrorState}
+                  // composerConnStatus (not connStatus): a chat draft mid-reconnect
+                  // reads "connecting" until the connection's cwd matches, so the
+                  // send affordance stays disabled until handleSend would accept it.
+                  status={relaySendBlocked ? "connecting" : composerConnStatus}
+                  promptCapabilities={conn.promptCapabilities}
+                  defaultPath={workingDirForConnection}
+                  agentName={getAgentLabel(selectedAgent)}
+                  onFocus={handleFocus}
+                  onSend={handleSend}
+                  onCancel={handleCancel}
+                  modes={connectionModes}
+                  configOptions={connectionConfigOptions}
+                  modeLoading={modeLoading}
+                  configOptionsLoading={configOptionsLoading}
+                  selectorsLoading={selectorsLoading}
+                  selectedModeId={selectedModeId}
+                  onModeChange={handleModeChange}
+                  onConfigOptionChange={handleSetConfigOption}
+                  agentType={selectedAgent}
+                  availableCommands={connectionCommands}
+                  attachmentTabId={tabId}
+                  draftStorageKey={draftStorageKey}
+                  restoredDraftBlocks={
+                    composerRestoreDraftRef.current?.blocks ?? null
+                  }
+                  isActive={isActive}
+                  showActiveFlow={showActiveFlow}
+                  onAddFeedback={
+                    feedback.featureEnabled ? feedback.openDialog : undefined
+                  }
+                  feedbackAddDisabled={!feedback.canSubmit}
+                  onAddRelay={
+                    canAddRelay ? () => setRelayDialogOpen(true) : undefined
+                  }
+                  onRelayDrop={canAddRelay ? handleRelayDrop : undefined}
+                  injectContent={quickActionInject}
+                  onInjectConsumed={handleQuickActionConsumed}
+                  isNewConversation={composerState.isNewConversation}
+                  flush
+                  tall
+                />
+              </div>
             </div>
             <div className="flex-1" />
             <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-6">
@@ -1940,6 +2136,22 @@ const ConversationTabView = memo(function ConversationTabView({
         open={composerDiagnosticsOpen}
         onOpenChange={setComposerDiagnosticsOpen}
         agentType={selectedAgent}
+      />
+      <RelayDialogController
+        open={relayDialogOpen}
+        onOpenChange={setRelayDialogOpen}
+        conversations={relayConversations}
+        folders={relayFolders.map((relayFolder) => ({
+          id: relayFolder.id,
+          name: relayFolder.name,
+        }))}
+        currentFolderId={ownTab?.isChat ? null : ownFolderId}
+        relay={relay}
+        loading={relayLoading}
+        previewOpen={relayPreviewOpen}
+        onPreviewOpenChange={setRelayPreviewOpen}
+        onPreview={previewRelay}
+        onUpdateScope={updateScope}
       />
     </ConversationShell>
   )
@@ -2246,10 +2458,20 @@ export function ConversationDetailPanel() {
         session.dbConversationId ?? activeConversationTab.conversationId
       )
     }
+    const relayConversationId =
+      session.dbConversationId ??
+      (activeConversationTab.conversationId > 0
+        ? activeConversationTab.conversationId
+        : null)
+    const provenance =
+      relayConversationId == null
+        ? null
+        : await getConversationRelay(relayConversationId)
     return {
       summary: detail.summary,
       turns: detail.turns,
       sessionStats: detail.session_stats,
+      provenance,
       labels: exportLabels,
     }
   }, [activeConversationTab, exportLabels])

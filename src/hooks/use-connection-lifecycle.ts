@@ -44,31 +44,22 @@ export interface UseConnectionLifecycleReturn {
   handleSend: (
     draft: PromptDraft,
     modeId?: string | null,
-    opts?: {
-      folderId?: number | null
-      conversationId?: number | null
-      clientMessageId?: string | null
-      /**
-       * Called when the backend rejected the send because a turn was already
-       * in flight (a second, concurrent prompt). The caller re-queues the
-       * draft instead of treating it as an error.
-       */
-      onTurnInProgress?: () => void
-      /**
-       * Called for every OTHER send failure (413, hydration failure, network
-       * drop) after the error toast is shown. The caller must settle any
-       * optimistic state it created for this send — roll back the optimistic
-       * user turn so the conversation doesn't stay `awaiting_persist` (which
-       * would block queue auto-flush) and doesn't display the failed prompt
-       * as though it were sent. The draft is deliberately NOT re-queued: a
-       * deterministic failure would otherwise retry forever.
-       */
-      onSendFailed?: (error: unknown) => void
-    }
+    opts?: SendOptions
   ) => void
   handleSetConfigOption: (configId: string, valueId: string) => void
   handleCancel: () => void
   handleRespondPermission: (requestId: string, optionId: string) => void
+}
+
+export interface SendOptions {
+  folderId?: number | null
+  conversationId?: number | null
+  clientMessageId?: string | null
+  relayId?: number
+  targetDraftId?: string
+  onSendSucceeded?: () => void
+  onTurnInProgress?: () => void
+  onSendFailed?: (error: unknown) => void
 }
 
 /**
@@ -412,20 +403,11 @@ export function useConnectionLifecycle({
   // sendPrompt, connCancel, connRespondPermission are stable (depend
   // only on actions + contextKey), so these callbacks are effectively stable.
   const handleSend = useCallback(
-    (
-      draft: PromptDraft,
-      modeId?: string | null,
-      opts?: {
-        folderId?: number | null
-        conversationId?: number | null
-        clientMessageId?: string | null
-        onTurnInProgress?: () => void
-        onSendFailed?: (error: unknown) => void
-      }
-    ) => {
+    (draft: PromptDraft, modeId?: string | null, opts?: SendOptions) => {
       touchActivity(contextKey)
       const onTurnInProgress = opts?.onTurnInProgress
       const onSendFailed = opts?.onSendFailed
+      const onSendSucceeded = opts?.onSendSucceeded
       void (async () => {
         const currentModeId = modeIdRef.current
         if (modeId && modeId !== currentModeId) {
@@ -435,13 +417,18 @@ export function useConnectionLifecycle({
           modeIdRef.current = modeId
         }
         await sendPrompt(draft.blocks, opts)
+        onSendSucceeded?.()
       })().catch((e: unknown) => {
         if (e instanceof TurnBusyError) {
           // A turn was already in flight on the connection (another
           // co-controlling client, or a "prompting" status this client hadn't
           // observed yet). Not an error — the draft is re-queued by the caller
           // so it auto-sends when the current turn finishes.
-          onTurnInProgress?.()
+          if (opts?.relayId !== undefined) {
+            onSendFailed?.(e)
+          } else {
+            onTurnInProgress?.()
+          }
           return
         }
         console.error("[ConnLifecycle] sendPrompt:", e)

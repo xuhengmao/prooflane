@@ -291,6 +291,123 @@ export interface ConversationDetail {
   transcript_watermark?: number | null
 }
 
+export type RelayScopeType = "summary" | "recent_rounds" | "custom_rounds"
+
+export interface RelayScopeSelection {
+  scopeType: RelayScopeType
+  selectedRoundIds: string[]
+}
+
+export interface RelayToolFact {
+  toolUseId: string | null
+  name: string
+  input: string
+  output: string | null
+  isError: boolean
+}
+
+export interface RelayFileReference {
+  path: string
+  mimeType: string | null
+  sourceMessageId: string
+}
+
+export interface RelayRound {
+  id: string
+  userText: string
+  assistantText: string
+  tools: RelayToolFact[]
+  files: RelayFileReference[]
+  sourceMessageIds: string[]
+}
+
+export interface RelaySummary {
+  goals: string[]
+  decisions: string[]
+  progress: string[]
+  todos: string[]
+  constraints: string[]
+  files: string[]
+  openQuestions: string[]
+}
+
+export interface RelaySnapshot {
+  version: number
+  source: { conversationId: number; folderId: number }
+  scope: RelayScopeSelection
+  availableRounds: RelayRound[]
+  includedRounds: RelayRound[]
+  summary: RelaySummary | null
+  files: RelayFileReference[]
+  stats: { messageCount: number; fileCount: number; todoCount: number }
+  canonicalContext: string
+}
+
+export interface RelayContextPack {
+  id: number
+  targetDraftId: string
+  targetConversationId: number | null
+  sourceConversationId: number
+  sourceFolderId: number
+  scope: RelayScopeSelection
+  snapshot: RelaySnapshot
+  sourceFingerprint: string
+  estimatedTokens: number
+  contextWindowTokens: number | null
+  targetModel: string | null
+  allowedTokens: number
+  status: string
+  invalidReason: string | null
+  createdAt: string
+  updatedAt: string
+  consumedAt: string | null
+}
+
+export interface RelayProvenance {
+  relayId: number
+  snapshotSha256: string
+  source: { conversationId: number; folderId: number; title: string }
+  scope: RelayScopeSelection
+  summary: RelaySummary | null
+  includedRounds: RelayRound[]
+  files: RelayFileReference[]
+  stats: { messageCount: number; fileCount: number; todoCount: number }
+  consumedAt: string | null
+}
+
+export interface ConversationCapabilitySettings {
+  relayEnabled: boolean
+}
+
+export const CONVERSATION_CAPABILITIES_CHANGED_EVENT =
+  "conversation-capabilities://changed"
+export const CONVERSATION_RELAY_CHANGED_EVENT = "conversation-relay://changed"
+export const RELAY_BUDGET_EXCEEDED = "relay_budget_exceeded"
+
+/** Safe cross-window relay change notification. It deliberately omits context. */
+export interface ConversationRelayChange {
+  relayId: number
+  targetDraftId: string
+  targetConversationId?: number | null
+  status: string
+  errorCode?: string
+}
+
+export interface RelayPreviewInput {
+  targetDraftId: string
+  sourceConversationId: number
+  targetFolderId: number | null
+  targetAgentType: AgentType
+  targetModel: string | null
+  scope: RelayScopeSelection
+}
+
+export interface RelayPatchInput {
+  scope: RelayScopeSelection
+  targetAgentType: AgentType
+  targetModel: string | null
+}
+
 export interface FolderInfo {
   path: string
   name: string

@@ -4845,6 +4845,8 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
         folderId?: number | null
         conversationId?: number | null
         clientMessageId?: string | null
+        relayId?: number
+        targetDraftId?: string
       }
     ) => {
       const conn = storeRef.current.connections.get(contextKey)
@@ -4865,7 +4867,9 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
         blocks,
         opts?.folderId ?? null,
         opts?.conversationId ?? null,
-        opts?.clientMessageId ?? null
+        opts?.clientMessageId ?? null,
+        opts?.relayId ?? null,
+        opts?.targetDraftId ?? null
       )
     },
     []

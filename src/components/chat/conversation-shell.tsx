@@ -85,6 +85,9 @@ interface ConversationShellProps {
   onAddFeedback?: () => void
   /** Grey out the live-feedback "+" entry when a note can't be sent right now. */
   feedbackAddDisabled?: boolean
+  relaySlot?: ReactNode
+  onAddRelay?: () => void
+  onRelayDrop?: (sourceConversationId: number) => void
   isActive?: boolean
   /** Show the composer's flowing active-session border (tiled multi-session
    *  active tab only). Threaded straight through to the composer. */
@@ -97,6 +100,7 @@ interface ConversationShellProps {
   editingItemId?: string | null
   editingDraftText?: string | null
   editingDraftBlocks?: PromptInputBlock[] | null
+  restoredDraftBlocks?: PromptInputBlock[] | null
   isEditingQueueItem?: boolean
   onSaveQueueEdit?: (draft: PromptDraft) => void
   onCancelQueueEdit?: () => void
@@ -154,6 +158,9 @@ export function ConversationShell({
   feedbackList,
   onAddFeedback,
   feedbackAddDisabled,
+  relaySlot,
+  onAddRelay,
+  onRelayDrop,
   isActive,
   showActiveFlow,
   queue,
@@ -164,6 +171,7 @@ export function ConversationShell({
   editingItemId,
   editingDraftText,
   editingDraftBlocks,
+  restoredDraftBlocks,
   isEditingQueueItem,
   onSaveQueueEdit,
   onCancelQueueEdit,
@@ -256,7 +264,7 @@ export function ConversationShell({
           feedback list and input — like the permission/question dialogs — so it
           shrinks the message list instead of covering it, while staying aligned
           to the input width. */}
-      <div>
+      <div data-relay-composer-dock>
         {pendingAskQuestion && pendingAskQuestion.questions.length > 0 && (
           <div className="mx-auto w-full max-w-3xl px-4">
             <AskQuestionCard
@@ -285,6 +293,12 @@ export function ConversationShell({
 
         {!hideInput && feedbackList && (
           <div className="mx-auto w-full max-w-3xl px-4">{feedbackList}</div>
+        )}
+
+        {!hideInput && relaySlot && (
+          <div data-relay-slot className="mx-auto w-full max-w-3xl px-4 pb-2">
+            {relaySlot}
+          </div>
         )}
 
         {!hideInput && (
@@ -319,6 +333,7 @@ export function ConversationShell({
               editingItemId={editingItemId}
               editingDraftText={editingDraftText}
               editingDraftBlocks={editingDraftBlocks}
+              restoredDraftBlocks={restoredDraftBlocks}
               isEditingQueueItem={isEditingQueueItem}
               onSaveQueueEdit={onSaveQueueEdit}
               onCancelQueueEdit={onCancelQueueEdit}
@@ -326,6 +341,8 @@ export function ConversationShell({
               onSteer={onSteer}
               onAddFeedback={onAddFeedback}
               feedbackAddDisabled={feedbackAddDisabled}
+              onAddRelay={onAddRelay}
+              onRelayDrop={onRelayDrop}
               conversationId={conversationId}
               promptStartedAt={promptStartedAt}
               activeToolTitle={activeToolTitle}

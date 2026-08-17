@@ -16,6 +16,7 @@ import {
   Globe,
   Keyboard,
   Menu,
+  MessagesSquare,
   MessageSquareText,
   SendHorizontal,
   Palette,
@@ -38,7 +39,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 
 interface SettingsNavItem {
   href: string
-  labelKey:
+  labelKey?:
     | "general"
     | "appearance"
     | "agents"
@@ -54,6 +55,7 @@ interface SettingsNavItem {
     | "web_service"
     | "logs"
   icon: ComponentType<{ className?: string }>
+  label?: string
 }
 
 const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
@@ -66,6 +68,11 @@ const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     href: "/settings/general",
     labelKey: "general",
     icon: SlidersHorizontal,
+  },
+  {
+    href: "/settings/conversation-capabilities",
+    icon: MessagesSquare,
+    label: "会话能力",
   },
   {
     href: "/settings/mcp",
@@ -201,7 +208,9 @@ export function SettingsShell({ children }: SettingsShellProps) {
         <nav className="space-y-1">
           {filteredNavItems.map((item) => {
             const Icon = item.icon
-            const translationKey = `nav.${item.labelKey}` as const
+            const translationKey = item.labelKey
+              ? (`nav.${item.labelKey}` as const)
+              : null
             const active =
               normalizedPathname === item.href ||
               normalizedPathname.startsWith(`${item.href}/`)
@@ -217,7 +226,7 @@ export function SettingsShell({ children }: SettingsShellProps) {
               >
                 <span className="inline-flex items-center gap-1">
                   <Icon className="h-3.5 w-3.5" />
-                  {t(translationKey)}
+                  {item.label ?? (translationKey ? t(translationKey) : "")}
                 </span>
               </Button>
             )

@@ -177,6 +177,55 @@ describe("useConnectionLifecycle send-failure surfacing", () => {
     expect(toastError).not.toHaveBeenCalled()
   })
 
+  it("never queues a relay send after TurnBusyError", async () => {
+    sendPrompt.mockRejectedValue(new TurnBusyError())
+    const onTurnInProgress = vi.fn()
+    const onSendFailed = vi.fn()
+
+    const { result } = renderLifecycle()
+    await act(async () => {
+      result.current.handleSend(draft(), null, {
+        relayId: 7,
+        targetDraftId: "draft-1",
+        onTurnInProgress,
+        onSendFailed,
+      })
+      await flush()
+    })
+
+    expect(onTurnInProgress).not.toHaveBeenCalled()
+    expect(onSendFailed).toHaveBeenCalledOnce()
+    expect(toastError).not.toHaveBeenCalled()
+  })
+
+  it("runs the relay success callback only after the send resolves", async () => {
+    let resolveSend: (() => void) | undefined
+    sendPrompt.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSend = resolve
+        })
+    )
+    const onSendSucceeded = vi.fn()
+
+    const { result } = renderLifecycle()
+    act(() => {
+      result.current.handleSend(draft(), null, {
+        relayId: 7,
+        targetDraftId: "draft-1",
+        onSendSucceeded,
+      })
+    })
+    expect(onSendSucceeded).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveSend?.()
+      await flush()
+    })
+
+    expect(onSendSucceeded).toHaveBeenCalledOnce()
+  })
+
   it("does not toast on a successful send", async () => {
     sendPrompt.mockResolvedValue(undefined)
 

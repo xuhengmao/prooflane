@@ -146,6 +146,16 @@ import type {
   TokenUsageSyncStatus,
 } from "./types"
 
+export {
+  getConversationCapabilities,
+  getConversationRelay,
+  getRelayContextByDraft,
+  previewRelayContext,
+  removeRelayContext,
+  updateConversationCapabilities,
+  updateRelayContext,
+} from "./conversation-relay"
+
 export async function listConversations(params?: {
   agent_type?: AgentType | null
   search?: string | null
@@ -248,10 +258,12 @@ export async function acpPrompt(
   blocks: PromptInputBlock[],
   folderId: number | null = null,
   conversationId: number | null = null,
-  clientMessageId: string | null = null
+  clientMessageId: string | null = null,
+  relayId: number | null = null,
+  targetDraftId: string | null = null
 ): Promise<void> {
   try {
-    await getTransport().call("acp_prompt", {
+    const payload: Record<string, unknown> = {
       connectionId,
       // Strip in every mode where the prompt leaves through an HTTP body:
       // pure web (`!isDesktop`) and desktop-attached-to-remote-workspace.
@@ -262,7 +274,16 @@ export async function acpPrompt(
       folderId,
       conversationId,
       clientMessageId,
-    })
+    }
+    if (relayId !== null && targetDraftId !== null) {
+      payload.relayId = relayId
+      payload.targetDraftId = targetDraftId
+    }
+    if (relayId !== null && targetDraftId !== null) {
+      await getTransport().call("acp_prompt", payload, { timeoutMs: 50_000 })
+    } else {
+      await getTransport().call("acp_prompt", payload)
+    }
   } catch (e) {
     if (isTurnInProgressRejection(e)) throw new TurnBusyError()
     throw e
@@ -2710,12 +2731,15 @@ export async function createHyperframesProject(params: {
 export async function createConversation(
   folderId: number,
   agentType: AgentType,
-  title?: string
+  title?: string,
+  relay?: { relayId: number; targetDraftId: string }
 ): Promise<number> {
   return getTransport().call("create_conversation", {
     folderId,
     agentType,
     title: title ?? null,
+    relayId: relay?.relayId ?? null,
+    targetDraftId: relay?.targetDraftId ?? null,
   })
 }
 
@@ -2730,12 +2754,15 @@ export async function createChatConversation(
   title?: string,
   // Reuse a scratch dir already minted by `createChatDir` (eager connect) so the
   // ACP cwd never moves across the first send; omit to let the backend mint one.
-  existingDir?: string
+  existingDir?: string,
+  relay?: { relayId: number; targetDraftId: string }
 ): Promise<CreateChatConversationResult> {
   return getTransport().call("create_chat_conversation", {
     agentType,
     title: title ?? null,
     existingDir: existingDir ?? null,
+    relayId: relay?.relayId ?? null,
+    targetDraftId: relay?.targetDraftId ?? null,
   })
 }
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  buildThreadRenderRows,
+  insertRelayProvenance,
   mergeConsecutiveAssistantTurns,
   singletonSourceTurns,
   toConversationNotificationLocatableItems,
@@ -8,7 +10,7 @@ import {
   type ResolvedMessageGroup,
   type ThreadRenderItem,
 } from "./message-list-view"
-import type { MessageTurn } from "@/lib/types"
+import type { MessageTurn, RelayProvenance } from "@/lib/types"
 
 function turn(id: string): MessageTurn {
   return { id, role: "assistant", blocks: [], timestamp: "" }
@@ -72,6 +74,67 @@ describe("toConversationNotificationLocatableItems", () => {
         messageIds: ["assistant-1", "assistant-2"],
       },
     ])
+  })
+})
+
+describe("insertRelayProvenance", () => {
+  const provenance: RelayProvenance = {
+    relayId: 7,
+    snapshotSha256: "a".repeat(64),
+    source: { conversationId: 11, folderId: 2, title: "产品需求讨论" },
+    scope: { scopeType: "recent_rounds", selectedRoundIds: ["round-1"] },
+    summary: null,
+    includedRounds: [],
+    files: [],
+    stats: { messageCount: 2, fileCount: 0, todoCount: 0 },
+    consumedAt: "2026-08-15T08:00:00Z",
+  }
+
+  it("inserts provenance immediately before the first user turn", () => {
+    const items = [makeUserItem("user-1", 0), assistantItem("assistant-1")]
+
+    expect(
+      insertRelayProvenance(items, provenance).map((item) => item.kind)
+    ).toEqual(["relay_provenance", "turn", "turn"])
+  })
+
+  it("keeps the original list unchanged without provenance", () => {
+    const items = [makeUserItem("user-1", 0), assistantItem("assistant-1")]
+
+    expect(insertRelayProvenance(items, null)).toBe(items)
+  })
+
+  it("keeps virtual row keys stable when provenance appears asynchronously", () => {
+    const items = [makeUserItem("user-1", 0), assistantItem("assistant-1")]
+    const before = buildThreadRenderRows(items)
+    const after = buildThreadRenderRows(
+      insertRelayProvenance(items, provenance)
+    )
+
+    expect(after.map((row) => row.key)).toEqual(before.map((row) => row.key))
+    expect(after[0].items.map((item) => item.kind)).toEqual([
+      "relay_provenance",
+      "turn",
+    ])
+  })
+
+  it("keeps existing virtual rows as a suffix when older turns prepend", () => {
+    const current = [makeUserItem("user-1", 0), assistantItem("assistant-1")]
+    const withOlder = [
+      makeUserItem("user-0", 0),
+      assistantItem("assistant-0"),
+      ...current,
+    ]
+    const currentRows = buildThreadRenderRows(
+      insertRelayProvenance(current, provenance)
+    )
+    const prependedRows = buildThreadRenderRows(
+      insertRelayProvenance(withOlder, provenance)
+    )
+
+    expect(prependedRows.slice(2).map((row) => row.key)).toEqual(
+      currentRows.map((row) => row.key)
+    )
   })
 })
 

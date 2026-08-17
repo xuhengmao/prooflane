@@ -53,6 +53,7 @@ interface ChatInputProps {
   editingItemId?: string | null
   editingDraftText?: string | null
   editingDraftBlocks?: PromptInputBlock[] | null
+  restoredDraftBlocks?: PromptInputBlock[] | null
   isEditingQueueItem?: boolean
   onSaveQueueEdit?: (draft: PromptDraft) => void
   onCancelQueueEdit?: () => void
@@ -65,6 +66,8 @@ interface ChatInputProps {
   onSteer?: (text: string) => Promise<void>
   onAddFeedback?: () => void
   feedbackAddDisabled?: boolean
+  onAddRelay?: () => void
+  onRelayDrop?: (sourceConversationId: number) => void
   /**
    * Keep the composer usable even while disconnected. Set for a folderless chat
    * draft: it has no working dir yet (so it never auto-connects), and the FIRST
@@ -121,6 +124,7 @@ export const ChatInput = memo(function ChatInput({
   editingItemId,
   editingDraftText,
   editingDraftBlocks,
+  restoredDraftBlocks,
   isEditingQueueItem,
   onSaveQueueEdit,
   onCancelQueueEdit,
@@ -128,6 +132,8 @@ export const ChatInput = memo(function ChatInput({
   onSteer,
   onAddFeedback,
   feedbackAddDisabled,
+  onAddRelay,
+  onRelayDrop,
   allowOfflineCompose = false,
   injectContent,
   onInjectConsumed,
@@ -211,6 +217,7 @@ export const ChatInput = memo(function ChatInput({
         editingItemId={editingItemId}
         editingDraftText={editingDraftText}
         editingDraftBlocks={editingDraftBlocks}
+        restoredDraftBlocks={restoredDraftBlocks}
         isEditingQueueItem={isEditingQueueItem}
         onSaveQueueEdit={onSaveQueueEdit}
         onCancelQueueEdit={onCancelQueueEdit}
@@ -218,6 +225,8 @@ export const ChatInput = memo(function ChatInput({
         onSteer={onSteer}
         onAddFeedback={onAddFeedback}
         feedbackAddDisabled={feedbackAddDisabled}
+        onAddRelay={onAddRelay}
+        onRelayDrop={onRelayDrop}
         conversationId={conversationId}
         isNewConversation={isNewConversation}
         promptStartedAt={promptStartedAt}

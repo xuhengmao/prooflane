@@ -29,6 +29,13 @@ const conversationShellSource = readFileSync(
   resolve(process.cwd(), "src/components/chat/conversation-shell.tsx"),
   "utf8"
 )
+const sidebarConversationListSource = readFileSync(
+  resolve(
+    process.cwd(),
+    "src/components/conversations/sidebar-conversation-list.tsx"
+  ),
+  "utf8"
+)
 const globalsCssSource = readFileSync(
   resolve(process.cwd(), "src/app/globals.css"),
   "utf8"
@@ -108,6 +115,50 @@ describe("ConversationDetailPanel new conversation layout", () => {
     expect(welcomeBranch).toContain("tall")
   })
 
+  it("keeps relay context above the input in the same composer dock on both layouts", () => {
+    const welcomeBranchStart = source.indexOf("{isWelcomeMode ? (")
+    const nextBranchStart = source.indexOf(
+      ") : showDraftHeader ?",
+      welcomeBranchStart
+    )
+    const welcomeBranch = source.slice(welcomeBranchStart, nextBranchStart)
+    const welcomeDockStart = welcomeBranch.indexOf(
+      "<div data-relay-composer-dock"
+    )
+    const relayCardStart = welcomeBranch.indexOf(
+      "{relayCard &&",
+      welcomeDockStart
+    )
+    const chatInputStart = welcomeBranch.indexOf("<ChatInput", welcomeDockStart)
+
+    expect(conversationShellSource).toContain("data-relay-composer-dock")
+    expect(welcomeDockStart).toBeGreaterThan(-1)
+    expect(relayCardStart).toBeGreaterThan(welcomeDockStart)
+    expect(chatInputStart).toBeGreaterThan(relayCardStart)
+    expect(welcomeBranch).not.toContain(
+      '<div className="w-full">{relayCard}</div>'
+    )
+  })
+
+  it("only exposes relay actions and drop handling while a new draft can accept one", () => {
+    const gateStart = source.indexOf("const canAddRelay =")
+    const gateEnd = source.indexOf("const handleRelayDrop", gateStart)
+    const gate = source.slice(gateStart, gateEnd)
+
+    expect(gate).toContain("composerState.isNewConversation")
+    expect(gate).toContain("conversationCapabilities.relayEnabled")
+    expect(gate).toContain("relay === null")
+    expect(
+      source.match(
+        /onRelayDrop=\{canAddRelay \? handleRelayDrop : undefined\}/g
+      )
+    ).toHaveLength(2)
+    expect(source).not.toContain("onRelayDrop={handleRelayDrop}")
+    expect(sidebarConversationListSource).toContain(
+      "conversationCapabilities.relayEnabled\n            ? handleRelayContinue\n            : undefined"
+    )
+  })
+
   it("derives the new-conversation input flag for the welcome and ordinary render paths", () => {
     expect(resolveConversationComposerState(true)).toEqual({
       isNewConversation: true,
@@ -180,6 +231,51 @@ describe("ConversationDetailPanel new conversation layout", () => {
       globalsCssSource.indexOf(".conversation-tab-hidden,") + 200
     )
     expect(rule).toContain("transition-property: none !important")
+  })
+
+  it("delegates keep-alive draft relay intents to the entry-intent hook", () => {
+    const entryIntentStart = source.indexOf(
+      "const relayEntryIntent = useRelayEntryIntent({"
+    )
+    const entryIntentSetup = source.slice(
+      entryIntentStart,
+      entryIntentStart + 300
+    )
+
+    expect(entryIntentStart).toBeGreaterThan(-1)
+    expect(entryIntentSetup).toContain("tabId,")
+    expect(entryIntentSetup).toContain("preview: previewRelay")
+  })
+
+  it("blocks every unresolved relay state and clears stale entry state after persistence", () => {
+    expect(source).toContain("isRelayEntryBlockingFirstSend(")
+    expect(source).toContain("shouldBlockRelaySend(")
+    expect(source).toContain("if (relaySendBlockedRef.current) return")
+    const guardIdx = source.indexOf("if (relaySendBlockedRef.current) return")
+    const optimisticIdx = source.indexOf(
+      "const optimisticTurn = buildOptimisticUserTurnFromDraft("
+    )
+    expect(guardIdx).toBeGreaterThan(-1)
+    expect(optimisticIdx).toBeGreaterThan(guardIdx)
+
+    const cleanupIdx = source.indexOf(
+      "if (hasPersistedConversation && relayEntry)"
+    )
+    expect(cleanupIdx).toBeGreaterThan(-1)
+    const cleanup = source.slice(cleanupIdx, cleanupIdx + 240)
+    expect(cleanup).toContain("clearRelayEntry()")
+    expect(cleanup).toContain("clearRelay()")
+    expect(source).toContain(
+      'status={relaySendBlocked ? "connecting" : composerConnStatus}'
+    )
+  })
+
+  it("routes picker, drag-and-drop, and queued sidebar intents through one preview flow", () => {
+    expect(source).toContain("preview: previewRelay")
+    expect(source).toContain(
+      "void previewRelay(sourceConversationId).catch(() => {})"
+    )
+    expect(source).toContain("onPreview={previewRelay}")
   })
 
   // Regression: with a workspace background image on, every covering surface is
@@ -446,7 +542,9 @@ describe("ConversationDetailPanel send-path hardening", () => {
     // The composer reads a downgraded status so its send affordance is disabled
     // during the transient mismatch window instead of inviting a rejected send.
     expect(source).toContain("composerConnStatus")
-    expect(source).toContain("status={composerConnStatus}")
+    expect(source).toContain(
+      'status={relaySendBlocked ? "connecting" : composerConnStatus}'
+    )
   })
 
   it("single-flights the unbound create before any optimistic mutation", () => {
@@ -473,9 +571,28 @@ describe("ConversationDetailPanel send-path hardening", () => {
     expect(catchBlock).toContain("removeOptimisticTurn(")
     expect(catchBlock).toContain("setHasSentMessage(false)")
     expect(catchBlock).toContain("saveMessageInputDraft(")
+    expect(catchBlock).toContain("composerRestoreDraftRef.current = draft")
+    expect(catchBlock).toContain(
+      "setComposerRestoreNonce((value) => value + 1)"
+    )
     expect(catchBlock).toContain(
       'setAgentConnectError(tWelcome("createConversationFailed"))'
     )
+  })
+
+  it("threads failed relay prompt blocks back into both composer layouts", () => {
+    const attemptStart = source.indexOf(
+      "const relayAttempt = createRelaySendAttempt({"
+    )
+    const attempt = source.slice(attemptStart, attemptStart + 900)
+    expect(attempt).toContain("draft,")
+    expect(attempt).toContain("restoreDraft: (failedDraft) => {")
+    expect(attempt).toContain("composerRestoreDraftRef.current = failedDraft")
+    expect(
+      source.match(
+        /restoredDraftBlocks=\{\s*composerRestoreDraftRef\.current\?\.blocks \?\? null\s*\}/g
+      )
+    ).toHaveLength(2)
   })
 })
 

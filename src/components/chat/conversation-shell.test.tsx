@@ -70,6 +70,11 @@ function renderShell(
 }
 
 describe("ConversationShell composer state", () => {
+  it("keeps the composer layout empty when no relay exists", () => {
+    const { container } = renderShell({ relaySlot: null })
+    expect(container.querySelector("[data-relay-slot]")).toBeNull()
+  })
+
   it.each([
     ["permission", { pendingPermission: {} as never }],
     ["question", { pendingQuestion: {} as never }],

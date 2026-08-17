@@ -224,8 +224,8 @@ export interface TabStoreState {
       folderDefaultAgent?: AgentType | null
       targetGroup?: string
     }
-  ) => void
-  openChatModeTab: (options?: { targetGroup?: string }) => void
+  ) => string
+  openChatModeTab: (options?: { targetGroup?: string }) => string
   setChatDraftWorkingDir: (tabId: string, workingDir: string) => void
   confirmDraftAgent: (tabId: string, agentType: AgentType) => void
   setDraftAgentFromFallback: (tabId: string, agentType: AgentType) => void
@@ -1565,12 +1565,11 @@ export const useTabStore = create<TabStoreState>()((set, get) => ({
       useAppWorkspaceStore.getState().allFolders.find((f) => f.id === folderId)
         ?.kind === "chat"
     ) {
-      get().openChatModeTab(
+      return get().openChatModeTab(
         options?.targetGroup != null
           ? { targetGroup: options.targetGroup }
           : undefined
       )
-      return
     }
     const inheritFromActive = options?.inheritFromActive === true
     let inherit: AgentType | null = null
@@ -1621,7 +1620,7 @@ export const useTabStore = create<TabStoreState>()((set, get) => ({
       })
       recomputeTabs()
       runtime.activateConversationPane()
-      return
+      return tabId
     }
 
     const folderChanged = existingTab.folderId !== folderId
@@ -1659,6 +1658,7 @@ export const useTabStore = create<TabStoreState>()((set, get) => ({
       focusTab(existingTab.id)
     }
     runtime.activateConversationPane()
+    return existingTab.id
   },
 
   openChatModeTab: (options) => {
@@ -1714,6 +1714,8 @@ export const useTabStore = create<TabStoreState>()((set, get) => ({
         groupOf: { ...prevState.groupOf, [tabId]: targetGroup },
       })
       recomputeTabs()
+      runtime.activateConversationPane()
+      return tabId
     } else if (existingTab.isChat && existingTab.folderId === 0) {
       // Already a chat-mode draft — just focus it.
       focusTab(existingTab.id)
@@ -1746,6 +1748,7 @@ export const useTabStore = create<TabStoreState>()((set, get) => ({
       })
     }
     runtime.activateConversationPane()
+    return existingTab.id
   },
 
   setChatDraftWorkingDir: (tabId, workingDir) => {

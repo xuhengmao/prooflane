@@ -19,10 +19,17 @@ use std::sync::Arc;
 
 use axum_test::TestServer;
 use codeg_lib::app_state::AppState;
+use codeg_lib::conversation_relay::fingerprint_rounds;
+use codeg_lib::conversation_relay::service::get_relay_context_by_draft_core;
+use codeg_lib::db::entities::relay_context_pack;
 use codeg_lib::db::test_helpers::{fresh_in_memory_db, seed_conversation, seed_folder};
 use codeg_lib::models::agent::AgentType;
+use codeg_lib::models::conversation_relay::{
+    RelayRound, RelayScopeSelection, RelayScopeType, RelaySnapshot, RelaySnapshotSource, RelayStats,
+};
 use codeg_lib::web::router::build_router;
 use codeg_lib::web::shutdown::ShutdownSignal;
+use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
 use serde_json::{json, Value};
 
 const TEST_TOKEN: &str = "integration-test-token";
@@ -376,6 +383,344 @@ async fn build_test_server_with_state() -> (
 
     let server = TestServer::new(router).expect("test server");
     (server, state, data_dir, static_dir)
+}
+
+async fn seed_api_relay_pack(
+    state: &AppState,
+    target_draft_id: &str,
+    source_conversation_id: i32,
+    source_folder_id: i32,
+    target_conversation_id: Option<i32>,
+    status: &str,
+) -> relay_context_pack::Model {
+    let scope = RelayScopeSelection {
+        scope_type: RelayScopeType::RecentRounds,
+        selected_round_ids: vec!["round-a".to_owned()],
+    };
+    let round = RelayRound {
+        id: "round-a".to_owned(),
+        user_text: "keep the API semantics aligned".to_owned(),
+        assistant_text: "done".to_owned(),
+        tools: Vec::new(),
+        files: Vec::new(),
+        source_message_ids: vec!["round-a".to_owned(), "assistant-a".to_owned()],
+    };
+    let snapshot = RelaySnapshot {
+        version: 1,
+        source: RelaySnapshotSource {
+            conversation_id: source_conversation_id,
+            folder_id: source_folder_id,
+        },
+        scope: scope.clone(),
+        available_rounds: vec![round.clone()],
+        included_rounds: vec![round],
+        summary: None,
+        files: Vec::new(),
+        stats: RelayStats {
+            message_count: 2,
+            file_count: 0,
+            todo_count: 0,
+        },
+        canonical_context: "previous context".to_owned(),
+    };
+    let snapshot_json = serde_json::to_string(&snapshot).unwrap();
+    let consumed_at = (status == "consumed").then(chrono::Utc::now);
+    relay_context_pack::ActiveModel {
+        target_draft_id: Set(target_draft_id.to_owned()),
+        target_conversation_id: Set(target_conversation_id),
+        source_conversation_id: Set(source_conversation_id),
+        source_folder_id: Set(source_folder_id),
+        scope_type: Set("recent_rounds".to_owned()),
+        selected_round_ids_json: Set(serde_json::to_string(&scope.selected_round_ids).unwrap()),
+        snapshot_json: Set(snapshot_json.clone()),
+        source_fingerprint: Set(fingerprint_rounds(&snapshot.available_rounds)),
+        estimated_tokens: Set(20),
+        context_window_tokens: Set(None),
+        allowed_tokens: Set(4_000),
+        status: Set(status.to_owned()),
+        invalid_reason: Set(None),
+        consume_client_message_id: Set(None),
+        consume_attempt_state: Set(None),
+        consumed_snapshot_json: Set((status == "consumed").then_some(snapshot_json)),
+        created_at: Set(chrono::Utc::now()),
+        updated_at: Set(chrono::Utc::now()),
+        consumed_at: Set(consumed_at),
+        ..Default::default()
+    }
+    .insert(&state.db.conn)
+    .await
+    .unwrap()
+}
+
+fn authorized(server: &TestServer, method: &str, path: &str) -> axum_test::TestRequest {
+    let request = match method {
+        "GET" => server.get(path),
+        "POST" => server.post(path),
+        "PATCH" => server.patch(path),
+        "DELETE" => server.delete(path),
+        _ => panic!("unsupported test method"),
+    };
+    request.add_header("authorization", format!("Bearer {TEST_TOKEN}"))
+}
+
+#[tokio::test]
+async fn conversation_relay_settings_command_alias_and_rest_share_state() {
+    let (server, state, _data, _static) = build_test_server_with_state().await;
+
+    let defaults = authorized(&server, "POST", "/api/get_conversation_capabilities")
+        .json(&json!({}))
+        .await;
+    assert_eq!(defaults.status_code(), 200);
+    assert_eq!(defaults.json::<Value>(), json!({ "relayEnabled": true }));
+
+    let rest_update = authorized(&server, "PATCH", "/api/settings/conversation-capabilities")
+        .json(&json!({ "relayEnabled": false }))
+        .await;
+    assert_eq!(rest_update.status_code(), 200);
+    assert_eq!(
+        rest_update.json::<Value>(),
+        json!({ "relayEnabled": false })
+    );
+
+    let command_read = authorized(&server, "POST", "/api/get_conversation_capabilities")
+        .json(&json!({}))
+        .await;
+    assert_eq!(
+        command_read.json::<Value>(),
+        json!({ "relayEnabled": false })
+    );
+    let command_update = authorized(&server, "POST", "/api/update_conversation_capabilities")
+        .json(&json!({ "relayEnabled": true }))
+        .await;
+    let rest_read = authorized(&server, "GET", "/api/settings/conversation-capabilities").await;
+    assert_eq!(command_update.json::<Value>(), rest_read.json::<Value>());
+    assert_eq!(rest_read.json::<Value>(), json!({ "relayEnabled": true }));
+    assert_eq!(
+        relay_context_pack::Entity::find()
+            .count(&state.db.conn)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn conversation_relay_restore_patch_remove_and_provenance_have_command_rest_parity() {
+    let (server, state, _data, _static) = build_test_server_with_state().await;
+    let folder_id = seed_folder(&state.db, "C:/workspace/relay-api").await;
+    let source = seed_conversation(&state.db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&state.db, folder_id, AgentType::Codex).await;
+    let command_pack =
+        seed_api_relay_pack(&state, "draft-command", source, folder_id, None, "draft").await;
+    let rest_pack =
+        seed_api_relay_pack(&state, "draft-rest", source, folder_id, None, "draft").await;
+    seed_api_relay_pack(
+        &state,
+        "consumed-provenance",
+        source,
+        folder_id,
+        Some(target),
+        "consumed",
+    )
+    .await;
+
+    let core = get_relay_context_by_draft_core(&state.db.conn, "draft-command")
+        .await
+        .unwrap()
+        .unwrap();
+    let command_restore = authorized(&server, "POST", "/api/get_relay_context_by_draft")
+        .json(&json!({ "targetDraftId": "draft-command" }))
+        .await;
+    let rest_restore = authorized(
+        &server,
+        "GET",
+        "/api/relay-context-packs/by-draft/draft-command",
+    )
+    .await;
+    assert_eq!(command_restore.status_code(), 200);
+    assert_eq!(
+        command_restore.json::<Value>(),
+        rest_restore.json::<Value>()
+    );
+    assert_eq!(command_restore.json::<Value>()["id"], core.id);
+
+    let command_patch_input = json!({
+        "scope": { "scopeType": "recent_rounds", "selectedRoundIds": ["round-a"] },
+        "targetAgentType": "codex",
+        "targetModel": "unknown-model"
+    });
+    let rest_patch_input = json!({
+        "scope": { "scopeType": "recent_rounds", "selectedRoundIds": ["round-a"] },
+        "targetAgentType": "codex",
+        "targetModel": "claude-sonnet-4-6 [5000M]"
+    });
+    let command_patch = authorized(&server, "POST", "/api/update_relay_context")
+        .json(&json!({ "relayId": command_pack.id, "input": command_patch_input }))
+        .await;
+    let rest_patch = authorized(
+        &server,
+        "PATCH",
+        &format!("/api/relay-context-packs/{}", rest_pack.id),
+    )
+    .json(&rest_patch_input)
+    .await;
+    assert_eq!(command_patch.status_code(), 200);
+    assert_eq!(rest_patch.status_code(), 200);
+    let command_patch_body = command_patch.json::<Value>();
+    let rest_patch_body = rest_patch.json::<Value>();
+    assert!(command_patch_body["contextWindowTokens"].is_null());
+    assert!(rest_patch_body["contextWindowTokens"].is_null());
+    for field in [
+        "sourceConversationId",
+        "sourceFolderId",
+        "scope",
+        "snapshot",
+        "estimatedTokens",
+        "contextWindowTokens",
+        "allowedTokens",
+        "status",
+    ] {
+        assert_eq!(command_patch_body[field], rest_patch_body[field], "{field}");
+    }
+
+    let command_remove = authorized(&server, "POST", "/api/remove_relay_context")
+        .json(&json!({ "relayId": command_patch_body["id"] }))
+        .await;
+    let rest_remove = authorized(
+        &server,
+        "DELETE",
+        &format!("/api/relay-context-packs/{}", rest_patch_body["id"]),
+    )
+    .await;
+    assert_eq!(command_remove.json::<Value>()["status"], "removed");
+    assert_eq!(rest_remove.json::<Value>()["status"], "removed");
+
+    let command_provenance = authorized(&server, "POST", "/api/get_conversation_relay")
+        .json(&json!({ "conversationId": target }))
+        .await;
+    let rest_provenance = authorized(
+        &server,
+        "GET",
+        &format!("/api/conversations/{target}/relay"),
+    )
+    .await;
+    assert_eq!(command_provenance.status_code(), 200);
+    assert_eq!(
+        command_provenance.json::<Value>(),
+        rest_provenance.json::<Value>()
+    );
+}
+
+#[tokio::test]
+async fn conversation_relay_preview_is_explicit_and_failures_never_persist_or_replace() {
+    let (server, state, _data, _static) = build_test_server_with_state().await;
+    let source_folder = seed_folder(&state.db, "C:/workspace/relay-source").await;
+    let target_folder = seed_folder(&state.db, "C:/workspace/relay-target").await;
+    let source = seed_conversation(&state.db, source_folder, AgentType::Codex).await;
+    seed_api_relay_pack(
+        &state,
+        "protected-draft",
+        source,
+        source_folder,
+        None,
+        "draft",
+    )
+    .await;
+
+    let list = authorized(&server, "POST", "/api/list_all_conversations")
+        .json(&json!({}))
+        .await;
+    assert_eq!(list.status_code(), 200);
+    assert_eq!(
+        relay_context_pack::Entity::find()
+            .count(&state.db.conn)
+            .await
+            .unwrap(),
+        1
+    );
+
+    let explicit_cross_project = json!({
+        "requestId": "api-preview-command",
+        "targetDraftId": "protected-draft",
+        "sourceConversationId": source,
+        "targetFolderId": target_folder,
+        "targetAgentType": "codex",
+        "targetModel": null,
+        "scope": { "scopeType": "recent_rounds", "selectedRoundIds": ["round-a"] }
+    });
+    let command_reservation = authorized(&server, "POST", "/api/reserve_relay_preview")
+        .json(&json!({
+            "requestId": "api-preview-command",
+            "targetDraftId": "protected-draft"
+        }))
+        .await;
+    assert_eq!(command_reservation.status_code(), 200);
+    assert_eq!(command_reservation.json::<Value>(), json!(true));
+    let command = authorized(&server, "POST", "/api/preview_relay_context")
+        .json(&explicit_cross_project)
+        .await;
+    let rest_reservation = authorized(&server, "POST", "/api/reserve_relay_preview")
+        .json(&json!({
+            "requestId": "api-preview-rest",
+            "targetDraftId": "protected-draft"
+        }))
+        .await;
+    assert_eq!(rest_reservation.status_code(), 200);
+    assert_eq!(rest_reservation.json::<Value>(), json!(true));
+    let rest = authorized(&server, "POST", "/api/relay-context-packs/preview")
+        .json(&json!({
+            "requestId": "api-preview-rest",
+            "targetDraftId": "protected-draft",
+            "sourceConversationId": source,
+            "targetFolderId": target_folder,
+            "targetAgentType": "codex",
+            "targetModel": null,
+            "scope": { "scopeType": "recent_rounds", "selectedRoundIds": ["round-a"] }
+        }))
+        .await;
+    assert_eq!(command.status_code(), rest.status_code());
+    assert_eq!(
+        command.json::<Value>()["message"],
+        rest.json::<Value>()["message"]
+    );
+
+    let missing_source_reservation = authorized(&server, "POST", "/api/reserve_relay_preview")
+        .json(&json!({
+            "requestId": "api-preview-missing-source",
+            "targetDraftId": "protected-draft"
+        }))
+        .await;
+    assert_eq!(missing_source_reservation.status_code(), 200);
+    assert_eq!(missing_source_reservation.json::<Value>(), json!(true));
+    let missing_source = authorized(&server, "POST", "/api/preview_relay_context")
+        .json(&json!({
+            "requestId": "api-preview-missing-source",
+            "targetDraftId": "protected-draft",
+            "targetFolderId": target_folder,
+            "targetAgentType": "codex",
+            "targetModel": null,
+            "scope": { "scopeType": "recent_rounds", "selectedRoundIds": ["round-a"] }
+        }))
+        .await;
+    assert!(missing_source.status_code().is_client_error());
+    let retained = get_relay_context_by_draft_core(&state.db.conn, "protected-draft")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retained.snapshot.canonical_context, "previous context");
+    assert_eq!(
+        relay_context_pack::Entity::find()
+            .count(&state.db.conn)
+            .await
+            .unwrap(),
+        1
+    );
+
+    let cancelled = authorized(&server, "POST", "/api/cancel_relay_preview")
+        .json(&json!({ "requestId": "api-preview-cancel" }))
+        .await;
+    assert_eq!(cancelled.status_code(), 200);
+    assert_eq!(cancelled.json::<Value>(), json!(false));
 }
 
 #[tokio::test]

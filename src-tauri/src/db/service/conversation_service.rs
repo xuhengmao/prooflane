@@ -1,6 +1,6 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, DatabaseConnection, EntityTrait,
+    ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, Set,
 };
 
@@ -9,13 +9,16 @@ use crate::db::entities::{conversation, folder};
 use crate::db::error::DbError;
 use crate::models::{AgentType, DbConversationSummary};
 
-pub async fn create(
-    conn: &DatabaseConnection,
+pub async fn create<C>(
+    conn: &C,
     folder_id: i32,
     agent_type: AgentType,
     title: Option<String>,
     git_branch: Option<String>,
-) -> Result<conversation::Model, DbError> {
+) -> Result<conversation::Model, DbError>
+where
+    C: ConnectionTrait,
+{
     create_inner(
         conn,
         folder_id,
@@ -32,13 +35,16 @@ pub async fn create(
 /// shape but `kind = 'chat'`, so the sidebar routes the row to its flat "Chat"
 /// section. Callers must pair it with the hidden chat folder created in the
 /// same flow (`create_chat_conversation_core`).
-pub async fn create_chat(
-    conn: &DatabaseConnection,
+pub async fn create_chat<C>(
+    conn: &C,
     folder_id: i32,
     agent_type: AgentType,
     title: Option<String>,
     git_branch: Option<String>,
-) -> Result<conversation::Model, DbError> {
+) -> Result<conversation::Model, DbError>
+where
+    C: ConnectionTrait,
+{
     create_inner(
         conn,
         folder_id,
@@ -73,15 +79,18 @@ pub async fn create_with_delegation(
     create_inner(conn, folder_id, agent_type, title, git_branch, delegation, kind).await
 }
 
-async fn create_inner(
-    conn: &DatabaseConnection,
+async fn create_inner<C>(
+    conn: &C,
     folder_id: i32,
     agent_type: AgentType,
     title: Option<String>,
     git_branch: Option<String>,
     delegation: Option<crate::acp::delegation::spawner::DelegationLink>,
     kind: ConversationKind,
-) -> Result<conversation::Model, DbError> {
+) -> Result<conversation::Model, DbError>
+where
+    C: ConnectionTrait,
+{
     let at_str = serde_json::to_value(agent_type)
         .ok()
         .and_then(|v| v.as_str().map(String::from))
@@ -340,7 +349,10 @@ pub async fn reparent_folder_conversations(
     Ok(res.rows_affected)
 }
 
-pub async fn soft_delete(conn: &DatabaseConnection, conversation_id: i32) -> Result<(), DbError> {
+pub async fn soft_delete<C>(conn: &C, conversation_id: i32) -> Result<(), DbError>
+where
+    C: ConnectionTrait,
+{
     let conv = conversation::Entity::find_by_id(conversation_id)
         .filter(conversation::Column::DeletedAt.is_null())
         .one(conn)
