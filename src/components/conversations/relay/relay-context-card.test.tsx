@@ -1,14 +1,15 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { RelayContextCard } from "./relay-context-card"
+import { renderWithRelayIntl } from "./relay-test-utils"
 
 describe("RelayContextCard", () => {
   it("发送接力上下文期间禁止调整或移除", () => {
     const onPreview = vi.fn()
     const onAdjust = vi.fn()
     const onRemove = vi.fn()
-    render(
+    renderWithRelayIntl(
       <RelayContextCard
         disabled
         sourceTitle="产品需求讨论"
@@ -27,6 +28,7 @@ describe("RelayContextCard", () => {
         onAdjust={onAdjust}
         onRemove={onRemove}
         onUndo={vi.fn()}
+        onRefresh={vi.fn()}
       />
     )
 
@@ -40,7 +42,7 @@ describe("RelayContextCard", () => {
     const onAdjust = vi.fn()
     const onRemove = vi.fn()
     const onUndo = vi.fn()
-    const { rerender } = render(
+    const { rerender } = renderWithRelayIntl(
       <RelayContextCard
         sourceTitle="产品需求讨论"
         relay={{
@@ -58,6 +60,7 @@ describe("RelayContextCard", () => {
         onAdjust={onAdjust}
         onRemove={onRemove}
         onUndo={onUndo}
+        onRefresh={vi.fn()}
       />
     )
     expect(screen.getByText("产品需求讨论")).toBeInTheDocument()
@@ -92,6 +95,7 @@ describe("RelayContextCard", () => {
         onAdjust={onAdjust}
         onRemove={onRemove}
         onUndo={onUndo}
+        onRefresh={vi.fn()}
       />
     )
     expect(screen.getByText("10 秒内可撤销")).toBeInTheDocument()
@@ -104,7 +108,7 @@ describe("RelayContextCard", () => {
     ["custom_rounds", ["round-1", "round-2"], "范围：自定义 2 轮"],
     ["summary", [], "范围：摘要"],
   ] as const)("显示 %s 接力范围", (scopeType, selectedRoundIds, label) => {
-    render(
+    renderWithRelayIntl(
       <RelayContextCard
         sourceTitle="产品需求讨论"
         relay={{
@@ -122,9 +126,103 @@ describe("RelayContextCard", () => {
         onAdjust={vi.fn()}
         onRemove={vi.fn()}
         onUndo={vi.fn()}
+        onRefresh={vi.fn()}
       />
     )
 
     expect(screen.getByText(label)).toBeInTheDocument()
   })
+
+  it("marks an updated source and refreshes the frozen context", () => {
+    const onRefresh = vi.fn()
+    renderWithRelayIntl(
+      <RelayContextCard
+        sourceTitle="产品需求讨论"
+        relay={{
+          sourceConversationId: 42,
+          scope: { scopeType: "recent_rounds", selectedRoundIds: [] },
+          estimatedTokens: 1200,
+          allowedTokens: 4000,
+          invalidReason: "relay_rounds_changed",
+          status: "draft",
+          snapshot: {
+            stats: { messageCount: 32, fileCount: 4, todoCount: 3 },
+          },
+        }}
+        onPreview={vi.fn()}
+        onAdjust={vi.fn()}
+        onRemove={vi.fn()}
+        onUndo={vi.fn()}
+        onRefresh={onRefresh}
+      />
+    )
+
+    expect(screen.getByText("来源已更新")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "刷新接力内容" }))
+    expect(onRefresh).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ["relay_model_changed", "目标模型已变化"],
+    ["relay_send_uncertain", "发送结果不确定，请先检查当前会话"],
+  ])("shows %s with an explicit recovery action", (invalidReason, message) => {
+    const onRefresh = vi.fn()
+    renderWithRelayIntl(
+      <RelayContextCard
+        sourceTitle="产品需求讨论"
+        relay={{
+          sourceConversationId: 42,
+          scope: { scopeType: "recent_rounds", selectedRoundIds: [] },
+          estimatedTokens: 1200,
+          allowedTokens: 4000,
+          invalidReason,
+          status: "invalid",
+          snapshot: {
+            stats: { messageCount: 32, fileCount: 4, todoCount: 3 },
+          },
+        }}
+        onPreview={vi.fn()}
+        onAdjust={vi.fn()}
+        onRemove={vi.fn()}
+        onUndo={vi.fn()}
+        onRefresh={onRefresh}
+      />
+    )
+
+    expect(screen.getByText(message)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "重新准备接力" }))
+    expect(onRefresh).toHaveBeenCalledOnce()
+  })
+
+  it.each(["relay_source_not_found", "relay_source_unavailable"])(
+    "shows %s as unavailable with an explicit recovery action",
+    (invalidReason) => {
+      const onRefresh = vi.fn()
+      renderWithRelayIntl(
+        <RelayContextCard
+          sourceTitle="产品需求讨论"
+          relay={{
+            sourceConversationId: 42,
+            scope: { scopeType: "recent_rounds", selectedRoundIds: [] },
+            estimatedTokens: 1200,
+            allowedTokens: 4000,
+            invalidReason,
+            status: "invalid",
+            snapshot: {
+              stats: { messageCount: 32, fileCount: 4, todoCount: 3 },
+            },
+          }}
+          onPreview={vi.fn()}
+          onAdjust={vi.fn()}
+          onRemove={vi.fn()}
+          onUndo={vi.fn()}
+          onRefresh={onRefresh}
+        />
+      )
+
+      expect(screen.getByText("接力上下文准备失败，请重试")).toBeInTheDocument()
+      fireEvent.click(screen.getByRole("button", { name: "重新准备接力" }))
+      expect(onRefresh).toHaveBeenCalledOnce()
+    }
+  )
 })

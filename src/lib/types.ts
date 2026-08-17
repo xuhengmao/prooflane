@@ -354,6 +354,7 @@ export interface RelayContextPack {
   sourceFingerprint: string
   estimatedTokens: number
   contextWindowTokens: number | null
+  targetModel: string | null
   allowedTokens: number
   status: string
   invalidReason: string | null

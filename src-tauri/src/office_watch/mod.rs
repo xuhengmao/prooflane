@@ -182,19 +182,14 @@ fn lock_watches() -> MutexGuard<'static, HashMap<String, WatchInstance>> {
     OFFICE_WATCHES.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-/// Reap a child without blocking the caller: kill + `wait()` on a detached task
-/// so no zombie lingers. Falls back to `start_kill` (relying on `kill_on_drop`
-/// + tokio's orphan reaper) when called outside a runtime, e.g. at shutdown.
+/// Reap a child without blocking the caller. Send the kill signal before
+/// detaching the wait so a short-lived runtime cannot cancel cleanup first.
 fn reap(mut child: Child) {
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) => {
-            handle.spawn(async move {
-                let _ = child.kill().await;
-            });
-        }
-        Err(_) => {
-            let _ = child.start_kill();
-        }
+    let _ = child.start_kill();
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async move {
+            let _ = child.wait().await;
+        });
     }
 }
 
@@ -262,7 +257,10 @@ fn loose_key(root_path: &str, rel_path: &str) -> Option<String> {
 /// the readiness probe catches the rare loss as `PortTimeout`/`StartFailed`.
 fn allocate_free_port() -> Result<u16, WatchError> {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|_| WatchError::NoPort)?;
-    let port = listener.local_addr().map_err(|_| WatchError::NoPort)?.port();
+    let port = listener
+        .local_addr()
+        .map_err(|_| WatchError::NoPort)?
+        .port();
     drop(listener);
     Ok(port)
 }
@@ -439,7 +437,14 @@ pub async fn start_office_watch_core(
             } else {
                 // A dead entry squats the key — replace it below.
                 watches.remove(&key);
-                register_new(watches, key.clone(), child, port, cap.clone(), canonical_target)
+                register_new(
+                    watches,
+                    key.clone(),
+                    child,
+                    port,
+                    cap.clone(),
+                    canonical_target,
+                )
             }
         } else if watches.len() >= MAX_CONCURRENT_WATCHES {
             // Enforce the cap atomically under the pool lock — per-file spawn
@@ -449,7 +454,14 @@ pub async fn start_office_watch_core(
             reap(child);
             Err(WatchError::TooMany)
         } else {
-            register_new(watches, key.clone(), child, port, cap.clone(), canonical_target)
+            register_new(
+                watches,
+                key.clone(),
+                child,
+                port,
+                cap.clone(),
+                canonical_target,
+            )
         }
     };
     result
@@ -628,11 +640,24 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 /// Seed a live watch entry (backed by a real long-lived child bound to `port`)
 /// so proxy integration tests can exercise the gate without a real officecli.
-/// Unix-only at runtime (`sleep`); on Windows CI `cargo test` is `--no-run`.
 #[cfg(feature = "test-utils")]
 pub fn insert_known_port_for_test(port: u16, cap: &str) {
-    let child = tokio_command("sleep")
-        .arg("600")
+    #[cfg(windows)]
+    let mut sleeper = {
+        let mut command = tokio_command("ping");
+        command.args(["-n", "601", "127.0.0.1"]);
+        command
+    };
+    #[cfg(not(windows))]
+    let mut sleeper = {
+        let mut command = tokio_command("sleep");
+        command.arg("600");
+        command
+    };
+    let child = sleeper
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .expect("spawn test sleeper");
     lock_watches().insert(
@@ -810,8 +835,14 @@ mod tests {
 
     #[test]
     fn parse_watch_port_reads_officecli_announce() {
-        assert_eq!(parse_watch_port("Watch: http://localhost:26411"), Some(26411));
-        assert_eq!(parse_watch_port("Watch: http://127.0.0.1:8080/"), Some(8080));
+        assert_eq!(
+            parse_watch_port("Watch: http://localhost:26411"),
+            Some(26411)
+        );
+        assert_eq!(
+            parse_watch_port("Watch: http://127.0.0.1:8080/"),
+            Some(8080)
+        );
         assert_eq!(parse_watch_port("  Watch: http://localhost:1"), Some(1));
         // Other lines are ignored — crucially `Watching:` is not a false match.
         assert_eq!(parse_watch_port("Watching: /tmp/p.docx"), None);

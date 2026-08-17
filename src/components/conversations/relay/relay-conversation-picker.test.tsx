@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import { RelayConversationPicker } from "./relay-conversation-picker"
+import { renderWithRelayIntl } from "./relay-test-utils"
 
 const conversations = [
   { id: 1, folder_id: 10, title: "当前项目会话", agent_type: "codex" },
@@ -11,7 +12,7 @@ const conversations = [
 
 describe("RelayConversationPicker", () => {
   function renderPicker(onSelect = vi.fn()) {
-    render(
+    renderWithRelayIntl(
       <RelayConversationPicker
         conversations={conversations}
         folders={[
@@ -72,7 +73,7 @@ describe("RelayConversationPicker", () => {
   })
 
   it("无项目聊天草稿明确落到全部项目", () => {
-    render(
+    renderWithRelayIntl(
       <RelayConversationPicker
         conversations={conversations}
         folders={[]}
@@ -84,5 +85,40 @@ describe("RelayConversationPicker", () => {
 
     expect(screen.getByText("当前会话未关联项目")).toBeInTheDocument()
     expect(screen.getByText("跨项目会话")).toBeInTheDocument()
+  })
+
+  it("约束长标题和元信息宽度，不让列表产生横向滚动", () => {
+    const longTitle =
+      "这是一个非常长且不应撑开接力选择弹窗的历史会话标题".repeat(4)
+    const longFolder = "这是一个非常长的项目名称".repeat(4)
+    renderWithRelayIntl(
+      <RelayConversationPicker
+        conversations={[
+          {
+            id: 3,
+            folder_id: 30,
+            title: longTitle,
+            agent_type: "codex-with-a-very-long-agent-name",
+          },
+        ]}
+        folders={[{ id: 30, name: longFolder }]}
+        currentFolderId={30}
+        selectedConversationId={null}
+        onSelect={vi.fn()}
+      />
+    )
+
+    const title = screen.getByText(longTitle)
+    const metadata = screen.getByTitle(
+      `${longFolder} · codex-with-a-very-long-agent-name`
+    )
+    const option = screen.getByRole("radio")
+    const list = screen.getByRole("radiogroup")
+
+    expect(list).toHaveClass("overflow-x-hidden")
+    expect(option).toHaveClass("min-w-0", "overflow-hidden")
+    expect(title).toHaveClass("block", "w-full", "truncate")
+    expect(title).toHaveAttribute("title", longTitle)
+    expect(metadata).toHaveClass("block", "w-full", "truncate")
   })
 })

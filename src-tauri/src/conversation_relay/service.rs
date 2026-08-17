@@ -6,7 +6,7 @@ use std::time::Duration;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, Set, TransactionTrait,
+    QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -387,6 +387,7 @@ fn view_from_model(
         source_fingerprint: model.source_fingerprint,
         estimated_tokens,
         context_window_tokens,
+        target_model: model.target_model,
         allowed_tokens,
         status: model.status,
         invalid_reason: model.invalid_reason,
@@ -504,9 +505,8 @@ fn new_relay_pack(
     let estimated_tokens = estimate_relay_tokens(&snapshot.canonical_context);
     let context_window_tokens = context_window_tokens(target_model.as_deref());
     let allowed_tokens = relay_budget(context_window_tokens);
-    if estimated_tokens > allowed_tokens {
-        return Err(relay_error(RelayErrorCode::RelayBudgetExceeded));
-    }
+    let invalid_reason = (estimated_tokens > allowed_tokens)
+        .then(|| RelayErrorCode::RelayBudgetExceeded.to_string());
 
     let selected_round_ids_json = serde_json::to_string(&snapshot.scope.selected_round_ids)
         .map_err(|_| relay_error(RelayErrorCode::RelaySourceUnavailable))?;
@@ -526,19 +526,22 @@ fn new_relay_pack(
         target_model,
         allowed_tokens: i32::try_from(allowed_tokens)
             .map_err(|_| relay_error(RelayErrorCode::RelayBudgetExceeded))?,
+        invalid_reason,
     })
 }
 
 async fn persist_snapshot(
     db: &AppDatabase,
+    expected_relay_id: i32,
     target_draft_id: String,
     target_model: Option<String>,
     snapshot: RelaySnapshot,
 ) -> Result<RelayContextPackView, AppCommandError> {
     let pack = new_relay_pack(target_draft_id, target_model, snapshot)?;
-    let model = relay_context_pack_service::create_or_replace_draft(&db.conn, pack)
-        .await
-        .map_err(|_| storage_error())?;
+    let model =
+        relay_context_pack_service::replace_draft_if_current(&db.conn, expected_relay_id, pack)
+            .await
+            .map_err(|error| relay_error(error.code))?;
     view_from_model(model)
 }
 
@@ -557,19 +560,44 @@ async fn persist_preview_snapshot(
 
     let txn = db.conn.begin().await.map_err(|_| storage_error())?;
     let now = chrono::Utc::now();
+    let existing_target_conversation_id = relay_context_pack::Entity::find()
+        .filter(relay_context_pack::Column::TargetDraftId.eq(&pack.target_draft_id))
+        .filter(
+            relay_context_pack::Column::Status.is_in(["draft", "attached", "invalid", "removed"]),
+        )
+        .filter(relay_context_pack::Column::TargetConversationId.is_not_null())
+        .filter(relay_context_pack_service::consume_not_claimed())
+        .order_by_desc(relay_context_pack::Column::UpdatedAt)
+        .one(&txn)
+        .await
+        .map_err(|_| storage_error())?
+        .and_then(|existing| existing.target_conversation_id);
+    let replacement_status = if pack.invalid_reason.is_some() {
+        "invalid"
+    } else if existing_target_conversation_id.is_some() {
+        "attached"
+    } else {
+        "draft"
+    };
     relay_context_pack::Entity::update_many()
         .col_expr(relay_context_pack::Column::Status, Expr::value("removed"))
+        .col_expr(
+            relay_context_pack::Column::TargetConversationId,
+            Expr::value(Option::<i32>::None),
+        )
         .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(now))
         .filter(relay_context_pack::Column::TargetDraftId.eq(&pack.target_draft_id))
-        .filter(relay_context_pack::Column::Status.is_in(["draft", "attached"]))
-        .filter(relay_context_pack_service::consume_not_claimed())
+        .filter(
+            relay_context_pack::Column::Status.is_in(["draft", "attached", "invalid", "removed"]),
+        )
+        .filter(relay_context_pack::Column::ConsumeAttemptState.is_null())
         .exec(&txn)
         .await
         .map_err(|_| storage_error())?;
     let model = relay_context_pack::ActiveModel {
         id: NotSet,
         target_draft_id: Set(pack.target_draft_id),
-        target_conversation_id: Set(None),
+        target_conversation_id: Set(existing_target_conversation_id),
         source_conversation_id: Set(pack.source_conversation_id),
         source_folder_id: Set(pack.source_folder_id),
         scope_type: Set(pack.scope_type),
@@ -580,8 +608,8 @@ async fn persist_preview_snapshot(
         context_window_tokens: Set(pack.context_window_tokens),
         target_model: Set(pack.target_model),
         allowed_tokens: Set(pack.allowed_tokens),
-        status: Set("draft".to_owned()),
-        invalid_reason: Set(None),
+        status: Set(replacement_status.to_owned()),
+        invalid_reason: Set(pack.invalid_reason),
         consume_client_message_id: Set(None),
         consume_attempt_state: Set(None),
         consumed_snapshot_json: Set(None),
@@ -733,7 +761,7 @@ pub async fn get_relay_context_by_draft_core(
     conn: &DatabaseConnection,
     target_draft_id: &str,
 ) -> Result<Option<RelayContextPackView>, AppCommandError> {
-    let model = relay_context_pack_service::get_active_by_draft(conn, target_draft_id)
+    let model = relay_context_pack_service::get_restorable_by_draft(conn, target_draft_id)
         .await
         .map_err(|_| storage_error())?;
     model.map(view_from_model).transpose()
@@ -761,7 +789,14 @@ pub async fn update_relay_context_core(
         CancellationToken::new(),
     )
     .await?;
-    persist_snapshot(db, existing.target_draft_id, target_model, snapshot).await
+    persist_snapshot(
+        db,
+        existing.id,
+        existing.target_draft_id,
+        target_model,
+        snapshot,
+    )
+    .await
 }
 
 async fn prepare_relay_update(
@@ -805,7 +840,14 @@ pub async fn update_relay_context_with_summarizer_core(
         Some(summarizer),
     )
     .await?;
-    persist_snapshot(db, existing.target_draft_id, target_model, snapshot).await
+    persist_snapshot(
+        db,
+        existing.id,
+        existing.target_draft_id,
+        target_model,
+        snapshot,
+    )
+    .await
 }
 
 pub async fn remove_relay_context_core(

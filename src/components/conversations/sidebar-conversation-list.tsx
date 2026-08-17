@@ -152,7 +152,10 @@ import { cn } from "@/lib/utils"
 import { FolderAliasLabel } from "./folder-alias-label"
 import { toErrorMessage } from "@/lib/app-error"
 import { useConversationCapabilities } from "@/hooks/use-conversation-capabilities"
-import { queueRelayIntent } from "@/lib/conversation-relay"
+import {
+  queueRelayIntent,
+  resolveRelaySourceFolderId,
+} from "@/lib/conversation-relay"
 
 // Layout effect on the client (so the sticky overlay is positioned before
 // paint) but a no-op-safe passive effect during the static-export prerender.
@@ -1845,17 +1848,17 @@ export function SidebarConversationList({
   )
 
   const handleRelayContinue = useCallback(
-    (sourceConversationId: number) => {
-      const source = useAppWorkspaceStore
-        .getState()
-        .conversations.find(
-          (conversation) => conversation.id === sourceConversationId
-        )
-      if (!source) return
+    (sourceConversationId: number, sourceFolderId: number) => {
+      const latestConversations = useAppWorkspaceStore.getState().conversations
+      const resolvedFolderId = resolveRelaySourceFolderId(
+        sourceConversationId,
+        sourceFolderId,
+        latestConversations
+      )
       openConversations()
-      const folder = folderIndex.get(source.folder_id)
+      const folder = folderIndex.get(resolvedFolderId)
       const tabId = folder
-        ? openNewConversationTab(source.folder_id, folder.path)
+        ? openNewConversationTab(resolvedFolderId, folder.path)
         : openChatModeTab()
       queueRelayIntent({ tabId, sourceConversationId })
     },

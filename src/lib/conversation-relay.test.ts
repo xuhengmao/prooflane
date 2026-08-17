@@ -37,6 +37,7 @@ import {
   subscribeRelayIntent,
   writeRelayDragData,
 } from "@/lib/conversation-relay"
+import * as conversationRelay from "@/lib/conversation-relay"
 import type {
   RelayContextPack,
   RelayPatchInput,
@@ -69,6 +70,7 @@ const pack: RelayContextPack = {
   sourceFingerprint: "fingerprint",
   estimatedTokens: 12,
   contextWindowTokens: 200000,
+  targetModel: null,
   allowedTokens: 12000,
   status: "draft",
   invalidReason: null,
@@ -124,6 +126,21 @@ describe("conversation relay transport API", () => {
       sourceConversationId: 42,
     })
     expect(consumeRelayIntent("draft-42")).toBeNull()
+  })
+
+  it("prefers the latest source folder and falls back to the sidebar row", () => {
+    const resolveSourceFolderId = (
+      conversationRelay as typeof conversationRelay & {
+        resolveRelaySourceFolderId?: (
+          sourceConversationId: number,
+          fallbackFolderId: number,
+          conversations: Array<{ id: number; folder_id: number }>
+        ) => number
+      }
+    ).resolveRelaySourceFolderId
+
+    expect(resolveSourceFolderId?.(42, 3, [{ id: 42, folder_id: 9 }])).toBe(9)
+    expect(resolveSourceFolderId?.(42, 3, [{ id: 71, folder_id: 8 }])).toBe(3)
   })
 
   it("notifies an already-mounted draft when an intent is queued", () => {

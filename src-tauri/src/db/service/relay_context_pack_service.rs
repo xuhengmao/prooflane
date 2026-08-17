@@ -2,7 +2,8 @@ use chrono::Utc;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, EntityTrait, QueryFilter, Set, TransactionTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder, Set,
+    TransactionTrait,
 };
 
 use crate::db::entities::relay_context_pack;
@@ -30,6 +31,7 @@ pub struct NewRelayPack {
     pub context_window_tokens: Option<i32>,
     pub target_model: Option<String>,
     pub allowed_tokens: i32,
+    pub invalid_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,12 +86,46 @@ pub async fn get_consumed_by_target(
         .await?)
 }
 
+pub async fn get_context_bearing_attempt_by_target(
+    conn: &DatabaseConnection,
+    conversation_id: i32,
+) -> Result<Option<relay_context_pack::Model>, DbError> {
+    Ok(
+        get_context_bearing_attempts_by_target(conn, conversation_id)
+            .await?
+            .into_iter()
+            .next(),
+    )
+}
+
+pub async fn get_context_bearing_attempts_by_target(
+    conn: &DatabaseConnection,
+    conversation_id: i32,
+) -> Result<Vec<relay_context_pack::Model>, DbError> {
+    Ok(relay_context_pack::Entity::find()
+        .filter(relay_context_pack::Column::TargetConversationId.eq(conversation_id))
+        .filter(
+            Condition::any()
+                .add(relay_context_pack::Column::Status.eq(STATUS_CONSUMED))
+                .add(relay_context_pack::Column::ConsumeAttemptState.is_in([CLAIMED, UNCERTAIN])),
+        )
+        .order_by_desc(relay_context_pack::Column::UpdatedAt)
+        .order_by_desc(relay_context_pack::Column::Id)
+        .all(conn)
+        .await?)
+}
+
 pub async fn create_or_replace_draft(
     conn: &DatabaseConnection,
     pack: NewRelayPack,
 ) -> Result<relay_context_pack::Model, DbError> {
     let txn = conn.begin().await?;
     let now = Utc::now();
+    let status = if pack.invalid_reason.is_some() {
+        STATUS_INVALID
+    } else {
+        STATUS_DRAFT
+    };
 
     relay_context_pack::Entity::update_many()
         .col_expr(
@@ -98,7 +134,11 @@ pub async fn create_or_replace_draft(
         )
         .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(now))
         .filter(relay_context_pack::Column::TargetDraftId.eq(&pack.target_draft_id))
-        .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
+        .filter(relay_context_pack::Column::Status.is_in([
+            STATUS_DRAFT,
+            STATUS_ATTACHED,
+            STATUS_INVALID,
+        ]))
         .filter(consume_not_claimed())
         .exec(&txn)
         .await?;
@@ -117,8 +157,8 @@ pub async fn create_or_replace_draft(
         context_window_tokens: Set(pack.context_window_tokens),
         target_model: Set(pack.target_model),
         allowed_tokens: Set(pack.allowed_tokens),
-        status: Set(STATUS_DRAFT.to_owned()),
-        invalid_reason: Set(None),
+        status: Set(status.to_owned()),
+        invalid_reason: Set(pack.invalid_reason),
         consume_client_message_id: Set(None),
         consume_attempt_state: Set(None),
         consumed_snapshot_json: Set(None),
@@ -133,6 +173,69 @@ pub async fn create_or_replace_draft(
     Ok(model)
 }
 
+pub async fn replace_draft_if_current(
+    conn: &DatabaseConnection,
+    expected_relay_id: i32,
+    pack: NewRelayPack,
+) -> Result<relay_context_pack::Model, RelayError> {
+    let txn = conn.begin().await.map_err(relay_db_error)?;
+    let now = Utc::now();
+    let status = if pack.invalid_reason.is_some() {
+        STATUS_INVALID
+    } else {
+        STATUS_DRAFT
+    };
+    let updated = relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::Status,
+            Expr::value(STATUS_REMOVED),
+        )
+        .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(now))
+        .filter(relay_context_pack::Column::Id.eq(expected_relay_id))
+        .filter(relay_context_pack::Column::TargetDraftId.eq(&pack.target_draft_id))
+        .filter(relay_context_pack::Column::Status.eq(STATUS_DRAFT))
+        .filter(relay_context_pack::Column::InvalidReason.is_null())
+        .filter(consume_not_claimed())
+        .exec(&txn)
+        .await
+        .map_err(relay_db_error)?;
+
+    if updated.rows_affected != 1 {
+        txn.rollback().await.map_err(relay_db_error)?;
+        return Err(relay_error(RelayErrorCode::RelayConsumeConflict));
+    }
+
+    let model = relay_context_pack::ActiveModel {
+        id: NotSet,
+        target_draft_id: Set(pack.target_draft_id),
+        target_conversation_id: Set(None),
+        source_conversation_id: Set(pack.source_conversation_id),
+        source_folder_id: Set(pack.source_folder_id),
+        scope_type: Set(pack.scope_type),
+        selected_round_ids_json: Set(pack.selected_round_ids_json),
+        snapshot_json: Set(pack.snapshot_json),
+        source_fingerprint: Set(pack.source_fingerprint),
+        estimated_tokens: Set(pack.estimated_tokens),
+        context_window_tokens: Set(pack.context_window_tokens),
+        target_model: Set(pack.target_model),
+        allowed_tokens: Set(pack.allowed_tokens),
+        status: Set(status.to_owned()),
+        invalid_reason: Set(pack.invalid_reason),
+        consume_client_message_id: Set(None),
+        consume_attempt_state: Set(None),
+        consumed_snapshot_json: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        consumed_at: Set(None),
+    }
+    .insert(&txn)
+    .await
+    .map_err(relay_db_error)?;
+
+    txn.commit().await.map_err(relay_db_error)?;
+    Ok(model)
+}
+
 pub async fn get_active_by_draft(
     conn: &DatabaseConnection,
     target_draft_id: &str,
@@ -141,6 +244,25 @@ pub async fn get_active_by_draft(
         .filter(relay_context_pack::Column::TargetDraftId.eq(target_draft_id))
         .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
         .filter(relay_context_pack::Column::InvalidReason.is_null())
+        .one(conn)
+        .await?)
+}
+
+pub async fn get_restorable_by_draft(
+    conn: &DatabaseConnection,
+    target_draft_id: &str,
+) -> Result<Option<relay_context_pack::Model>, DbError> {
+    if let Some(active) = get_active_by_draft(conn, target_draft_id).await? {
+        return Ok(Some(active));
+    }
+
+    Ok(relay_context_pack::Entity::find()
+        .filter(relay_context_pack::Column::TargetDraftId.eq(target_draft_id))
+        .filter(relay_context_pack::Column::Status.eq(STATUS_INVALID))
+        .filter(relay_context_pack::Column::InvalidReason.is_not_null())
+        .filter(consume_not_claimed())
+        .order_by_desc(relay_context_pack::Column::UpdatedAt)
+        .order_by_desc(relay_context_pack::Column::Id)
         .one(conn)
         .await?)
 }
@@ -315,6 +437,52 @@ pub async fn release_claim(
     Ok(pack)
 }
 
+pub async fn invalidate_claim(
+    conn: &DatabaseConnection,
+    relay_id: i32,
+    client_message_id: &str,
+    reason: RelayErrorCode,
+) -> Result<relay_context_pack::Model, RelayError> {
+    let txn = conn.begin().await.map_err(relay_db_error)?;
+    let updated = relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::Status,
+            Expr::value(STATUS_INVALID),
+        )
+        .col_expr(
+            relay_context_pack::Column::InvalidReason,
+            Expr::value(Some(reason.to_string())),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumeClientMessageId,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumeAttemptState,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            relay_context_pack::Column::UpdatedAt,
+            Expr::value(Utc::now()),
+        )
+        .filter(relay_context_pack::Column::Id.eq(relay_id))
+        .filter(relay_context_pack::Column::Status.eq(STATUS_ATTACHED))
+        .filter(relay_context_pack::Column::ConsumeClientMessageId.eq(client_message_id))
+        .filter(relay_context_pack::Column::ConsumeAttemptState.eq(CLAIMED))
+        .exec(&txn)
+        .await
+        .map_err(relay_db_error)?;
+
+    if updated.rows_affected != 1 {
+        txn.rollback().await.map_err(relay_db_error)?;
+        return Err(relay_error(RelayErrorCode::RelayConsumeConflict));
+    }
+
+    let pack = find_pack(&txn, relay_id).await?;
+    txn.commit().await.map_err(relay_db_error)?;
+    Ok(pack)
+}
+
 pub async fn mark_uncertain(
     conn: &DatabaseConnection,
     relay_id: i32,
@@ -322,6 +490,14 @@ pub async fn mark_uncertain(
 ) -> Result<relay_context_pack::Model, RelayError> {
     let txn = conn.begin().await.map_err(relay_db_error)?;
     let updated = relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::Status,
+            Expr::value(STATUS_INVALID),
+        )
+        .col_expr(
+            relay_context_pack::Column::InvalidReason,
+            Expr::value(Some(RelayErrorCode::RelaySendUncertain.to_string())),
+        )
         .col_expr(
             relay_context_pack::Column::ConsumeAttemptState,
             Expr::value(Some(UNCERTAIN.to_owned())),
@@ -346,6 +522,31 @@ pub async fn mark_uncertain(
     Ok(pack)
 }
 
+pub async fn recover_claimed_as_uncertain(conn: &DatabaseConnection) -> Result<u64, DbError> {
+    let recovered = relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::Status,
+            Expr::value(STATUS_INVALID),
+        )
+        .col_expr(
+            relay_context_pack::Column::InvalidReason,
+            Expr::value(Some(RelayErrorCode::RelaySendUncertain.to_string())),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumeAttemptState,
+            Expr::value(Some(UNCERTAIN.to_owned())),
+        )
+        .col_expr(
+            relay_context_pack::Column::UpdatedAt,
+            Expr::value(Utc::now()),
+        )
+        .filter(relay_context_pack::Column::Status.eq(STATUS_ATTACHED))
+        .filter(relay_context_pack::Column::ConsumeAttemptState.eq(CLAIMED))
+        .exec(conn)
+        .await?;
+    Ok(recovered.rows_affected)
+}
+
 pub async fn remove_unclaimed(
     conn: &DatabaseConnection,
     relay_id: i32,
@@ -361,7 +562,11 @@ pub async fn remove_unclaimed(
             Expr::value(Utc::now()),
         )
         .filter(relay_context_pack::Column::Id.eq(relay_id))
-        .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
+        .filter(relay_context_pack::Column::Status.is_in([
+            STATUS_DRAFT,
+            STATUS_ATTACHED,
+            STATUS_INVALID,
+        ]))
         .filter(consume_not_claimed());
     let updated = update.exec(&txn).await.map_err(relay_db_error)?;
 
@@ -374,7 +579,10 @@ pub async fn remove_unclaimed(
     let existing = find_pack(&txn, relay_id).await;
     txn.rollback().await.map_err(relay_db_error)?;
     let existing = existing?;
-    if !matches!(existing.status.as_str(), STATUS_DRAFT | STATUS_ATTACHED) {
+    if !matches!(
+        existing.status.as_str(),
+        STATUS_DRAFT | STATUS_ATTACHED | STATUS_INVALID
+    ) {
         return Err(relay_error(RelayErrorCode::RelayImmutableSnapshot));
     }
     if existing.consume_attempt_state.as_deref() == Some(CLAIMED) {

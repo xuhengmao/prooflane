@@ -55,6 +55,10 @@ import { useFeedbackEnabled } from "@/hooks/use-feedback-enabled"
 import { useSessionFeedback } from "@/hooks/use-session-feedback"
 import { useConversationCapabilities } from "@/hooks/use-conversation-capabilities"
 import { useRelayDraft } from "@/hooks/use-relay-draft"
+import {
+  isRelayEntryBlockingFirstSend,
+  useRelayEntryIntent,
+} from "@/hooks/use-relay-entry-intent"
 import { AgentSelector } from "@/components/chat/agent-selector"
 import { ChatInput } from "@/components/chat/chat-input"
 import { WelcomeHero, WelcomeTip } from "@/components/chat/welcome-hero"
@@ -150,15 +154,16 @@ import {
   resolveConversationComposerState,
   retryConversationComposerError,
 } from "./conversation-composer-state"
-import { createRelaySendAttempt } from "./relay-send-attempt"
+import {
+  createRelaySendAttempt,
+  resolveRelaySendBinding,
+  shouldBlockRelaySend,
+} from "./relay-send-attempt"
 import { ConversationDetailHeader } from "./conversation-detail-header"
 import { SessionDetailsDialog } from "./session-details-dialog"
 import { RelayContextCard } from "./relay/relay-context-card"
 import { RelayDialogController } from "./relay/relay-dialog-controller"
-import {
-  consumeRelayIntent,
-  subscribeRelayIntent,
-} from "@/lib/conversation-relay"
+import { RelayEntryStatus } from "./relay/relay-entry-status"
 import { isModelConfigOption } from "@/lib/model-config-groups"
 
 interface ConversationTabViewProps {
@@ -386,12 +391,15 @@ const ConversationTabView = memo(function ConversationTabView({
   const selectedAgentRef = useRef(selectedAgent)
   const createConversationPendingRef = useRef(false)
   const [composerRestoreNonce, setComposerRestoreNonce] = useState(0)
+  const composerRestoreDraftRef = useRef<PromptDraft | null>(null)
   const [relaySendPending, setRelaySendPending] = useState(false)
   const relayForSendRef = useRef<{
     relayId: number
     targetDraftId: string
   } | null>(null)
   const clearRelayRef = useRef<() => void>(() => {})
+  const markRelayInvalidRef = useRef<(error: unknown) => void>(() => {})
+  const relaySendBlockedRef = useRef(false)
   // Single-flight guard for the eager scratch-dir prepare (on chat-mode select).
   const prepareChatDirPendingRef = useRef(false)
   const sessionIdRef = useRef<string | null>(null)
@@ -966,6 +974,8 @@ const ConversationTabView = memo(function ConversationTabView({
       // is live and the prompt is delivered inline — never parked in the queue.
       const sendOwnTab = ownTab
 
+      if (relaySendBlockedRef.current) return
+
       if (!hasPersistedConversation && !canAutoConnect) {
         setAgentConnectError(tWelcome("enableAgentFirstPlaceholder"))
         return
@@ -1002,6 +1012,7 @@ const ConversationTabView = memo(function ConversationTabView({
         return
       }
 
+      composerRestoreDraftRef.current = null
       const relayBindingForAttempt = relayForSendRef.current
       if (relayBindingForAttempt) setRelaySendPending(true)
       const optimisticTurn = buildOptimisticUserTurnFromDraft(
@@ -1044,7 +1055,7 @@ const ConversationTabView = memo(function ConversationTabView({
       // bounce): a deterministic failure would retry — and toast — forever.
       const relayAttempt = createRelaySendAttempt({
         binding: relayBindingForAttempt,
-        draftText: draft.displayText,
+        draft,
         getDraftStorageKey: () =>
           dbConvIdRef.current != null
             ? buildConversationDraftStorageKey(dbConvIdRef.current)
@@ -1053,9 +1064,13 @@ const ConversationTabView = memo(function ConversationTabView({
           removeOptimisticTurn(effectiveConversationId, optimisticTurn.id),
         setPending: setRelaySendPending,
         saveDraft: saveMessageInputDraft,
-        restoreComposer: () => setComposerRestoreNonce((value) => value + 1),
+        restoreDraft: (failedDraft) => {
+          composerRestoreDraftRef.current = failedDraft
+          setComposerRestoreNonce((value) => value + 1)
+        },
         clearDraft: clearMessageInputDraft,
         clearRelay: () => clearRelayRef.current(),
+        markRelayInvalid: (error) => markRelayInvalidRef.current(error),
       })
       const onSendFailed = relayAttempt.onSendFailed
 
@@ -1212,6 +1227,7 @@ const ConversationTabView = memo(function ConversationTabView({
           setSyncState(effectiveConversationId, "idle")
           setHasSentMessage(false)
           if (relayBinding) setRelaySendPending(false)
+          composerRestoreDraftRef.current = draft
           const draftText = draft.displayText.trim()
           if (draftText) {
             saveMessageInputDraft(
@@ -1599,32 +1615,57 @@ const ConversationTabView = memo(function ConversationTabView({
   const {
     relay,
     loading: relayLoading,
+    recoveryError: relayRecoveryError,
     preview: previewRelay,
     updateScope,
     remove,
     undoRemove,
+    refresh: refreshRelay,
+    markSendFailure,
+    retry: retryRelay,
     clear: clearRelay,
   } = relayDraft
   useEffect(() => {
-    relayForSendRef.current = relay
-      ? { relayId: relay.id, targetDraftId: tabId }
-      : null
+    relayForSendRef.current = resolveRelaySendBinding(relay, tabId)
     clearRelayRef.current = clearRelay
-  }, [clearRelay, relay, tabId])
+    markRelayInvalidRef.current = markSendFailure
+  }, [clearRelay, markSendFailure, relay, tabId])
+  const relayEntryIntent = useRelayEntryIntent({
+    tabId,
+    enabled: conversationCapabilities.relayEnabled,
+    preview: previewRelay,
+  })
+  const {
+    entry: relayEntry,
+    retry: retryRelayEntry,
+    clear: clearRelayEntry,
+  } = relayEntryIntent
+  const relayEntryBlocksFirstSend = isRelayEntryBlockingFirstSend(
+    relayEntry?.status ?? null,
+    hasPersistedConversation
+  )
+  const relaySendBlocked = shouldBlockRelaySend(relay, {
+    loading: relayLoading,
+    entryBlocked: relayEntryBlocksFirstSend,
+    recoveryError: relayRecoveryError,
+    hasPersistedConversation,
+  })
+  relaySendBlockedRef.current = relaySendBlocked
   useEffect(() => {
-    const consumeQueuedIntent = () => {
-      const intent = consumeRelayIntent(tabId)
-      if (!intent || !conversationCapabilities.relayEnabled) return
-      void previewRelay(intent.sourceConversationId).catch(() => {})
+    if (relay) clearRelayEntry()
+  }, [clearRelayEntry, relay])
+  useEffect(() => {
+    if (hasPersistedConversation && relayEntry) {
+      clearRelayEntry()
+      clearRelay()
     }
-    const unsubscribe = subscribeRelayIntent(tabId, consumeQueuedIntent)
-    consumeQueuedIntent()
-    return unsubscribe
-  }, [conversationCapabilities.relayEnabled, previewRelay, tabId])
+  }, [clearRelay, clearRelayEntry, hasPersistedConversation, relayEntry])
   const canAddRelay =
     composerState.isNewConversation &&
     conversationCapabilities.relayEnabled &&
-    relay === null
+    relay === null &&
+    relayEntry === null &&
+    !relayRecoveryError
   const handleRelayDrop = useCallback(
     (sourceConversationId: number) => {
       if (!canAddRelay) return
@@ -1641,11 +1682,27 @@ const ConversationTabView = memo(function ConversationTabView({
     <RelayContextCard
       relay={relay}
       sourceTitle={relaySourceTitle}
-      disabled={relaySendPending}
+      disabled={relaySendPending || relayLoading}
       onPreview={() => setRelayPreviewOpen(true)}
       onAdjust={() => setRelayDialogOpen(true)}
       onRemove={() => void remove()}
       onUndo={() => void undoRemove()}
+      onRefresh={() => void refreshRelay().catch(() => {})}
+    />
+  ) : relayEntry ? (
+    <RelayEntryStatus
+      state={relayEntry.status}
+      onRetry={retryRelayEntry}
+      onClear={() => {
+        clearRelayEntry()
+        clearRelay()
+      }}
+    />
+  ) : relayRecoveryError ? (
+    <RelayEntryStatus
+      state="error"
+      onRetry={() => void retryRelay().catch(() => {})}
+      onClear={clearRelay}
     />
   ) : null
   const handleComposerRetry = useCallback(() => {
@@ -1883,6 +1940,7 @@ const ConversationTabView = memo(function ConversationTabView({
       editingItemId={mqEditingItemId}
       editingDraftText={editingQueueDraftText}
       editingDraftBlocks={editingQueueDraftBlocks}
+      restoredDraftBlocks={composerRestoreDraftRef.current?.blocks ?? null}
       isEditingQueueItem={mqEditingItemId != null}
       onSaveQueueEdit={handleSaveQueueEdit}
       onCancelQueueEdit={handleQueueCancelEdit}
@@ -1973,7 +2031,7 @@ const ConversationTabView = memo(function ConversationTabView({
                   // composerConnStatus (not connStatus): a chat draft mid-reconnect
                   // reads "connecting" until the connection's cwd matches, so the
                   // send affordance stays disabled until handleSend would accept it.
-                  status={composerConnStatus}
+                  status={relaySendBlocked ? "connecting" : composerConnStatus}
                   promptCapabilities={conn.promptCapabilities}
                   defaultPath={workingDirForConnection}
                   agentName={getAgentLabel(selectedAgent)}
@@ -1992,6 +2050,9 @@ const ConversationTabView = memo(function ConversationTabView({
                   availableCommands={connectionCommands}
                   attachmentTabId={tabId}
                   draftStorageKey={draftStorageKey}
+                  restoredDraftBlocks={
+                    composerRestoreDraftRef.current?.blocks ?? null
+                  }
                   isActive={isActive}
                   showActiveFlow={showActiveFlow}
                   onAddFeedback={

@@ -177,6 +177,27 @@ function renderInput(
 }
 
 describe("MessageInput (RichComposer integration)", () => {
+  it("hydrates a failed-send draft from its full prompt blocks", async () => {
+    renderInput({
+      restoredDraftBlocks: [
+        { type: "text", text: "continue with the restored context" },
+        {
+          type: "image",
+          data: "BASE64_IMAGE",
+          mime_type: "image/png",
+          uri: null,
+        },
+      ],
+    })
+
+    await waitFor(() =>
+      expect(composerHandle.current?.getText()).toBe(
+        "continue with the restored context"
+      )
+    )
+    expect(screen.getByRole("img", { name: "image.png" })).toBeInTheDocument()
+  })
+
   it("accepts relay dragover and routes the drop without invoking file handling", async () => {
     const onRelayDrop = vi.fn()
     const { RELAY_DRAG_MIME } = await import("@/lib/conversation-relay")

@@ -100,6 +100,7 @@ interface ConversationShellProps {
   editingItemId?: string | null
   editingDraftText?: string | null
   editingDraftBlocks?: PromptInputBlock[] | null
+  restoredDraftBlocks?: PromptInputBlock[] | null
   isEditingQueueItem?: boolean
   onSaveQueueEdit?: (draft: PromptDraft) => void
   onCancelQueueEdit?: () => void
@@ -170,6 +171,7 @@ export function ConversationShell({
   editingItemId,
   editingDraftText,
   editingDraftBlocks,
+  restoredDraftBlocks,
   isEditingQueueItem,
   onSaveQueueEdit,
   onCancelQueueEdit,
@@ -331,6 +333,7 @@ export function ConversationShell({
               editingItemId={editingItemId}
               editingDraftText={editingDraftText}
               editingDraftBlocks={editingDraftBlocks}
+              restoredDraftBlocks={restoredDraftBlocks}
               isEditingQueueItem={isEditingQueueItem}
               onSaveQueueEdit={onSaveQueueEdit}
               onCancelQueueEdit={onCancelQueueEdit}

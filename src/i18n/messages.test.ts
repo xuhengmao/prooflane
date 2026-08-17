@@ -67,6 +67,61 @@ const requiredReadmeClaims = [
   "默认不会写入长期记忆",
 ]
 
+const requiredRelayUiKeys = [
+  "entryLoading",
+  "entryError",
+  "retry",
+  "scopeUpdateFailed",
+  "preparing",
+  "viewContent",
+  "noProject",
+  "untitledConversation",
+  "unknownProject",
+  "compactSummary",
+  "recentCompleteRounds",
+  "customCompleteRounds",
+  "conversationFallback",
+  "contentStats",
+  "stats",
+  "tokenBudget",
+  "tokenBudgetValue",
+  "conversationSummary",
+  "includedConversation",
+  "userLabel",
+  "assistantLabel",
+  "toolCalls",
+  "toolFailed",
+  "toolCompleted",
+  "input",
+  "noInput",
+  "output",
+  "noOutput",
+  "relatedFiles",
+  "emptyPreview",
+  "customRoundsCount",
+  "emptyRound",
+  "refreshContent",
+  "reprepare",
+  "sourceUpdated",
+  "modelChanged",
+  "sendUncertain",
+  "scopeValue",
+  "view",
+  "adjust",
+  "remove",
+  "continueInNewConversation",
+] as const
+
+const localizedRelayComponents = [
+  "src/components/conversations/relay/relay-entry-status.tsx",
+  "src/components/conversations/relay/relay-preview-drawer.tsx",
+  "src/components/conversations/relay/relay-context-card.tsx",
+  "src/components/conversations/relay/relay-conversation-picker.tsx",
+  "src/components/conversations/relay/relay-scope-editor.tsx",
+  "src/components/conversations/relay/relay-dialog-controller.tsx",
+  "src/components/conversations/sidebar-conversation-card.tsx",
+] as const
+
 // `en.json` is the source of truth. Any missing key in another locale fails
 // the test with the exact dotted path, making translation gaps grep-able.
 describe("i18n locale key parity vs en.json", () => {
@@ -106,10 +161,23 @@ describe("conversation relay release copy", () => {
     )
     expect(referenceCapabilities).toEqual(expect.any(Object))
     expect(referenceRelay.chat?.relay).toEqual(expect.any(Object))
+    for (const key of requiredRelayUiKeys) {
+      expect(referenceRelay.chat?.relay).toHaveProperty(key)
+    }
     expect(
       Object.keys(referenceRelay.chat?.relay?.errors ?? {}).sort()
     ).toEqual([...relayErrorCodes].sort())
   })
+
+  it.each(localizedRelayComponents)(
+    "%s uses relay translations instead of visible Chinese literals",
+    (path) => {
+      const source = readFileSync(resolve(process.cwd(), path), "utf8")
+
+      expect(source).toContain('useTranslations("Folder.chat.relay")')
+      expect(source).not.toMatch(/[\u3400-\u9fff]/u)
+    }
+  )
 
   it.each(locales)(
     "%s matches the zh-CN conversation relay key sets",

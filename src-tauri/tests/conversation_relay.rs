@@ -4,7 +4,8 @@ use codeg_lib::acp::types::PromptInputBlock;
 use codeg_lib::commands::acp::{send_prompt_with_relay_core, AcpPromptRequest};
 use codeg_lib::commands::conversations::{
     create_conversation_with_relay_core, get_folder_conversation_core,
-    get_folder_conversation_with_live_core, relay_binding_from_parts, RelayBindingInput,
+    get_folder_conversation_with_live_core, project_database_authorized_relay_titles_for_test,
+    relay_binding_from_parts, RelayBindingInput,
 };
 use codeg_lib::conversation_relay::context::{
     build_hidden_relay_block, marker_for_snapshot, strip_hidden_relay_context, RelayContextMarker,
@@ -30,12 +31,14 @@ use codeg_lib::db::service::conversation_capability_service::{
 };
 use codeg_lib::db::service::conversation_service::update_external_id;
 use codeg_lib::db::service::relay_context_pack_service::{
-    bind_to_conversation, claim_consume, create_or_replace_draft, get_active_by_draft,
-    invalidate_unconsumed_by_source, mark_consumed, mark_uncertain, release_claim,
-    remove_unclaimed, ConsumeClaim, NewRelayPack,
+    bind_to_conversation, claim_consume, create_or_replace_draft, get_active_by_draft, get_by_id,
+    get_context_bearing_attempts_by_target, get_restorable_by_draft,
+    invalidate_unconsumed_by_source, mark_consumed, mark_uncertain, recover_claimed_as_uncertain,
+    release_claim, remove_unclaimed, ConsumeClaim, NewRelayPack,
 };
 use codeg_lib::db::test_helpers::{fresh_in_memory_db, seed_conversation, seed_folder};
 use codeg_lib::models::agent::AgentType;
+use codeg_lib::models::conversation::ConversationSummary;
 use codeg_lib::models::conversation_relay::{
     RelayError, RelayErrorCode, RelayFileReference, RelayRound, RelayScopeSelection,
     RelayScopeType, RelaySnapshot, RelaySnapshotSource, RelayStats, RelaySummary,
@@ -371,6 +374,7 @@ fn new_pack(
         context_window_tokens: Some(512),
         target_model: None,
         allowed_tokens: 256,
+        invalid_reason: None,
     }
 }
 
@@ -495,6 +499,183 @@ async fn replacing_a_draft_removes_the_previous_active_pack_and_restores_one_act
 }
 
 #[tokio::test]
+async fn invalidated_draft_is_restored_for_refresh_after_reload() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-restore-invalid").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let original = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "restore-invalid-preview",
+            "draft-restore-invalid",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "source content")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    invalidate_unconsumed_by_source(&db.conn, source, "relay_rounds_changed")
+        .await
+        .unwrap();
+
+    let restored = get_relay_context_by_draft_core(&db.conn, "draft-restore-invalid")
+        .await
+        .unwrap()
+        .expect("invalid relay remains actionable through refresh");
+
+    assert_eq!(restored.id, original.id);
+    assert_eq!(restored.status, "invalid");
+    assert_eq!(
+        restored.invalid_reason.as_deref(),
+        Some("relay_rounds_changed")
+    );
+}
+
+#[tokio::test]
+async fn over_budget_preview_persists_an_actionable_pack_that_can_be_narrowed() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-budget-recovery").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let oversized = relay_round("round-1", &"x".repeat(30_000));
+    let small = relay_round("round-2", "only keep this concise round");
+
+    let over_budget = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "budget-recovery-preview",
+            "draft-budget-recovery",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![oversized.clone(), small.clone()],
+        &SuccessfulSummarizer,
+    )
+    .await
+    .expect("an over-budget preview should remain actionable");
+
+    assert_eq!(over_budget.status, "invalid");
+    assert_eq!(
+        over_budget.invalid_reason.as_deref(),
+        Some("relay_budget_exceeded")
+    );
+    assert!(over_budget.estimated_tokens > over_budget.allowed_tokens);
+    assert_eq!(
+        get_relay_context_by_draft_core(&db.conn, "draft-budget-recovery")
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        over_budget.id
+    );
+
+    let narrowed = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(RelayPreviewRequest {
+            request_id: "budget-recovery-narrowed".to_owned(),
+            target_draft_id: "draft-budget-recovery".to_owned(),
+            source_conversation_id: source,
+            target_folder_id: None,
+            target_agent_type: AgentType::Codex,
+            target_model: None,
+            scope: RelayScopeSelection {
+                scope_type: RelayScopeType::CustomRounds,
+                selected_round_ids: vec!["round-2".to_owned()],
+            },
+        })
+        .await,
+        vec![oversized, small],
+        &SuccessfulSummarizer,
+    )
+    .await
+    .expect("a narrower scope should recover the relay");
+
+    assert_eq!(narrowed.status, "draft");
+    assert_eq!(narrowed.invalid_reason, None);
+    assert_eq!(status(&db.conn, over_budget.id).await, "removed");
+}
+
+#[tokio::test]
+async fn invalidated_draft_can_be_removed_and_no_longer_restores() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-remove-invalid").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let original = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "remove-invalid-preview",
+            "draft-remove-invalid",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "source content")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    invalidate_unconsumed_by_source(&db.conn, source, "relay_source_not_found")
+        .await
+        .unwrap();
+
+    let removed = remove_relay_context_core(&db.conn, &EventEmitter::Noop, original.id)
+        .await
+        .expect("an unclaimed invalid relay can be discarded");
+
+    assert_eq!(removed.status, "removed");
+    assert!(
+        get_relay_context_by_draft_core(&db.conn, "draft-remove-invalid")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn active_draft_takes_priority_over_a_newer_invalid_history_row() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-restore-priority").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let active = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "restore-priority-preview",
+            "draft-restore-priority",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "active source content")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    let invalid = insert_pack(&db.conn, "draft-restore-priority", source, None, "invalid")
+        .await
+        .unwrap();
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::InvalidReason,
+            sea_orm::sea_query::Expr::value(Some("relay_rounds_changed".to_owned())),
+        )
+        .filter(relay_context_pack::Column::Id.eq(invalid.id))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+
+    let restored = get_relay_context_by_draft_core(&db.conn, "draft-restore-priority")
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(restored.id, active.id);
+    assert_eq!(restored.status, "draft");
+}
+
+#[tokio::test]
 async fn replacing_a_claimed_draft_is_rejected_without_interrupting_finalization() {
     let db = fresh_in_memory_db().await;
     let folder_id = seed_folder(&db, "C:/workspace/relay-replace-claimed").await;
@@ -591,6 +772,174 @@ async fn preview_cannot_replace_a_claimed_draft() {
         .unwrap();
     assert_eq!(retained.status, "attached");
     assert_eq!(retained.consume_attempt_state.as_deref(), Some("claimed"));
+}
+
+#[tokio::test]
+async fn refreshed_preview_preserves_the_released_attached_target() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-refresh-attached").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let original = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "initial-refresh-preview",
+            "draft-refresh-attached",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "old source content")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, original.id, "draft-refresh-attached", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    claim_consume(&db.conn, original.id, "failed-message")
+        .await
+        .unwrap();
+    release_claim(&db.conn, original.id, "failed-message")
+        .await
+        .unwrap();
+
+    let refreshed = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "replacement-refresh-preview",
+            "draft-refresh-attached",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "new source content")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(refreshed.id, original.id);
+    assert_eq!(refreshed.status, "attached");
+    assert_eq!(refreshed.target_conversation_id, Some(target));
+    assert_eq!(
+        refreshed.snapshot.included_rounds[0].user_text,
+        "new source content"
+    );
+    let replaced = get_by_id(&db.conn, original.id).await.unwrap();
+    assert_eq!(replaced.status, "removed");
+    assert_eq!(replaced.target_conversation_id, None);
+}
+
+#[tokio::test]
+async fn refreshed_preview_preserves_the_invalidated_attached_target() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-refresh-invalid").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let original = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "initial-invalid-refresh-preview",
+            "draft-refresh-invalid",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "old source content")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, original.id, "draft-refresh-invalid", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    claim_consume(&db.conn, original.id, "invalidated-message")
+        .await
+        .unwrap();
+    invalidate_unconsumed_by_source(&db.conn, source, "relay_rounds_changed")
+        .await
+        .unwrap();
+    let invalidated = release_claim(&db.conn, original.id, "invalidated-message")
+        .await
+        .unwrap();
+    assert_eq!(invalidated.status, "invalid");
+
+    let refreshed = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "replacement-invalid-refresh-preview",
+            "draft-refresh-invalid",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "new source content")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(refreshed.status, "attached");
+    assert_eq!(refreshed.target_conversation_id, Some(target));
+    let replaced = get_by_id(&db.conn, original.id).await.unwrap();
+    assert_eq!(replaced.status, "removed");
+    assert_eq!(replaced.target_conversation_id, None);
+}
+
+#[tokio::test]
+async fn undo_preview_preserves_the_removed_attached_target() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-undo-attached").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let original = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "initial-undo-preview",
+            "draft-undo-attached",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "restore this source")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, original.id, "draft-undo-attached", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    let removed = remove_relay_context_core(&db.conn, &EventEmitter::Noop, original.id)
+        .await
+        .unwrap();
+    assert_eq!(removed.status, "removed");
+    assert_eq!(removed.target_conversation_id, Some(target));
+
+    let restored = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "undo-replacement-preview",
+            "draft-undo-attached",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "restore this source")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(restored.status, "attached");
+    assert_eq!(restored.target_conversation_id, Some(target));
 }
 
 #[tokio::test]
@@ -1263,6 +1612,7 @@ async fn cancelled_request_cannot_reenter_after_reservation_cleanup_boundary() {
     )
     .await
     .unwrap_err();
+    tokio::time::resume();
 
     assert_eq!(
         late_error.message,
@@ -1456,6 +1806,93 @@ async fn summary_patch_failure_keeps_the_previous_valid_draft_unchanged() {
             .unwrap()
             .id,
         original.id
+    );
+}
+
+#[tokio::test]
+async fn stale_scope_update_cannot_replace_a_newer_scope() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-scope-cas").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let rounds = vec![
+        relay_round("round-1", "prepare the first requirement"),
+        relay_round("round-2", "keep only the latest requirement"),
+    ];
+    let original = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "scope-cas-original-preview",
+            "draft-scope-cas",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        rounds,
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let blocking_summarizer = BlockingSummarizer {
+        entered: entered.clone(),
+        release: release.clone(),
+    };
+    let slow_summary = update_relay_context_with_summarizer_core(
+        &db,
+        original.id,
+        RelayPatchRequest {
+            scope: RelayScopeSelection {
+                scope_type: RelayScopeType::Summary,
+                selected_round_ids: Vec::new(),
+            },
+            target_agent_type: AgentType::Codex,
+            target_model: None,
+        },
+        &blocking_summarizer,
+    );
+    tokio::pin!(slow_summary);
+    tokio::select! {
+        () = entered.notified() => {}
+        result = &mut slow_summary => panic!("summary update completed before overlap: {result:?}"),
+    }
+
+    let latest = update_relay_context_with_summarizer_core(
+        &db,
+        original.id,
+        RelayPatchRequest {
+            scope: RelayScopeSelection {
+                scope_type: RelayScopeType::CustomRounds,
+                selected_round_ids: vec!["round-2".to_owned()],
+            },
+            target_agent_type: AgentType::Codex,
+            target_model: None,
+        },
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+
+    release.notify_one();
+    let stale_error = slow_summary.await.unwrap_err();
+
+    assert_eq!(
+        stale_error.message,
+        RelayErrorCode::RelayConsumeConflict.to_string()
+    );
+    let active = get_active_by_draft(&db.conn, "draft-scope-cas")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(active.id, latest.id);
+    let active_snapshot = serde_json::from_str::<RelaySnapshot>(&active.snapshot_json).unwrap();
+    assert_eq!(
+        active_snapshot.scope.scope_type,
+        RelayScopeType::CustomRounds
+    );
+    assert_eq!(
+        active_snapshot.scope.selected_round_ids,
+        vec!["round-2".to_owned()]
     );
 }
 
@@ -1704,6 +2141,162 @@ async fn consumed_retry_is_idempotent_after_the_connection_is_gone() {
     );
 }
 
+#[tokio::test]
+async fn relay_send_core_cancels_target_when_connection_disappears_before_dispatch() {
+    let db = seeded_relay_db().await;
+    let pack = get_by_id(&db.conn, 1).await.unwrap();
+    let target = pack.target_conversation_id.expect("bound target");
+
+    let error = send_prompt_with_relay_core(
+        &ConnectionManager::new(),
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "missing-before-relay-dispatch".to_owned(),
+            blocks: vec![PromptInputBlock::Text {
+                text: "continue the task".to_owned(),
+            }],
+            folder_id: Some(pack.source_folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-missing-connection".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some(pack.target_draft_id.clone()),
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.message, "relay_consume_conflict");
+    assert_eq!(
+        get_by_id(&db.conn, pack.id).await.unwrap().status,
+        "attached"
+    );
+    let target = conversation::Entity::find_by_id(target)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(target.status, conversation::ConversationStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn relay_send_core_cancels_target_when_relay_is_disabled_before_claim() {
+    let db = seeded_relay_db().await;
+    let pack = get_by_id(&db.conn, 1).await.unwrap();
+    let target = pack.target_conversation_id.expect("bound target");
+    set_relay_enabled(&db.conn, &EventEmitter::Noop, false)
+        .await
+        .unwrap();
+
+    let error = send_prompt_with_relay_core(
+        &ConnectionManager::new(),
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "relay-disabled-before-claim".to_owned(),
+            blocks: vec![PromptInputBlock::Text {
+                text: "continue the task".to_owned(),
+            }],
+            folder_id: Some(pack.source_folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-relay-disabled".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some(pack.target_draft_id),
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.message, "relay_disabled");
+    let target = conversation::Entity::find_by_id(target)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(target.status, conversation::ConversationStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn relay_send_core_cancels_target_when_pack_is_invalid_before_claim() {
+    let db = seeded_relay_db().await;
+    let pack = get_by_id(&db.conn, 1).await.unwrap();
+    let target = pack.target_conversation_id.expect("bound target");
+    invalidate_unconsumed_by_source(
+        &db.conn,
+        pack.source_conversation_id,
+        "relay_source_not_found",
+    )
+    .await
+    .unwrap();
+
+    let error = send_prompt_with_relay_core(
+        &ConnectionManager::new(),
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "relay-invalid-before-claim".to_owned(),
+            blocks: vec![PromptInputBlock::Text {
+                text: "continue the task".to_owned(),
+            }],
+            folder_id: Some(pack.source_folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-relay-invalid".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some(pack.target_draft_id),
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.message, "relay_consume_conflict");
+    let target = conversation::Entity::find_by_id(target)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(target.status, conversation::ConversationStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn relay_send_core_does_not_cancel_a_claimed_target_when_relay_is_disabled() {
+    let db = seeded_relay_db().await;
+    let pack = get_by_id(&db.conn, 1).await.unwrap();
+    let target = pack.target_conversation_id.expect("bound target");
+    claim_consume(&db.conn, pack.id, "message-already-in-flight")
+        .await
+        .unwrap();
+    set_relay_enabled(&db.conn, &EventEmitter::Noop, false)
+        .await
+        .unwrap();
+
+    let error = send_prompt_with_relay_core(
+        &ConnectionManager::new(),
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "relay-disabled-after-claim".to_owned(),
+            blocks: vec![PromptInputBlock::Text {
+                text: "do not cancel the in-flight turn".to_owned(),
+            }],
+            folder_id: Some(pack.source_folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-competing-retry".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some(pack.target_draft_id),
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.message, "relay_disabled");
+    let target = conversation::Entity::find_by_id(target)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(target.status, conversation::ConversationStatus::InProgress);
+}
+
 struct RelaySendCoreTranscriptFixture {
     transcript_dir: std::path::PathBuf,
 }
@@ -1872,6 +2465,191 @@ async fn hidden_context_is_removed_from_reloaded_detail() {
         .unwrap()
         .unwrap();
     assert_eq!(persisted.title.as_deref(), Some("actual user request"));
+}
+
+#[tokio::test]
+async fn scan_title_projection_uses_the_database_authorized_visible_relay_prompt() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-scan-title").await;
+    let session_id = "relay-scan-title-session";
+    let target_agent = AgentType::Custom("relay-scan-title");
+    let (target, _fixture) = seed_consumed_relay_target(
+        &db,
+        folder_id,
+        "relay-scan-title",
+        session_id,
+        |relay_id, snapshot| {
+            let marker = marker_for_snapshot(relay_id, &snapshot.canonical_context);
+            vec![vec![
+                build_hidden_relay_block(&marker, &snapshot.canonical_context),
+                PromptInputBlock::Text {
+                    text: "actual user request".to_owned(),
+                },
+            ]]
+        },
+    )
+    .await;
+    let pack = get_context_bearing_attempts_by_target(&db.conn, target)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    let snapshot: RelaySnapshot =
+        serde_json::from_str(pack.consumed_snapshot_json.as_deref().unwrap()).unwrap();
+    let marker = marker_for_snapshot(pack.id, &snapshot.canonical_context);
+    let PromptInputBlock::Text { text: hidden } =
+        build_hidden_relay_block(&marker, &snapshot.canonical_context)
+    else {
+        unreachable!("hidden relay block is text")
+    };
+    let raw_title =
+        codeg_lib::parsers::title_from_user_text(&format!("{hidden}\nactual user request"));
+    assert!(raw_title.contains("prooflane-relay-context"));
+
+    let rows = conversation::Entity::find()
+        .filter(conversation::Column::ExternalId.is_not_null())
+        .all(&db.conn)
+        .await
+        .unwrap();
+    let now = chrono::Utc::now();
+    let mut summaries = vec![(
+        target_agent,
+        ConversationSummary {
+            id: session_id.to_owned(),
+            agent_type: target_agent,
+            folder_path: Some("C:/workspace/relay-scan-title".to_owned()),
+            folder_name: Some("relay-scan-title".to_owned()),
+            title: Some(raw_title),
+            started_at: now,
+            ended_at: None,
+            message_count: 1,
+            model: None,
+            git_branch: None,
+            parent_id: None,
+            parent_tool_use_id: None,
+            delegation_call_id: None,
+        },
+    )];
+
+    project_database_authorized_relay_titles_for_test(&db.conn, &rows, &mut summaries)
+        .await
+        .unwrap();
+
+    assert_eq!(summaries[0].1.title.as_deref(), Some("actual user request"));
+}
+
+#[tokio::test]
+async fn scan_title_projection_preserves_relay_like_text_without_a_database_anchor() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-scan-unanchored").await;
+    let target_agent = AgentType::Custom("relay-scan-unanchored");
+    let target = seed_conversation(&db, folder_id, target_agent).await;
+    let session_id = "relay-scan-unanchored-session";
+    update_external_id(&db.conn, target, session_id.to_owned())
+        .await
+        .unwrap();
+    let raw_title = "<prooflane-relay-context user-authored>keep this text".to_owned();
+    let rows = conversation::Entity::find()
+        .filter(conversation::Column::ExternalId.is_not_null())
+        .all(&db.conn)
+        .await
+        .unwrap();
+    let now = chrono::Utc::now();
+    let mut summaries = vec![(
+        target_agent,
+        ConversationSummary {
+            id: session_id.to_owned(),
+            agent_type: target_agent,
+            folder_path: Some("C:/workspace/relay-scan-unanchored".to_owned()),
+            folder_name: Some("relay-scan-unanchored".to_owned()),
+            title: Some(raw_title.clone()),
+            started_at: now,
+            ended_at: None,
+            message_count: 1,
+            model: None,
+            git_branch: None,
+            parent_id: None,
+            parent_tool_use_id: None,
+            delegation_call_id: None,
+        },
+    )];
+
+    project_database_authorized_relay_titles_for_test(&db.conn, &rows, &mut summaries)
+        .await
+        .unwrap();
+
+    assert_eq!(summaries[0].1.title.as_deref(), Some(raw_title.as_str()));
+}
+
+#[tokio::test]
+async fn uncertain_non_codex_reload_still_hides_the_signed_relay_context() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-reload-uncertain").await;
+    let (target, _fixture) = seed_consumed_relay_target(
+        &db,
+        folder_id,
+        "relay-reload-uncertain",
+        "relay-reload-uncertain-session",
+        |relay_id, snapshot| {
+            let marker = marker_for_snapshot(relay_id, &snapshot.canonical_context);
+            vec![vec![
+                build_hidden_relay_block(&marker, &snapshot.canonical_context),
+                PromptInputBlock::Text {
+                    text: "actual uncertain request".to_owned(),
+                },
+            ]]
+        },
+    )
+    .await;
+    let pack = relay_context_pack::Entity::find()
+        .filter(relay_context_pack::Column::TargetConversationId.eq(target))
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    let snapshot_json = pack.consumed_snapshot_json.clone().unwrap();
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::Status,
+            sea_orm::sea_query::Expr::value("invalid"),
+        )
+        .col_expr(
+            relay_context_pack::Column::InvalidReason,
+            sea_orm::sea_query::Expr::value(Some("relay_send_uncertain".to_owned())),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumeClientMessageId,
+            sea_orm::sea_query::Expr::value(Some("message-uncertain".to_owned())),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumeAttemptState,
+            sea_orm::sea_query::Expr::value(Some("uncertain".to_owned())),
+        )
+        .col_expr(
+            relay_context_pack::Column::SnapshotJson,
+            sea_orm::sea_query::Expr::value(snapshot_json),
+        )
+        .col_expr(
+            relay_context_pack::Column::ConsumedSnapshotJson,
+            sea_orm::sea_query::Expr::value(Option::<String>::None),
+        )
+        .filter(relay_context_pack::Column::Id.eq(pack.id))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+
+    let (detail, parsed_title) = get_folder_conversation_core(&db.conn, target)
+        .await
+        .unwrap();
+
+    assert_eq!(detail.turns.len(), 1);
+    assert_eq!(detail.turns[0].blocks.len(), 1);
+    assert_eq!(
+        text_block(&detail.turns[0].blocks[0]),
+        "actual uncertain request"
+    );
+    assert_eq!(parsed_title.as_deref(), Some("actual uncertain request"));
 }
 
 #[tokio::test]
@@ -2146,6 +2924,7 @@ async fn relay_send_core_claims_splits_wire_content_and_persists_the_actor_outco
             context_window_tokens: None,
             target_model: None,
             allowed_tokens: 4_000,
+            invalid_reason: None,
         },
     )
     .await
@@ -2246,6 +3025,287 @@ async fn relay_send_core_claims_splits_wire_content_and_persists_the_actor_outco
 }
 
 #[tokio::test]
+async fn relay_send_core_rejects_a_source_with_an_appended_round() {
+    let db = fresh_in_memory_db().await;
+    let folder_path = "C:/workspace/relay-send-appended-round";
+    let folder_id = seed_folder(&db, folder_path).await;
+    let agent_id = "relay-core-test-appended-round";
+    let session_id = "relay-core-test-appended-round-session";
+    let (source, snapshot, _fixture) =
+        seed_relay_send_core_source(&db, folder_id, agent_id, session_id, folder_path).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let pack = create_or_replace_draft(
+        &db.conn,
+        NewRelayPack {
+            target_draft_id: "draft-send-appended-round".to_owned(),
+            source_conversation_id: source,
+            source_folder_id: folder_id,
+            scope_type: "summary".to_owned(),
+            selected_round_ids_json: serde_json::to_string(&snapshot.scope.selected_round_ids)
+                .unwrap(),
+            snapshot_json: serde_json::to_string(&snapshot).unwrap(),
+            source_fingerprint: fingerprint_rounds(&snapshot.available_rounds),
+            estimated_tokens: i32::try_from(codeg_lib::conversation_relay::estimate_relay_tokens(
+                &snapshot.canonical_context,
+            ))
+            .unwrap(),
+            context_window_tokens: None,
+            target_model: None,
+            allowed_tokens: 4_000,
+            invalid_reason: None,
+        },
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, pack.id, "draft-send-appended-round", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    let agent_dir = codeg_lib::acp::registry::registry_id_for(AgentType::Custom(agent_id));
+    codeg_lib::acp_transcript::record_entry(
+        agent_dir,
+        session_id,
+        codeg_lib::acp_transcript::EntryKind::Prompt,
+        serde_json::json!([{ "type": "text", "text": "new source request" }]),
+    )
+    .await
+    .unwrap();
+    let update = codeg_lib::acp_transcript::record_entry(
+        agent_dir,
+        session_id,
+        codeg_lib::acp_transcript::EntryKind::Update,
+        serde_json::json!({
+            "sessionUpdate": "agent_message_chunk",
+            "content": { "type": "text", "text": "new source answer" }
+        }),
+    );
+    codeg_lib::acp_transcript::record_entry(
+        agent_dir,
+        session_id,
+        codeg_lib::acp_transcript::EntryKind::TurnEnd,
+        serde_json::json!({ "stopReason": "end_turn" }),
+    )
+    .await
+    .unwrap();
+    update.await.unwrap();
+
+    let manager = ConnectionManager::new();
+    let mut commands = manager
+        .insert_test_connection_live(
+            "relay-send-appended-round",
+            AgentType::Codex,
+            Some(folder_path.into()),
+            EventEmitter::Noop,
+        )
+        .await;
+    let mut send = Box::pin(send_prompt_with_relay_core(
+        &manager,
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "relay-send-appended-round".to_owned(),
+            blocks: vec![PromptInputBlock::Text {
+                text: "continue with the latest source".to_owned(),
+            }],
+            folder_id: Some(folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-send-appended-round".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some("draft-send-appended-round".to_owned()),
+        },
+    ));
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::select! {
+            result = &mut send => result,
+            _command = commands.recv() => panic!(
+                "an appended source round must be rejected before the actor receives a prompt"
+            ),
+        }
+    })
+    .await
+    .expect("source fingerprint preflight must finish");
+
+    assert_eq!(result.unwrap_err().message, "relay_rounds_changed");
+    let invalid = get_by_id(&db.conn, pack.id).await.unwrap();
+    assert_eq!(invalid.status, "invalid");
+    assert_eq!(
+        invalid.invalid_reason.as_deref(),
+        Some("relay_rounds_changed")
+    );
+}
+
+#[tokio::test]
+async fn relay_send_core_persists_a_model_preflight_failure() {
+    let db = fresh_in_memory_db().await;
+    let folder_path = "C:/workspace/relay-send-model-preflight";
+    let folder_id = seed_folder(&db, folder_path).await;
+    let (source, snapshot, _fixture) = seed_relay_send_core_source(
+        &db,
+        folder_id,
+        "relay-core-test-model-preflight",
+        "relay-core-test-model-preflight-session",
+        folder_path,
+    )
+    .await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let pack = create_or_replace_draft(
+        &db.conn,
+        NewRelayPack {
+            target_draft_id: "draft-send-model-preflight".to_owned(),
+            source_conversation_id: source,
+            source_folder_id: folder_id,
+            scope_type: "summary".to_owned(),
+            selected_round_ids_json: serde_json::to_string(&snapshot.scope.selected_round_ids)
+                .unwrap(),
+            snapshot_json: serde_json::to_string(&snapshot).unwrap(),
+            source_fingerprint: fingerprint_rounds(&snapshot.available_rounds),
+            estimated_tokens: i32::try_from(codeg_lib::conversation_relay::estimate_relay_tokens(
+                &snapshot.canonical_context,
+            ))
+            .unwrap(),
+            context_window_tokens: None,
+            target_model: Some("gpt-4o".to_owned()),
+            allowed_tokens: 4_000,
+            invalid_reason: None,
+        },
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, pack.id, "draft-send-model-preflight", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    let manager = ConnectionManager::new();
+    let mut commands = manager
+        .insert_test_connection_live(
+            "relay-send-model-preflight",
+            AgentType::Codex,
+            Some(folder_path.into()),
+            EventEmitter::Noop,
+        )
+        .await;
+
+    let error = send_prompt_with_relay_core(
+        &manager,
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "relay-send-model-preflight".to_owned(),
+            blocks: vec![PromptInputBlock::Text {
+                text: "continue the task".to_owned(),
+            }],
+            folder_id: Some(folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-send-model-preflight".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some("draft-send-model-preflight".to_owned()),
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.message, "relay_model_changed");
+    assert!(commands.try_recv().is_err());
+    let invalid = get_by_id(&db.conn, pack.id).await.unwrap();
+    assert_eq!(invalid.status, "invalid");
+    assert_eq!(
+        invalid.invalid_reason.as_deref(),
+        Some("relay_model_changed")
+    );
+    let target = conversation::Entity::find_by_id(target)
+        .one(&db.conn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(target.status, conversation::ConversationStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn relay_send_core_persists_a_budget_preflight_failure() {
+    let db = fresh_in_memory_db().await;
+    let folder_path = "C:/workspace/relay-send-budget-preflight";
+    let folder_id = seed_folder(&db, folder_path).await;
+    let (source, mut snapshot, _fixture) = seed_relay_send_core_source(
+        &db,
+        folder_id,
+        "relay-core-test-budget-preflight",
+        "relay-core-test-budget-preflight-session",
+        folder_path,
+    )
+    .await;
+    snapshot.canonical_context = "x".repeat(20_000);
+    let estimated_tokens =
+        codeg_lib::conversation_relay::estimate_relay_tokens(&snapshot.canonical_context);
+    assert!(estimated_tokens > 4_000);
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let pack = create_or_replace_draft(
+        &db.conn,
+        NewRelayPack {
+            target_draft_id: "draft-send-budget-preflight".to_owned(),
+            source_conversation_id: source,
+            source_folder_id: folder_id,
+            scope_type: "summary".to_owned(),
+            selected_round_ids_json: serde_json::to_string(&snapshot.scope.selected_round_ids)
+                .unwrap(),
+            snapshot_json: serde_json::to_string(&snapshot).unwrap(),
+            source_fingerprint: fingerprint_rounds(&snapshot.available_rounds),
+            estimated_tokens: i32::try_from(estimated_tokens).unwrap(),
+            context_window_tokens: None,
+            target_model: None,
+            allowed_tokens: 12_000,
+            invalid_reason: None,
+        },
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, pack.id, "draft-send-budget-preflight", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    let manager = ConnectionManager::new();
+    let mut commands = manager
+        .insert_test_connection_live(
+            "relay-send-budget-preflight",
+            AgentType::Codex,
+            Some(folder_path.into()),
+            EventEmitter::Noop,
+        )
+        .await;
+
+    let error = send_prompt_with_relay_core(
+        &manager,
+        &db,
+        &EventEmitter::Noop,
+        AcpPromptRequest {
+            connection_id: "relay-send-budget-preflight".to_owned(),
+            blocks: vec![PromptInputBlock::Text {
+                text: "continue the task".to_owned(),
+            }],
+            folder_id: Some(folder_id),
+            conversation_id: Some(target),
+            client_message_id: Some("message-send-budget-preflight".to_owned()),
+            relay_id: Some(pack.id),
+            target_draft_id: Some("draft-send-budget-preflight".to_owned()),
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.message, "relay_budget_exceeded");
+    assert!(commands.try_recv().is_err());
+    let invalid = get_by_id(&db.conn, pack.id).await.unwrap();
+    assert_eq!(invalid.status, "invalid");
+    assert_eq!(
+        invalid.invalid_reason.as_deref(),
+        Some("relay_budget_exceeded")
+    );
+}
+
+#[tokio::test]
 async fn relay_send_core_releases_claim_and_cancels_target_when_actor_rejects_model_change() {
     let db = fresh_in_memory_db().await;
     let folder_id = seed_folder(&db, "C:/workspace/relay-send-model-rejected").await;
@@ -2277,6 +3337,7 @@ async fn relay_send_core_releases_claim_and_cancels_target_when_actor_rejects_mo
             context_window_tokens: None,
             target_model: None,
             allowed_tokens: 4_000,
+            invalid_reason: None,
         },
     )
     .await
@@ -2341,9 +3402,22 @@ async fn relay_send_core_releases_claim_and_cancels_target_when_actor_rejects_mo
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(released.status, "attached");
+    assert_eq!(released.status, "invalid");
+    assert_eq!(
+        released.invalid_reason.as_deref(),
+        Some("relay_model_changed")
+    );
     assert!(released.consume_client_message_id.is_none());
     assert!(released.consume_attempt_state.is_none());
+    let restored = get_relay_context_by_draft_core(&db.conn, "draft-send-model-rejected")
+        .await
+        .unwrap()
+        .expect("model rejection must remain actionable after reload");
+    assert_eq!(restored.status, "invalid");
+    assert_eq!(
+        restored.invalid_reason.as_deref(),
+        Some("relay_model_changed")
+    );
 
     let target = conversation::Entity::find_by_id(target)
         .one(&db.conn)
@@ -2376,6 +3450,43 @@ async fn a_claimed_relay_cannot_be_removed_while_the_prompt_outcome_is_pending()
 }
 
 #[tokio::test]
+async fn startup_recovery_turns_an_abandoned_claim_into_actionable_uncertain_state() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-abandoned")
+        .await
+        .unwrap();
+
+    assert_eq!(recover_claimed_as_uncertain(&db.conn).await.unwrap(), 1);
+
+    let recovered = get_restorable_by_draft(&db.conn, "draft-claim")
+        .await
+        .unwrap()
+        .expect("startup recovery should keep the relay actionable");
+    assert_eq!(recovered.status, "invalid");
+    assert_eq!(
+        recovered.invalid_reason.as_deref(),
+        Some("relay_send_uncertain")
+    );
+    assert_eq!(
+        recovered.consume_attempt_state.as_deref(),
+        Some("uncertain")
+    );
+    assert_eq!(
+        recovered.consume_client_message_id.as_deref(),
+        Some("message-abandoned")
+    );
+    assert!(recovered.target_conversation_id.is_some());
+
+    assert_eq!(
+        remove_unclaimed(&db.conn, recovered.id)
+            .await
+            .unwrap()
+            .status,
+        "removed"
+    );
+}
+
+#[tokio::test]
 async fn an_uncertain_relay_can_be_removed_without_erasing_the_attempt_record() {
     let db = seeded_relay_db().await;
     claim_consume(&db.conn, 1, "message-uncertain")
@@ -2384,10 +3495,23 @@ async fn an_uncertain_relay_can_be_removed_without_erasing_the_attempt_record() 
     let uncertain = mark_uncertain(&db.conn, 1, "message-uncertain")
         .await
         .unwrap();
-    assert_eq!(uncertain.status, "attached");
+    assert_eq!(uncertain.status, "invalid");
+    assert_eq!(
+        uncertain.invalid_reason.as_deref(),
+        Some("relay_send_uncertain")
+    );
     assert_eq!(
         uncertain.consume_attempt_state.as_deref(),
         Some("uncertain")
+    );
+    let restored = get_restorable_by_draft(&db.conn, "draft-claim")
+        .await
+        .unwrap()
+        .expect("uncertain send must remain actionable after reload");
+    assert_eq!(restored.status, "invalid");
+    assert_eq!(
+        restored.invalid_reason.as_deref(),
+        Some("relay_send_uncertain")
     );
 
     let removed = remove_unclaimed(&db.conn, 1).await.unwrap();
@@ -2406,4 +3530,83 @@ async fn an_uncertain_relay_can_be_removed_without_erasing_the_attempt_record() 
         persisted.consume_attempt_state.as_deref(),
         Some("uncertain")
     );
+}
+
+#[tokio::test]
+async fn refreshing_an_uncertain_relay_preserves_the_old_cleanup_anchor() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-refresh-uncertain").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let original = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "refresh-uncertain-original",
+            "draft-refresh-uncertain",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "original frozen context")],
+        &SuccessfulSummarizer,
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, original.id, "draft-refresh-uncertain", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+    claim_consume(&db.conn, original.id, "message-refresh-uncertain")
+        .await
+        .unwrap();
+    mark_uncertain(&db.conn, original.id, "message-refresh-uncertain")
+        .await
+        .unwrap();
+
+    let refreshed = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "refresh-uncertain-replacement",
+            "draft-refresh-uncertain",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "refreshed frozen context")],
+        &SuccessfulSummarizer,
+    )
+    .await
+    .expect("an uncertain relay should support explicit re-preparation");
+
+    let retained = get_by_id(&db.conn, original.id).await.unwrap();
+    assert_eq!(retained.status, "invalid");
+    assert_eq!(retained.target_conversation_id, Some(target));
+    assert_eq!(
+        retained.consume_client_message_id.as_deref(),
+        Some("message-refresh-uncertain")
+    );
+    assert_eq!(retained.consume_attempt_state.as_deref(), Some("uncertain"));
+    assert_eq!(refreshed.status, "attached");
+    assert_eq!(refreshed.target_conversation_id, Some(target));
+
+    claim_consume(&db.conn, refreshed.id, "message-refresh-replacement")
+        .await
+        .unwrap();
+    mark_consumed(
+        &db.conn,
+        refreshed.id,
+        "message-refresh-replacement",
+        &serde_json::to_string(&refreshed.snapshot).unwrap(),
+    )
+    .await
+    .unwrap();
+    let mut anchor_ids = get_context_bearing_attempts_by_target(&db.conn, target)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|pack| pack.id)
+        .collect::<Vec<_>>();
+    anchor_ids.sort_unstable();
+    assert_eq!(anchor_ids, vec![original.id, refreshed.id]);
 }

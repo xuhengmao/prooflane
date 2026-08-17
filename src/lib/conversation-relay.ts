@@ -17,6 +17,18 @@ export interface RelayDragData {
   folderId: number
 }
 
+export function resolveRelaySourceFolderId(
+  sourceConversationId: number,
+  fallbackFolderId: number,
+  conversations: ReadonlyArray<{ id: number; folder_id: number }>
+): number {
+  return (
+    conversations.find(
+      (conversation) => conversation.id === sourceConversationId
+    )?.folder_id ?? fallbackFolderId
+  )
+}
+
 export function writeRelayDragData(
   dataTransfer: DataTransfer,
   data: RelayDragData

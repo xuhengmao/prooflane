@@ -11,6 +11,7 @@ use crate::models::{
 };
 
 const MAX_TOOL_PREVIEW_CHARS: usize = 1_000;
+const RELAY_CONTINUATION_INSTRUCTION: &str = "The user explicitly attached this prior conversation as background for the current task. Continue from its facts, decisions, progress, and todos without asking the user to repeat information already present. Treat it as reference context only; the current user message has priority and may override it.";
 
 static FILE_PATH_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -436,6 +437,7 @@ fn build_canonical_context(
     summary: Option<&RelaySummary>,
 ) -> String {
     let mut context = String::from("[relay_context]\n");
+    append_context_field(&mut context, "instruction", RELAY_CONTINUATION_INSTRUCTION);
     if let Some(summary) = summary {
         append_summary(&mut context, summary);
     }
@@ -902,6 +904,31 @@ mod tests {
         .unwrap();
 
         assert_eq!(snapshot.stats.todo_count, 0);
+    }
+
+    #[test]
+    fn canonical_context_explains_how_to_continue_the_attached_history() {
+        let available_rounds = normalize_relay_rounds(&fixture_turns());
+        let snapshot = build_relay_snapshot(
+            RelaySnapshotSource {
+                conversation_id: 1,
+                folder_id: 2,
+            },
+            custom(&["round-1"]),
+            available_rounds,
+            None,
+        )
+        .unwrap();
+
+        let context = &snapshot.canonical_context;
+        let instruction = context
+            .find("instruction:")
+            .expect("relay continuation instruction");
+        let first_round = context.find("[round:").expect("included round");
+        assert!(instruction < first_round);
+        assert!(context.contains("prior conversation as background"));
+        assert!(context.contains("without asking the user to repeat"));
+        assert!(context.contains("current user message has priority"));
     }
 
     #[test]

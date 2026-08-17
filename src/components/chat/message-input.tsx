@@ -214,6 +214,9 @@ interface MessageInputProps {
    * falls back to {@link editingDraftText} when absent.
    */
   editingDraftBlocks?: PromptInputBlock[] | null
+  /** Full-fidelity prompt blocks from a failed send. The parent remounts the
+   * composer for each recovery, so these are consumed during initial hydration. */
+  restoredDraftBlocks?: PromptInputBlock[] | null
   isEditingQueueItem?: boolean
   onSaveQueueEdit?: (draft: PromptDraft) => void
   onCancelQueueEdit?: () => void
@@ -361,6 +364,7 @@ export function MessageInput({
   editingItemId,
   editingDraftText,
   editingDraftBlocks,
+  restoredDraftBlocks,
   isEditingQueueItem = false,
   onSaveQueueEdit,
   onCancelQueueEdit,
@@ -660,6 +664,12 @@ export function MessageInput({
         } else if (editingDraftText != null) {
           ed.setText(editingDraftText)
         }
+      } else if (
+        restoredDraftBlocks &&
+        restoredDraftBlocks.length > 0 &&
+        ed.getEditor()
+      ) {
+        hydrateFromBlocks(ed.getEditor()!, restoredDraftBlocks)
       } else if (effectiveDraftStorageKey) {
         const loaded = loadMessageInputDraftV2(effectiveDraftStorageKey)
         if (loaded?.kind === "doc") {
@@ -677,6 +687,7 @@ export function MessageInput({
     editingItemId,
     editingDraftText,
     editingDraftBlocks,
+    restoredDraftBlocks,
     effectiveDraftStorageKey,
     hydrateFromBlocks,
     syncComposerEmpty,

@@ -8874,6 +8874,76 @@ async fn release_relay_claim_or_uncertain(
         .map_err(|_| relay_command_error("relay_send_uncertain"))
 }
 
+async fn invalidate_relay_claim(
+    db: &AppDatabase,
+    emitter: &EventEmitter,
+    relay_id: i32,
+    client_message_id: &str,
+    reason: crate::models::conversation_relay::RelayErrorCode,
+) -> Result<(), AppCommandError> {
+    let invalid =
+        relay_context_pack_service::invalidate_claim(&db.conn, relay_id, client_message_id, reason)
+            .await
+            .map_err(|_| relay_command_error("relay_send_uncertain"))?;
+    cancel_relay_target_if_in_progress(&db.conn, emitter, invalid.target_conversation_id).await;
+    emit_relay_outcome(emitter, &invalid, Some(reason));
+    Ok(())
+}
+
+async fn cancel_relay_target_if_in_progress(
+    conn: &sea_orm::DatabaseConnection,
+    emitter: &EventEmitter,
+    conversation_id: Option<i32>,
+) {
+    let Some(conversation_id) = conversation_id else {
+        return;
+    };
+    match crate::db::service::conversation_service::update_status_if(
+        conn,
+        conversation_id,
+        crate::db::entities::conversation::ConversationStatus::InProgress,
+        crate::db::entities::conversation::ConversationStatus::Cancelled,
+    )
+    .await
+    {
+        Ok(true) => {
+            crate::commands::conversations::emit_conversation_upsert(
+                emitter,
+                conn,
+                conversation_id,
+            )
+            .await;
+        }
+        Ok(false) => {}
+        Err(error) => tracing::error!(
+            "failed to roll back conversation {conversation_id} after relay rejection: {error}"
+        ),
+    }
+}
+
+async fn cancel_bound_relay_target_before_claim_if_safe(
+    db: &AppDatabase,
+    emitter: &EventEmitter,
+    relay_id: i32,
+    conversation_id: i32,
+    target_draft_id: &str,
+) {
+    let Ok(pack) = relay_context_pack_service::get_by_id(&db.conn, relay_id).await else {
+        return;
+    };
+    if pack.target_conversation_id != Some(conversation_id)
+        || pack.target_draft_id != target_draft_id
+        || pack.status == "consumed"
+        || matches!(
+            pack.consume_attempt_state.as_deref(),
+            Some("claimed" | "uncertain")
+        )
+    {
+        return;
+    }
+    cancel_relay_target_if_in_progress(&db.conn, emitter, Some(conversation_id)).await;
+}
+
 fn spawn_relay_outcome_finalizer(
     conn: sea_orm::DatabaseConnection,
     relay_id: i32,
@@ -8897,34 +8967,6 @@ fn spawn_relay_outcome_finalizer(
                 Ok(())
             }
             Ok(crate::acp::connection::RelayPromptOutcome::Rejected(rejection)) => {
-                let released = relay_context_pack_service::release_claim(
-                    &conn,
-                    relay_id,
-                    &client_message_id,
-                )
-                .await
-                .map_err(|_| relay_command_error("relay_send_uncertain"))?;
-                if let Some(conversation_id) = released.target_conversation_id {
-                    match crate::db::service::conversation_service::update_status(
-                        &conn,
-                        conversation_id,
-                        crate::db::entities::conversation::ConversationStatus::Cancelled,
-                    )
-                    .await
-                    {
-                        Ok(_) => {
-                            crate::commands::conversations::emit_conversation_upsert(
-                                &emitter,
-                                &conn,
-                                conversation_id,
-                            )
-                            .await;
-                        }
-                        Err(error) => tracing::error!(
-                            "failed to roll back conversation {conversation_id} after relay rejection: {error}"
-                        ),
-                    }
-                }
                 let (code, error_code) = match rejection {
                     crate::acp::connection::RelayPromptRejection::ModelChanged => (
                         "relay_model_changed",
@@ -8935,7 +8977,17 @@ fn spawn_relay_outcome_finalizer(
                         crate::models::conversation_relay::RelayErrorCode::RelayBudgetExceeded,
                     ),
                 };
-                emit_relay_outcome(&emitter, &released, Some(error_code));
+                let invalid = relay_context_pack_service::invalidate_claim(
+                    &conn,
+                    relay_id,
+                    &client_message_id,
+                    error_code,
+                )
+                .await
+                .map_err(|_| relay_command_error("relay_send_uncertain"))?;
+                cancel_relay_target_if_in_progress(&conn, &emitter, invalid.target_conversation_id)
+                    .await;
+                emit_relay_outcome(&emitter, &invalid, Some(error_code));
                 Err(relay_command_error(code))
             }
             Ok(crate::acp::connection::RelayPromptOutcome::Uncertain) | Err(_) => {
@@ -9038,6 +9090,14 @@ pub async fn send_prompt_with_relay_core(
         .await
         .map_err(|error| AppCommandError::database_error(error.to_string()))?;
     if !settings.relay_enabled {
+        cancel_bound_relay_target_before_claim_if_safe(
+            db,
+            emitter,
+            relay_id,
+            conversation_id,
+            &target_draft_id,
+        )
+        .await;
         return Err(relay_command_error("relay_disabled"));
     }
     if let Ok(existing) = relay_context_pack_service::get_by_id(&db.conn, relay_id).await {
@@ -9053,9 +9113,23 @@ pub async fn send_prompt_with_relay_core(
             };
         }
     }
-    let claim = relay_context_pack_service::claim_consume(&db.conn, relay_id, &client_message_id)
-        .await
-        .map_err(|error| relay_command_error(error.code))?;
+    let claim =
+        match relay_context_pack_service::claim_consume(&db.conn, relay_id, &client_message_id)
+            .await
+        {
+            Ok(claim) => claim,
+            Err(error) => {
+                cancel_bound_relay_target_before_claim_if_safe(
+                    db,
+                    emitter,
+                    relay_id,
+                    conversation_id,
+                    &target_draft_id,
+                )
+                .await;
+                return Err(relay_command_error(error.code));
+            }
+        };
     let pack = match claim {
         relay_context_pack_service::ConsumeClaim::Claimed { pack } => pack,
         // A retry with the same id cannot be distinguished from an ACP request
@@ -9065,24 +9139,33 @@ pub async fn send_prompt_with_relay_core(
             return Err(relay_command_error("relay_send_uncertain"));
         }
     };
-    let current_model = match current_relay_target_model(manager, &request.connection_id).await {
-        Ok(model) => model,
-        Err(error) => {
-            release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
-            return Err(error);
-        }
-    };
     if pack.target_conversation_id != Some(conversation_id)
         || pack.target_draft_id != target_draft_id
     {
         release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
         return Err(relay_command_error("relay_consume_conflict"));
     }
+    let current_model = match current_relay_target_model(manager, &request.connection_id).await {
+        Ok(model) => model,
+        Err(error) => {
+            release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+            cancel_relay_target_if_in_progress(&db.conn, emitter, pack.target_conversation_id)
+                .await;
+            return Err(error);
+        }
+    };
     let snapshot: crate::models::conversation_relay::RelaySnapshot =
         match serde_json::from_str(&pack.snapshot_json) {
             Ok(snapshot) => snapshot,
             Err(_) => {
-                release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+                invalidate_relay_claim(
+                    db,
+                    emitter,
+                    relay_id,
+                    &client_message_id,
+                    crate::models::conversation_relay::RelayErrorCode::RelaySourceUnavailable,
+                )
+                .await?;
                 return Err(relay_command_error("relay_source_unavailable"));
             }
         };
@@ -9096,14 +9179,28 @@ pub async fn send_prompt_with_relay_core(
             .and_then(|tokens| u32::try_from(tokens).ok())
             != current_window
     {
-        release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+        invalidate_relay_claim(
+            db,
+            emitter,
+            relay_id,
+            &client_message_id,
+            crate::models::conversation_relay::RelayErrorCode::RelayModelChanged,
+        )
+        .await?;
         return Err(relay_command_error("relay_model_changed"));
     }
     let allowed_tokens = crate::conversation_relay::relay_budget(current_window);
     let estimated_tokens =
         crate::conversation_relay::estimate_relay_tokens(&snapshot.canonical_context);
     if estimated_tokens > allowed_tokens {
-        release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+        invalidate_relay_claim(
+            db,
+            emitter,
+            relay_id,
+            &client_message_id,
+            crate::models::conversation_relay::RelayErrorCode::RelayBudgetExceeded,
+        )
+        .await?;
         return Err(relay_command_error("relay_budget_exceeded"));
     }
     let relay_preflight = crate::acp::connection::RelayPromptPreflight {
@@ -9113,10 +9210,9 @@ pub async fn send_prompt_with_relay_core(
             .and_then(|tokens| u32::try_from(tokens).ok()),
         estimated_tokens,
     };
-    // Re-read only the round ids frozen at preview time. Newly appended source
-    // turns are intentionally irrelevant; a selected turn that changed or
-    // disappeared invalidates the pending relay instead of silently sending a
-    // different context than the user previewed.
+    // Re-read the complete source at send time. Any appended, changed, or
+    // removed round invalidates the preview so the user can refresh the exact
+    // context that will be sent.
     let source_detail = match crate::commands::conversations::get_folder_conversation_core(
         &db.conn,
         pack.source_conversation_id,
@@ -9125,11 +9221,29 @@ pub async fn send_prompt_with_relay_core(
     {
         Ok((detail, _)) => detail,
         Err(_) => {
-            release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+            invalidate_relay_claim(
+                db,
+                emitter,
+                relay_id,
+                &client_message_id,
+                crate::models::conversation_relay::RelayErrorCode::RelaySourceNotFound,
+            )
+            .await?;
             return Err(relay_command_error("relay_source_not_found"));
         }
     };
     let current_rounds = crate::conversation_relay::normalize_relay_rounds(&source_detail.turns);
+    if crate::conversation_relay::fingerprint_rounds(&current_rounds) != pack.source_fingerprint {
+        invalidate_relay_claim(
+            db,
+            emitter,
+            relay_id,
+            &client_message_id,
+            crate::models::conversation_relay::RelayErrorCode::RelayRoundsChanged,
+        )
+        .await?;
+        return Err(relay_command_error("relay_rounds_changed"));
+    }
     let current_selected =
         crate::conversation_relay::select_relay_rounds(&current_rounds, &snapshot.scope)
             .map_err(|_| relay_command_error("relay_rounds_changed"));
@@ -9138,15 +9252,40 @@ pub async fn send_prompt_with_relay_core(
             .map_err(|_| relay_command_error("relay_source_unavailable"));
     let (current_selected, original_selected) = match (current_selected, original_selected) {
         (Ok(current), Ok(original)) => (current, original),
-        (Err(error), _) | (_, Err(error)) => {
-            release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+        (Err(error), _) => {
+            invalidate_relay_claim(
+                db,
+                emitter,
+                relay_id,
+                &client_message_id,
+                crate::models::conversation_relay::RelayErrorCode::RelayRoundsChanged,
+            )
+            .await?;
+            return Err(error);
+        }
+        (_, Err(error)) => {
+            invalidate_relay_claim(
+                db,
+                emitter,
+                relay_id,
+                &client_message_id,
+                crate::models::conversation_relay::RelayErrorCode::RelaySourceUnavailable,
+            )
+            .await?;
             return Err(error);
         }
     };
     if crate::conversation_relay::fingerprint_rounds(&current_selected)
         != crate::conversation_relay::fingerprint_rounds(&original_selected)
     {
-        release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+        invalidate_relay_claim(
+            db,
+            emitter,
+            relay_id,
+            &client_message_id,
+            crate::models::conversation_relay::RelayErrorCode::RelayRoundsChanged,
+        )
+        .await?;
         return Err(relay_command_error("relay_rounds_changed"));
     }
     let marker = marker_for_snapshot(relay_id, &snapshot.canonical_context);
@@ -9200,6 +9339,10 @@ pub async fn send_prompt_with_relay_core(
         }
         Err(error) => {
             release_relay_claim_or_uncertain(db, relay_id, &client_message_id).await?;
+            if !matches!(error, AcpError::TurnInProgress) {
+                cancel_relay_target_if_in_progress(&db.conn, emitter, pack.target_conversation_id)
+                    .await;
+            }
             Err(acp_prompt_command_error(error))
         }
     }
@@ -16132,6 +16275,7 @@ model = "gpt"
                 context_window_tokens: None,
                 target_model: None,
                 allowed_tokens: 4_000,
+                invalid_reason: None,
             },
         )
         .await
@@ -16226,6 +16370,7 @@ model = "gpt"
                 context_window_tokens: None,
                 target_model: None,
                 allowed_tokens: 4_000,
+                invalid_reason: None,
             },
         )
         .await
@@ -16257,7 +16402,11 @@ model = "gpt"
 
         assert!(finalizer.await.unwrap().is_err());
         let uncertain = get_by_id(&db.conn, pack.id).await.unwrap();
-        assert_eq!(uncertain.status, "attached");
+        assert_eq!(uncertain.status, "invalid");
+        assert_eq!(
+            uncertain.invalid_reason.as_deref(),
+            Some("relay_send_uncertain")
+        );
         assert_eq!(
             uncertain.consume_attempt_state.as_deref(),
             Some("uncertain")
@@ -16267,7 +16416,7 @@ model = "gpt"
             .expect("uncertain finalizer must broadcast")
             .expect("relay event");
         assert_eq!(event.payload["relayId"], pack.id);
-        assert_eq!(event.payload["status"], "attached");
+        assert_eq!(event.payload["status"], "invalid");
         assert_eq!(event.payload["errorCode"], "relay_send_uncertain");
     }
 }

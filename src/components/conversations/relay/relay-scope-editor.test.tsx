@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 import { RelayScopeEditor } from "./relay-scope-editor"
+import { renderWithRelayIntl } from "./relay-test-utils"
 
 const rounds = Array.from({ length: 12 }, (_, index) => ({
   id: `round-${index + 1}`,
@@ -15,7 +16,9 @@ const rounds = Array.from({ length: 12 }, (_, index) => ({
 describe("RelayScopeEditor", () => {
   it("默认选择最近 10 个完整轮次，并支持非连续自定义选择", () => {
     const onChange = vi.fn()
-    render(<RelayScopeEditor rounds={rounds} onChange={onChange} />)
+    renderWithRelayIntl(
+      <RelayScopeEditor rounds={rounds} onChange={onChange} />
+    )
 
     expect(screen.getByLabelText("round-3")).toBeChecked()
     expect(screen.queryByLabelText("round-1")).not.toBeChecked()
@@ -29,7 +32,7 @@ describe("RelayScopeEditor", () => {
   })
 
   it("展示摘要加载与失败状态", () => {
-    const { rerender } = render(
+    const { rerender } = renderWithRelayIntl(
       <RelayScopeEditor
         rounds={rounds}
         summaryState="loading"
@@ -45,5 +48,36 @@ describe("RelayScopeEditor", () => {
       />
     )
     expect(screen.getByText("摘要暂不可用")).toBeInTheDocument()
+  })
+
+  it("在打开时采用外部重载后的范围，避免提交 CAS 冲突前的选择", () => {
+    const onChange = vi.fn()
+    const { rerender } = renderWithRelayIntl(
+      <RelayScopeEditor
+        rounds={rounds}
+        value={{
+          scopeType: "custom_rounds",
+          selectedRoundIds: ["round-1"],
+        }}
+        onChange={onChange}
+      />
+    )
+
+    rerender(
+      <RelayScopeEditor
+        rounds={rounds}
+        value={{
+          scopeType: "custom_rounds",
+          selectedRoundIds: ["round-3"],
+        }}
+        onChange={onChange}
+      />
+    )
+
+    fireEvent.click(screen.getByLabelText("round-2"))
+    expect(onChange).toHaveBeenLastCalledWith({
+      scopeType: "custom_rounds",
+      selectedRoundIds: ["round-3", "round-2"],
+    })
   })
 })

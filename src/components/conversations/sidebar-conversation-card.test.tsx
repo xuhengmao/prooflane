@@ -220,9 +220,9 @@ describe("SidebarConversationCard relay entry", () => {
     )
 
     fireEvent.contextMenu(getByText("conv-7"))
-    fireEvent.click(getByText("在新会话中继续"))
+    fireEvent.click(getByText("Continue in new conversation"))
 
-    expect(onRelayContinue).toHaveBeenCalledWith(7)
+    expect(onRelayContinue).toHaveBeenCalledWith(7, 1)
   })
 
   it("hides menu and drag entry when relay is disabled", () => {
@@ -242,7 +242,7 @@ describe("SidebarConversationCard relay entry", () => {
     const conversationButton = container.querySelector("[data-conversation-id]")
     expect(conversationButton).not.toHaveAttribute("draggable", "true")
     fireEvent.contextMenu(getByText("conv-7"))
-    expect(queryByText("在新会话中继续")).not.toBeInTheDocument()
+    expect(queryByText("Continue in new conversation")).not.toBeInTheDocument()
   })
 
   it("writes only the dedicated relay MIME on drag start", () => {

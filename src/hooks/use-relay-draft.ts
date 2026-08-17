@@ -22,10 +22,20 @@ import {
 } from "@/lib/types"
 
 const UNDO_REMOVE_WINDOW_MS = 10_000
+const RELAY_CONSUME_CONFLICT = "relay_consume_conflict"
 const DEFAULT_SCOPE: RelayScopeSelection = {
   scopeType: "recent_rounds",
   selectedRoundIds: [],
 }
+
+const RELAY_INVALID_REASONS = new Set([
+  "relay_rounds_changed",
+  "relay_model_changed",
+  "relay_budget_exceeded",
+  "relay_send_uncertain",
+  "relay_source_not_found",
+  "relay_source_unavailable",
+])
 
 interface RelayDraftOptions {
   targetDraftId: string
@@ -73,8 +83,49 @@ function isAbortError(error: unknown): boolean {
     : error instanceof Error && error.name === "AbortError"
 }
 
+function isRelayConsumeConflict(error: unknown): boolean {
+  const appError = extractAppCommandError(error)
+  if (
+    appError?.code === RELAY_CONSUME_CONFLICT ||
+    appError?.message === RELAY_CONSUME_CONFLICT
+  ) {
+    return true
+  }
+  return (
+    error === RELAY_CONSUME_CONFLICT ||
+    (error instanceof Error && error.message === RELAY_CONSUME_CONFLICT)
+  )
+}
+
+function relayInvalidReason(error: unknown): string | null {
+  const appError = extractAppCommandError(error)
+  const candidates = [
+    appError?.message,
+    appError?.code,
+    error instanceof Error ? error.message : null,
+    typeof error === "string" ? error : null,
+  ]
+  return (
+    candidates.find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" && RELAY_INVALID_REASONS.has(candidate)
+    ) ?? null
+  )
+}
+
 function targetSignature(agentType: AgentType, model: string | null): string {
   return `${agentType}\u0000${model ?? ""}`
+}
+
+function normalizedTargetModel(model: string | null): string | null {
+  const normalized = model?.trim()
+  return normalized ? normalized : null
+}
+
+function scopeForRefresh(scope: RelayScopeSelection): RelayScopeSelection {
+  return scope.scopeType === "custom_rounds"
+    ? scope
+    : { ...scope, selectedRoundIds: [] }
 }
 
 export function useRelayDraft({
@@ -86,6 +137,7 @@ export function useRelayDraft({
 }: RelayDraftOptions): {
   relay: RelayContextPack | null
   loading: boolean
+  recoveryError: boolean
   preview: (
     sourceConversationId: number,
     scope?: RelayScopeSelection
@@ -93,11 +145,14 @@ export function useRelayDraft({
   updateScope: (scope: RelayScopeSelection) => Promise<void>
   remove: () => Promise<void>
   undoRemove: () => Promise<void>
+  refresh: () => Promise<void>
+  markSendFailure: (error: unknown) => void
   retry: () => Promise<void>
   clear: () => void
 } {
   const [relay, setRelay] = useState<RelayContextPack | null>(null)
   const [loading, setLoading] = useState(false)
+  const [recoveryError, setRecoveryError] = useState(false)
   const relayRef = useRef<RelayContextPack | null>(null)
   const latestRef = useRef({
     targetDraftId,
@@ -132,11 +187,6 @@ export function useRelayDraft({
     setRelay(next)
   }, [])
 
-  const clear = useCallback(() => {
-    retryOperationRef.current = null
-    commitRelay(null)
-  }, [commitRelay])
-
   const clearUndoTimer = useCallback(() => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
     undoTimerRef.current = null
@@ -148,6 +198,15 @@ export function useRelayDraft({
     operationGenerationRef.current += 1
     return operationGenerationRef.current
   }, [])
+
+  const clear = useCallback(() => {
+    invalidatePending()
+    restoreGenerationRef.current = null
+    retryOperationRef.current = null
+    setLoading(false)
+    setRecoveryError(false)
+    commitRelay(null)
+  }, [commitRelay, invalidatePending])
 
   const isCurrent = useCallback(
     (generation: number, draftId: string, lifecycle: number) =>
@@ -169,10 +228,22 @@ export function useRelayDraft({
     setLoading(true)
     try {
       const existing = await getRelayContextByDraft(draftId)
-      if (isCurrent(generation, draftId, lifecycle)) commitRelay(existing)
+      if (isCurrent(generation, draftId, lifecycle)) {
+        if (
+          existing &&
+          (existing.invalidReason === "relay_model_changed" ||
+            normalizedTargetModel(existing.targetModel) !==
+              normalizedTargetModel(latestRef.current.targetModel))
+        ) {
+          configurationRefreshPendingRef.current = true
+        }
+        commitRelay(existing)
+        setRecoveryError(false)
+      }
     } catch (error) {
       if (isCurrent(generation, draftId, lifecycle)) {
         retryOperationRef.current = { kind: "restore" }
+        setRecoveryError(relayRef.current === null)
       }
       throw error
     } finally {
@@ -215,6 +286,7 @@ export function useRelayDraft({
           clearUndoTimer()
           localRemovalRef.current = null
           commitRelay(next)
+          setRecoveryError(false)
         }
       } catch (error) {
         if (isCurrent(generation, draftId, lifecycle) && !isAbortError(error)) {
@@ -223,6 +295,7 @@ export function useRelayDraft({
             sourceConversationId,
             scope: selectedScope,
           }
+          setRecoveryError(relayRef.current === null)
         }
         throw error
       } finally {
@@ -241,6 +314,39 @@ export function useRelayDraft({
     [runPreview]
   )
 
+  const refresh = useCallback(async () => {
+    const currentRelay = relayRef.current
+    if (!currentRelay || currentRelay.status === "removed") return
+    try {
+      await runPreview(
+        currentRelay.sourceConversationId,
+        scopeForRefresh(currentRelay.scope)
+      )
+    } catch (error) {
+      const invalidReason = relayInvalidReason(error)
+      if (invalidReason && relayRef.current?.id === currentRelay.id) {
+        commitRelay({ ...currentRelay, invalidReason })
+      }
+      throw error
+    }
+  }, [commitRelay, runPreview])
+
+  const markSendFailure = useCallback(
+    (error: unknown) => {
+      const invalidReason = relayInvalidReason(error)
+      const currentRelay = relayRef.current
+      if (
+        !invalidReason ||
+        !currentRelay ||
+        currentRelay.status === "removed"
+      ) {
+        return
+      }
+      commitRelay({ ...currentRelay, status: "invalid", invalidReason })
+    },
+    [commitRelay]
+  )
+
   const updateScope = useCallback(
     async (scope: RelayScopeSelection) => {
       const currentRelay = relayRef.current
@@ -249,6 +355,13 @@ export function useRelayDraft({
         !currentRelay ||
         currentRelay.status === "removed"
       ) {
+        return
+      }
+      if (
+        currentRelay.status !== "draft" ||
+        currentRelay.invalidReason !== null
+      ) {
+        await runPreview(currentRelay.sourceConversationId, scope)
         return
       }
       const current = latestRef.current
@@ -266,6 +379,10 @@ export function useRelayDraft({
         if (isCurrent(generation, draftId, lifecycle)) commitRelay(next)
       } catch (error) {
         if (isCurrent(generation, draftId, lifecycle)) {
+          if (isRelayConsumeConflict(error)) {
+            await loadExisting()
+            throw error
+          }
           retryOperationRef.current = { kind: "update", scope }
           if (isBudgetExceeded(error)) {
             commitRelay({
@@ -280,7 +397,7 @@ export function useRelayDraft({
         if (isCurrent(generation, draftId, lifecycle)) setLoading(false)
       }
     },
-    [commitRelay, invalidatePending, isCurrent]
+    [commitRelay, invalidatePending, isCurrent, loadExisting, runPreview]
   )
 
   const scheduleUndoExpiry = useCallback(
@@ -386,6 +503,7 @@ export function useRelayDraft({
     retryOperationRef.current = null
     commitRelay(null)
     setLoading(allowedRef.current)
+    setRecoveryError(false)
 
     const finishSubscription = () => {
       subscriptionsPending -= 1
@@ -430,6 +548,7 @@ export function useRelayDraft({
             retryOperationRef.current = null
             commitRelay(null)
             setLoading(false)
+            setRecoveryError(false)
           } else if (subscriptionsReadyRef.current) {
             void loadExisting().catch(() => {})
           }
@@ -471,6 +590,26 @@ export function useRelayDraft({
             localRemovalRef.current = null
             retryOperationRef.current = null
             commitRelay(null)
+            setLoading(false)
+            setRecoveryError(false)
+            return
+          }
+          const currentRelay = relayRef.current
+          const eventInvalidReason = change.errorCode
+            ? relayInvalidReason(change.errorCode)
+            : null
+          if (
+            currentRelay?.id === change.relayId &&
+            eventInvalidReason !== null
+          ) {
+            invalidatePending()
+            restoreGenerationRef.current = null
+            retryOperationRef.current = null
+            commitRelay({
+              ...currentRelay,
+              status: change.status,
+              invalidReason: eventInvalidReason,
+            })
             setLoading(false)
             return
           }
@@ -523,6 +662,7 @@ export function useRelayDraft({
       retryOperationRef.current = null
       commitRelay(null)
       setLoading(false)
+      setRecoveryError(false)
     } else if (subscriptionsReadyRef.current) {
       void loadExisting().catch(() => {})
     }
@@ -545,17 +685,20 @@ export function useRelayDraft({
       currentRelay.status !== "removed"
     ) {
       configurationRefreshPendingRef.current = false
-      void updateScope(currentRelay.scope).catch(() => {})
+      void refresh().catch(() => {})
     }
-  }, [relay, targetAgentType, targetModel, updateScope])
+  }, [refresh, relay, targetAgentType, targetModel])
 
   return {
     relay,
     loading,
+    recoveryError,
     preview,
     updateScope,
     remove,
     undoRemove,
+    refresh,
+    markSendFailure,
     retry,
     clear,
   }

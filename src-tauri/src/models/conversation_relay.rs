@@ -101,6 +101,7 @@ pub struct RelayContextPackView {
     pub source_fingerprint: String,
     pub estimated_tokens: u32,
     pub context_window_tokens: Option<u32>,
+    pub target_model: Option<String>,
     pub allowed_tokens: u32,
     pub status: String,
     pub invalid_reason: Option<String>,

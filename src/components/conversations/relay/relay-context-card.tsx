@@ -1,6 +1,7 @@
 "use client"
 
-import { Eye, Pencil, RotateCcw, Trash2 } from "lucide-react"
+import { Eye, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react"
+import { useLocale, useTranslations } from "next-intl"
 
 interface RelayCardData {
   sourceConversationId: number
@@ -29,21 +30,7 @@ interface RelayContextCardProps {
   onAdjust: () => void
   onRemove: () => void
   onUndo: () => void
-}
-
-function formatTokens(value: number): string {
-  return new Intl.NumberFormat("en-US").format(value)
-}
-
-function formatScope(scope: RelayCardData["scope"]): string {
-  switch (scope.scopeType) {
-    case "recent_rounds":
-      return "最近 10 轮"
-    case "custom_rounds":
-      return `自定义 ${scope.selectedRoundIds.length} 轮`
-    case "summary":
-      return "摘要"
-  }
+  onRefresh: () => void
 }
 
 export function RelayContextCard({
@@ -54,28 +41,53 @@ export function RelayContextCard({
   onAdjust,
   onRemove,
   onUndo,
+  onRefresh,
 }: RelayContextCardProps) {
+  const t = useTranslations("Folder.chat.relay")
+  const locale = useLocale()
+  const formatTokens = (value: number) =>
+    new Intl.NumberFormat(locale).format(value)
+  const scopeLabel =
+    relay.scope.scopeType === "recent_rounds"
+      ? t("recentRounds")
+      : relay.scope.scopeType === "custom_rounds"
+        ? t("customRoundsCount", {
+            count: relay.scope.selectedRoundIds.length,
+          })
+        : t("summary")
   const sourceLabel =
-    sourceTitle?.trim() || `会话 #${relay.sourceConversationId}`
+    sourceTitle?.trim() ||
+    t("conversationFallback", { id: relay.sourceConversationId })
   if (relay.status === "removed") {
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
-        <span>10 秒内可撤销</span>
+        <span>{t("removed")}</span>
         <button
           type="button"
           disabled={disabled}
           onClick={onUndo}
-          title="撤销移除"
-          aria-label="撤销移除"
+          title={t("undo")}
+          aria-label={t("undo")}
           className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <RotateCcw className="size-3.5" aria-hidden /> 撤销移除
+          <RotateCcw className="size-3.5" aria-hidden /> {t("undo")}
         </button>
       </div>
     )
   }
 
   const overBudget = relay.invalidReason === "relay_budget_exceeded"
+  const sourceUpdated = relay.invalidReason === "relay_rounds_changed"
+  const modelChanged = relay.invalidReason === "relay_model_changed"
+  const sendUncertain = relay.invalidReason === "relay_send_uncertain"
+  const sourceUnavailable =
+    relay.invalidReason === "relay_source_not_found" ||
+    relay.invalidReason === "relay_source_unavailable"
+  const recoveryLabel = sourceUpdated
+    ? t("refreshContent")
+    : modelChanged || sendUncertain || sourceUnavailable
+      ? t("reprepare")
+      : null
   const { messageCount, fileCount, todoCount } = relay.snapshot.stats
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs">
@@ -89,28 +101,59 @@ export function RelayContextCard({
               overBudget ? "text-destructive" : "text-muted-foreground"
             }
           >
-            Token 预算：{formatTokens(relay.estimatedTokens)} /{" "}
-            {formatTokens(relay.allowedTokens)}
+            {t("tokenBudgetValue", {
+              used: formatTokens(relay.estimatedTokens),
+              allowed: formatTokens(relay.allowedTokens),
+            })}
           </span>
           {overBudget && (
-            <span className="text-destructive">上下文预算超限</span>
+            <span className="text-destructive">{t("budgetExceeded")}</span>
+          )}
+          {sourceUpdated && (
+            <span className="text-destructive">{t("sourceUpdated")}</span>
+          )}
+          {modelChanged && (
+            <span className="text-destructive">{t("modelChanged")}</span>
+          )}
+          {sendUncertain && (
+            <span className="text-destructive">{t("sendUncertain")}</span>
+          )}
+          {sourceUnavailable && (
+            <span className="text-destructive">{t("sourceUnavailable")}</span>
           )}
         </div>
         <p className="mt-1 text-muted-foreground">
-          <span>范围：{formatScope(relay.scope)}</span>
+          <span>{t("scopeValue", { scope: scopeLabel })}</span>
           <span aria-hidden> · </span>
           <span>
-            {messageCount} 条消息 · {fileCount} 个文件 · {todoCount} 项待办
+            {t("stats", {
+              messages: messageCount,
+              files: fileCount,
+              todos: todoCount,
+            })}
           </span>
         </p>
       </div>
       <span className="ml-auto flex items-center gap-1">
+        {recoveryLabel && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onRefresh}
+            title={recoveryLabel}
+            aria-label={recoveryLabel}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-1 font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw className="size-3.5" aria-hidden />
+            {recoveryLabel}
+          </button>
+        )}
         <button
           type="button"
           disabled={disabled}
           onClick={onPreview}
-          title="查看"
-          aria-label="查看"
+          title={t("view")}
+          aria-label={t("view")}
           className="rounded p-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Eye className="size-3.5" aria-hidden />
@@ -119,8 +162,8 @@ export function RelayContextCard({
           type="button"
           disabled={disabled}
           onClick={onAdjust}
-          title="调整范围"
-          aria-label="调整范围"
+          title={t("adjust")}
+          aria-label={t("adjust")}
           className="rounded p-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Pencil className="size-3.5" aria-hidden />
@@ -129,8 +172,8 @@ export function RelayContextCard({
           type="button"
           disabled={disabled}
           onClick={onRemove}
-          title="移除"
-          aria-label="移除"
+          title={t("remove")}
+          aria-label={t("remove")}
           className="rounded p-1 text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Trash2 className="size-3.5" aria-hidden />

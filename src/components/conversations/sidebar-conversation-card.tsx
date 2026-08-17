@@ -115,7 +115,10 @@ interface SidebarConversationCardProps {
   onStatusChange: (id: number, status: ConversationStatus) => Promise<void>
   onNewConversation?: (folderId: number) => void
   onTogglePin?: (id: number, nextPinned: boolean) => void
-  onRelayContinue?: (sourceConversationId: number) => void
+  onRelayContinue?: (
+    sourceConversationId: number,
+    sourceFolderId: number
+  ) => void
   /** Delegation-tree nesting depth (0 = root). Drives the per-level indent. */
   depth?: number
   /** True when `child_count > 0`: the conversation has delegation children, so
@@ -150,6 +153,7 @@ export const SidebarConversationCard = memo(function SidebarConversationCard({
   const tSidebar = useTranslations("Folder.sidebar")
   const tStatus = useTranslations("Folder.statusLabels")
   const tDetails = useTranslations("Folder.sessionDetails")
+  const tRelay = useTranslations("Folder.chat.relay")
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -532,9 +536,13 @@ export const SidebarConversationCard = memo(function SidebarConversationCard({
             </>
           )}
           {onRelayContinue && (
-            <ContextMenuItem onSelect={() => onRelayContinue(conversation.id)}>
+            <ContextMenuItem
+              onSelect={() =>
+                onRelayContinue(conversation.id, conversation.folder_id)
+              }
+            >
               <SquarePen className="h-4 w-4" />
-              在新会话中继续
+              {tRelay("continueInNewConversation")}
             </ContextMenuItem>
           )}
           <ContextMenuItem onSelect={handleRenameOpen}>

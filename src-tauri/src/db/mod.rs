@@ -87,6 +87,14 @@ pub async fn init_database(
 
     service::app_metadata_service::update_app_version(&conn, app_version).await?;
 
+    let recovered_claims =
+        service::relay_context_pack_service::recover_claimed_as_uncertain(&conn).await?;
+    if recovered_claims > 0 {
+        tracing::warn!(
+            "[conversation-relay] recovered {recovered_claims} interrupted send attempt(s)"
+        );
+    }
+
     // Publish user-registered ACP agents into the process-global launch
     // registry before anything can ask for agent metadata. This is the single
     // chokepoint every runtime (desktop, server) goes through, so custom agents
