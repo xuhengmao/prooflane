@@ -1,6 +1,8 @@
 use chrono::Utc;
 use sea_orm::sea_query::Expr;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait,
+};
 use serde::Serialize;
 
 use crate::app_error::AppCommandError;
@@ -18,9 +20,10 @@ pub struct ConversationCapabilitySettings {
     pub relay_enabled: bool,
 }
 
-pub async fn get_capabilities(
-    conn: &DatabaseConnection,
-) -> Result<ConversationCapabilitySettings, DbError> {
+pub async fn get_capabilities<C>(conn: &C) -> Result<ConversationCapabilitySettings, DbError>
+where
+    C: ConnectionTrait,
+{
     let setting = conversation_capability_setting::Entity::find_by_id(1)
         .one(conn)
         .await?
@@ -42,7 +45,7 @@ pub async fn set_relay_enabled(
         Vec::new()
     } else {
         relay_context_pack::Entity::find()
-            .filter(relay_context_pack::Column::Status.is_in(["draft", "attached"]))
+            .filter(relay_context_pack::Column::Status.is_in(["draft", "attached", "invalid"]))
             .filter(relay_context_pack_service::consume_not_claimed())
             .all(&txn)
             .await
@@ -67,7 +70,7 @@ pub async fn set_relay_enabled(
         relay_context_pack::Entity::update_many()
             .col_expr(relay_context_pack::Column::Status, Expr::value("removed"))
             .col_expr(relay_context_pack::Column::UpdatedAt, Expr::value(now))
-            .filter(relay_context_pack::Column::Status.is_in(["draft", "attached"]))
+            .filter(relay_context_pack::Column::Status.is_in(["draft", "attached", "invalid"]))
             .filter(relay_context_pack_service::consume_not_claimed())
             .exec(&txn)
             .await

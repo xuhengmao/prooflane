@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, Set, TransactionTrait,
+    ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -397,7 +397,10 @@ fn view_from_model(
     })
 }
 
-async fn ensure_relay_enabled(conn: &DatabaseConnection) -> Result<(), AppCommandError> {
+async fn ensure_relay_enabled<C>(conn: &C) -> Result<(), AppCommandError>
+where
+    C: ConnectionTrait,
+{
     let settings = conversation_capability_service::get_capabilities(conn)
         .await
         .map_err(|_| storage_error())?;
@@ -559,6 +562,7 @@ async fn persist_preview_snapshot(
     }
 
     let txn = db.conn.begin().await.map_err(|_| storage_error())?;
+    ensure_relay_enabled(&txn).await?;
     let now = chrono::Utc::now();
     let existing_target_conversation_id = relay_context_pack::Entity::find()
         .filter(relay_context_pack::Column::TargetDraftId.eq(&pack.target_draft_id))
@@ -761,9 +765,21 @@ pub async fn get_relay_context_by_draft_core(
     conn: &DatabaseConnection,
     target_draft_id: &str,
 ) -> Result<Option<RelayContextPackView>, AppCommandError> {
-    let model = relay_context_pack_service::get_restorable_by_draft(conn, target_draft_id)
-        .await
-        .map_err(|_| storage_error())?;
+    get_relay_context_by_target_core(conn, target_draft_id, None).await
+}
+
+pub async fn get_relay_context_by_target_core(
+    conn: &DatabaseConnection,
+    target_draft_id: &str,
+    target_conversation_id: Option<i32>,
+) -> Result<Option<RelayContextPackView>, AppCommandError> {
+    let model = relay_context_pack_service::get_restorable_by_target(
+        conn,
+        target_draft_id,
+        target_conversation_id,
+    )
+    .await
+    .map_err(|_| storage_error())?;
     model.map(view_from_model).transpose()
 }
 
@@ -914,7 +930,7 @@ pub async fn get_conversation_relay_core(
         .filter(|source| source.deleted_at.is_none())
         .and_then(|source| source.title)
         .filter(|title| !title.trim().is_empty())
-        .unwrap_or_else(|| format!("会话 #{}", snapshot.source.conversation_id));
+        .unwrap_or_default();
 
     let snapshot_sha256 =
         marker_for_snapshot(model.id, &snapshot.canonical_context).snapshot_sha256;

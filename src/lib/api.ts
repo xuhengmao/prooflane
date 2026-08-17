@@ -280,7 +280,7 @@ export async function acpPrompt(
       payload.targetDraftId = targetDraftId
     }
     if (relayId !== null && targetDraftId !== null) {
-      await getTransport().call("acp_prompt", payload, { timeoutMs: 50_000 })
+      await getTransport().call("acp_prompt", payload, { timeoutMs: 600_000 })
     } else {
       await getTransport().call("acp_prompt", payload)
     }

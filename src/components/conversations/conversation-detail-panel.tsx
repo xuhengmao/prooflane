@@ -300,6 +300,7 @@ const ConversationTabView = memo(function ConversationTabView({
   } = useTabActions()
   const {
     appendOptimisticTurn,
+    markOptimisticTurnUncertain,
     removeOptimisticTurn,
     appendViewerUserTurn,
     completeTurn,
@@ -392,7 +393,18 @@ const ConversationTabView = memo(function ConversationTabView({
   const createConversationPendingRef = useRef(false)
   const [composerRestoreNonce, setComposerRestoreNonce] = useState(0)
   const composerRestoreDraftRef = useRef<PromptDraft | null>(null)
-  const [relaySendPending, setRelaySendPending] = useState(false)
+  const [relaySendPending, setRelaySendPendingState] = useState(false)
+  const relaySendPendingRef = useRef(false)
+  const setRelaySendPending = useCallback((pending: boolean) => {
+    relaySendPendingRef.current = pending
+    setRelaySendPendingState(pending)
+  }, [])
+  const [relayQueuePaused, setRelayQueuePausedState] = useState(false)
+  const relayQueuePausedRef = useRef(false)
+  const setRelayQueuePaused = useCallback((paused: boolean) => {
+    relayQueuePausedRef.current = paused
+    setRelayQueuePausedState(paused)
+  }, [])
   const relayForSendRef = useRef<{
     relayId: number
     targetDraftId: string
@@ -781,62 +793,13 @@ const ConversationTabView = memo(function ConversationTabView({
       draft: PromptDraft,
       modeId?: string | null,
       opts?: { fromQueueFlush?: boolean }
-    ) => void
+    ) => boolean | void
   >(() => {})
   // Timestamp of the last send that bounced with TurnBusyError. The flush below
   // backs off after a bounce so repeated busy rejections (backend still running
   // another turn while this client believes it is idle) don't spin one failed
   // send per round-trip.
   const lastFlushBounceAtRef = useRef(0)
-
-  // Flush queued messages whenever the agent is idle. This is the queue's send
-  // engine, covering BOTH:
-  //   - the normal case: a message queued while the agent was prompting, sent
-  //     once the turn completes (prompting→connected drives syncState→idle); and
-  //   - a draft re-queued by a bounced concurrent send that landed AFTER the
-  //     prompting→connected transition already passed — which an edge-triggered
-  //     flush would strand until the next turn.
-  // Gated on syncState !== "awaiting_persist" so exactly one item flushes at a
-  // time: dequeuing + sending appends an optimistic turn → awaiting_persist,
-  // which blocks re-entry until that send settles (the turn completes, or it
-  // bounces and rolls back to idle to retry the next item). A bounce backoff
-  // rate-limits retries against a still-busy backend.
-  useEffect(() => {
-    if (connStatus !== "connected") return
-    // Don't flush onto a connection whose cwd doesn't match the tab's intended
-    // working dir. This matters for a just-bound chat conversation: bind switches
-    // the tab's workingDir from the draft's previous folder to the scratch dir,
-    // and for one render `connStatus` can still read the stale "connected" of the
-    // old-folder session before the reconnect lands. Flushing then would deliver
-    // the queued prompt to the wrong folder's agent. (No-op for normal
-    // conversations, whose connection cwd always equals the intended one.)
-    if (
-      (conn.connectedWorkingDir ?? null) !== (workingDirForConnection ?? null)
-    ) {
-      return
-    }
-    if (runtimeSyncState === "awaiting_persist") return
-    if (msgQueue.length === 0) return
-    // setTimeout (not microtask) so a COMPLETE_TURN commit settles first AND so
-    // a just-bounced retry waits out the backoff window before re-sending.
-    const wait = flushRetryDelayMs(Date.now(), lastFlushBounceAtRef.current)
-    const timer = setTimeout(() => {
-      if (connStatusRef.current !== "connected") return
-      const next = autoSendQueueRef.current()
-      if (next) {
-        // Mark this as the queue auto-flush: it sends the dequeued head now and,
-        // on a bounce, returns it to the FRONT (vs a direct send → tail).
-        handleSendRef.current(next.draft, next.modeId, { fromQueueFlush: true })
-      }
-    }, wait)
-    return () => clearTimeout(timer)
-  }, [
-    connStatus,
-    runtimeSyncState,
-    msgQueue.length,
-    conn.connectedWorkingDir,
-    workingDirForConnection,
-  ])
 
   // Mirror the connection's liveMessage into the runtime session OUTSIDE React.
   // The connection dispatch invokes this sink synchronously whenever liveMessage
@@ -973,26 +936,42 @@ const ConversationTabView = memo(function ConversationTabView({
       // on `connected` for chat drafts too, so by the time we get here the agent
       // is live and the prompt is delivered inline — never parked in the queue.
       const sendOwnTab = ownTab
+      const fromQueueFlush = opts?.fromQueueFlush ?? false
 
-      if (relaySendBlockedRef.current) return
+      if (relaySendBlockedRef.current) return false
+      if (fromQueueFlush && relayQueuePausedRef.current) return false
+      if (relaySendPendingRef.current) {
+        if (fromQueueFlush) return false
+        mqEnqueue(draft, selectedModeIdArg ?? null)
+        return true
+      }
 
       if (!hasPersistedConversation && !canAutoConnect) {
         setAgentConnectError(tWelcome("enableAgentFirstPlaceholder"))
-        return
+        return false
       }
       // Connected AND the connection's cwd matches this tab's working dir. Bare
       // `connStatus === "connected"` is not enough: a chat draft mid-reconnect can
       // read a stale "connected" for the old cwd, and an inline send then would
       // deliver to the wrong workspace. Same predicate the flush effect uses.
-      if (!connectionReady) return
+      if (!connectionReady) return false
 
-      const fromQueueFlush = opts?.fromQueueFlush ?? false
+      const relayBindingForAttempt = relayForSendRef.current
+      const retryingPausedRelay =
+        !fromQueueFlush &&
+        relayQueuePausedRef.current &&
+        relayBindingForAttempt !== null
       // Preserve FIFO: a direct send issued while the queue is non-empty joins
       // the tail rather than racing ahead of the queued items. Read the
       // queue length synchronously (it reflects a same-tick bounce requeue).
-      if (shouldQueueDirectSend(fromQueueFlush, mqGetQueueLength())) {
+      // A manually retried relay draft is the earlier failed head, so it keeps
+      // priority over messages that were queued behind it.
+      if (
+        !retryingPausedRelay &&
+        shouldQueueDirectSend(fromQueueFlush, mqGetQueueLength())
+      ) {
         mqEnqueue(draft, selectedModeIdArg ?? null)
-        return
+        return true
       }
 
       // Single-flight the unbound new-tab create. A second direct submit fired
@@ -1009,11 +988,10 @@ const ConversationTabView = memo(function ConversationTabView({
           createConversationPendingRef.current
         )
       ) {
-        return
+        return false
       }
 
       composerRestoreDraftRef.current = null
-      const relayBindingForAttempt = relayForSendRef.current
       if (relayBindingForAttempt) setRelaySendPending(true)
       const optimisticTurn = buildOptimisticUserTurnFromDraft(
         draft,
@@ -1062,6 +1040,11 @@ const ConversationTabView = memo(function ConversationTabView({
             : buildNewConversationDraftStorageKey(tabId),
         removeOptimisticTurn: () =>
           removeOptimisticTurn(effectiveConversationId, optimisticTurn.id),
+        markOptimisticTurnUncertain: () =>
+          markOptimisticTurnUncertain(
+            effectiveConversationId,
+            optimisticTurn.id
+          ),
         setPending: setRelaySendPending,
         saveDraft: saveMessageInputDraft,
         restoreDraft: (failedDraft) => {
@@ -1071,6 +1054,7 @@ const ConversationTabView = memo(function ConversationTabView({
         clearDraft: clearMessageInputDraft,
         clearRelay: () => clearRelayRef.current(),
         markRelayInvalid: (error) => markRelayInvalidRef.current(error),
+        setQueuePaused: setRelayQueuePaused,
       })
       const onSendFailed = relayAttempt.onSendFailed
 
@@ -1097,7 +1081,7 @@ const ConversationTabView = memo(function ConversationTabView({
           onSendFailed,
           onSendSucceeded: relayAttempt.onSendSucceeded,
         })
-        return
+        return true
       }
 
       // New-tab path: create the DB row first, then send with the new id
@@ -1208,6 +1192,7 @@ const ConversationTabView = memo(function ConversationTabView({
             onSendFailed,
             onSendSucceeded: () => {
               setRelaySendPending(false)
+              setRelayQueuePaused(false)
               clearMessageInputDraft(buildNewConversationDraftStorageKey(tabId))
               if (relayBinding) clearRelayRef.current()
             },
@@ -1223,6 +1208,7 @@ const ConversationTabView = memo(function ConversationTabView({
           //   4. re-seed the draft text — message-input clears it synchronously on
           //      send, so without this the user's prompt is lost on failure,
           //   5. surface the error on the welcome banner so it isn't silent.
+          if (relayBinding) setRelayQueuePaused(true)
           removeOptimisticTurn(effectiveConversationId, optimisticTurn.id)
           setSyncState(effectiveConversationId, "idle")
           setHasSentMessage(false)
@@ -1245,9 +1231,11 @@ const ConversationTabView = memo(function ConversationTabView({
           createConversationPendingRef.current = false
         }
       })()
+      return true
     },
     [
       appendOptimisticTurn,
+      markOptimisticTurnUncertain,
       removeOptimisticTurn,
       mqEnqueue,
       mqRequeueFront,
@@ -1265,6 +1253,8 @@ const ConversationTabView = memo(function ConversationTabView({
       setDbConversationId,
       setExternalId,
       setPendingCleanup,
+      setRelaySendPending,
+      setRelayQueuePaused,
       setSyncState,
       sharedT,
       ownTab,
@@ -1607,10 +1597,12 @@ const ConversationTabView = memo(function ConversationTabView({
   const [relayPreviewOpen, setRelayPreviewOpen] = useState(false)
   const relayDraft = useRelayDraft({
     targetDraftId: tabId,
+    targetConversationId: dbConversationId,
     targetFolderId: ownTab?.isChat ? null : ownFolderId,
     targetAgentType: selectedAgent,
     targetModel: relayTargetModel,
     enabled: conversationCapabilities.relayEnabled,
+    sendPending: relaySendPending,
   })
   const {
     relay,
@@ -1630,6 +1622,9 @@ const ConversationTabView = memo(function ConversationTabView({
     clearRelayRef.current = clearRelay
     markRelayInvalidRef.current = markSendFailure
   }, [clearRelay, markSendFailure, relay, tabId])
+  useEffect(() => {
+    if (!relay || relay.status === "removed") setRelayQueuePaused(false)
+  }, [relay, setRelayQueuePaused])
   const relayEntryIntent = useRelayEntryIntent({
     tabId,
     enabled: conversationCapabilities.relayEnabled,
@@ -1651,6 +1646,59 @@ const ConversationTabView = memo(function ConversationTabView({
     hasPersistedConversation,
   })
   relaySendBlockedRef.current = relaySendBlocked
+
+  // Flush queued messages whenever the agent is idle and relay validation has
+  // settled. The relay guard runs before dequeue so a blocked pack cannot drop
+  // the queue head; including the derived gate here wakes the queue when the
+  // user refreshes or removes the blocking relay state.
+  useEffect(() => {
+    if (
+      connStatus !== "connected" ||
+      relaySendBlocked ||
+      relayQueuePaused ||
+      relaySendPending
+    ) {
+      return
+    }
+    if (
+      (conn.connectedWorkingDir ?? null) !== (workingDirForConnection ?? null)
+    ) {
+      return
+    }
+    if (runtimeSyncState === "awaiting_persist" || msgQueue.length === 0) return
+
+    const wait = flushRetryDelayMs(Date.now(), lastFlushBounceAtRef.current)
+    const timer = setTimeout(() => {
+      if (
+        connStatusRef.current !== "connected" ||
+        relaySendBlockedRef.current ||
+        relayQueuePausedRef.current ||
+        relaySendPendingRef.current
+      ) {
+        return
+      }
+      const next = autoSendQueueRef.current()
+      if (!next) return
+
+      const accepted = handleSendRef.current(next.draft, next.modeId, {
+        fromQueueFlush: true,
+      })
+      if (accepted === false) {
+        mqRequeueFront(next.draft, next.modeId)
+      }
+    }, wait)
+    return () => clearTimeout(timer)
+  }, [
+    connStatus,
+    relaySendBlocked,
+    relayQueuePaused,
+    relaySendPending,
+    runtimeSyncState,
+    msgQueue.length,
+    conn.connectedWorkingDir,
+    workingDirForConnection,
+    mqRequeueFront,
+  ])
   useEffect(() => {
     if (relay) clearRelayEntry()
   }, [clearRelayEntry, relay])
@@ -1887,7 +1935,11 @@ const ConversationTabView = memo(function ConversationTabView({
           <BackgroundTasksChip contextKey={tabId} />
         </>
       }
-      status={connStatus}
+      status={
+        relaySendBlocked && connStatus !== "prompting"
+          ? "connecting"
+          : connStatus
+      }
       conversationId={effectiveConversationId}
       promptCapabilities={conn.promptCapabilities}
       defaultPath={workingDirForConnection}
@@ -2031,7 +2083,11 @@ const ConversationTabView = memo(function ConversationTabView({
                   // composerConnStatus (not connStatus): a chat draft mid-reconnect
                   // reads "connecting" until the connection's cwd matches, so the
                   // send affordance stays disabled until handleSend would accept it.
-                  status={relaySendBlocked ? "connecting" : composerConnStatus}
+                  status={
+                    relaySendBlocked && composerConnStatus !== "prompting"
+                      ? "connecting"
+                      : composerConnStatus
+                  }
                   promptCapabilities={conn.promptCapabilities}
                   defaultPath={workingDirForConnection}
                   agentName={getAgentLabel(selectedAgent)}

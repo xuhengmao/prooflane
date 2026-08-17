@@ -638,6 +638,207 @@ describe("ConversationRuntimeProvider removeOptimisticTurn (bounce rollback)", (
   })
 })
 
+describe("ConversationRuntimeProvider uncertain optimistic turns", () => {
+  const runtimeHolder: {
+    current: ReturnType<typeof useConversationRuntime> | undefined
+  } = { current: undefined }
+
+  function RuntimeCapture() {
+    const runtime = useConversationRuntime()
+    useEffect(() => {
+      runtimeHolder.current = runtime
+    })
+    return null
+  }
+
+  function userTurn(
+    id: string,
+    timestamp = "2026-05-28T00:00:00.000Z"
+  ): MessageTurn {
+    return {
+      id,
+      role: "user",
+      blocks: [{ type: "text", text: id }],
+      timestamp,
+    }
+  }
+
+  const LIVE: LiveMessage = {
+    id: "lm-after-uncertain",
+    role: "assistant",
+    content: [{ type: "text", text: "confirmed reply" }],
+    startedAt: 0,
+  }
+
+  beforeEach(() => {
+    runtimeHolder.current = undefined
+    mockGetFolderConversation.mockReset()
+    mockGetFolderConversation.mockImplementation(() => new Promise(() => {}))
+  })
+
+  it("keeps an uncertain optimistic turn visible without promoting it on a later unrelated completion", () => {
+    renderProvider(<RuntimeCapture />)
+    const api = () => runtimeHolder.current!
+
+    act(() => {
+      api().appendOptimisticTurn(
+        99,
+        userTurn("relay-uncertain", "2026-05-28T00:00:00.000Z"),
+        "relay-uncertain"
+      )
+      api().markOptimisticTurnUncertain(99, "relay-uncertain")
+    })
+
+    expect(api().getSession(99)?.syncState).toBe("idle")
+    expect(
+      api()
+        .getTimelineTurns(99)
+        .map((item) => item.turn.id)
+    ).toEqual(["relay-uncertain"])
+
+    act(() => {
+      api().appendOptimisticTurn(
+        99,
+        userTurn("ordinary-next", "2026-05-28T00:00:01.000Z"),
+        "ordinary-next"
+      )
+      api().completeTurn(99, LIVE)
+    })
+
+    const session = api().getSession(99)!
+    expect(session.optimisticTurns.map((turn) => turn.id)).toEqual([
+      "relay-uncertain",
+    ])
+    expect(session.localTurns.map((turn) => turn.id)).toContain("ordinary-next")
+    expect(session.localTurns.map((turn) => turn.id)).not.toContain(
+      "relay-uncertain"
+    )
+    expect(
+      api()
+        .getTimelineTurns(99)
+        .filter((item) => item.turn.role === "user")
+        .map((item) => item.turn.id)
+    ).toEqual(["relay-uncertain", "ordinary-next"])
+  })
+
+  it("promotes an uncertain turn after the backend confirms the same message id", () => {
+    renderProvider(<RuntimeCapture />)
+    const api = () => runtimeHolder.current!
+
+    act(() => {
+      api().appendOptimisticTurn(
+        99,
+        userTurn("relay-confirmed"),
+        "relay-confirmed"
+      )
+      api().markOptimisticTurnUncertain(99, "relay-confirmed")
+      api().appendViewerUserTurn(99, userTurn("relay-confirmed"))
+    })
+
+    expect(api().getSession(99)?.syncState).toBe("awaiting_persist")
+    act(() => {
+      api().completeTurn(99, LIVE)
+    })
+
+    const session = api().getSession(99)!
+    expect(session.optimisticTurns).toHaveLength(0)
+    expect(session.localTurns.map((turn) => turn.id)).toContain(
+      "relay-confirmed"
+    )
+  })
+
+  it("keeps an acknowledged optimistic turn confirmed when the transport fails afterward", () => {
+    renderProvider(<RuntimeCapture />)
+    const api = () => runtimeHolder.current!
+
+    act(() => {
+      api().appendOptimisticTurn(
+        99,
+        userTurn("relay-ack-before-error"),
+        "relay-ack-before-error"
+      )
+      api().appendViewerUserTurn(99, userTurn("relay-ack-before-error"))
+      api().markOptimisticTurnUncertain(99, "relay-ack-before-error")
+      api().completeTurn(99, LIVE)
+    })
+
+    const session = api().getSession(99)!
+    expect(session.uncertainOptimisticTurnIds).not.toContain(
+      "relay-ack-before-error"
+    )
+    expect(session.optimisticTurns).toHaveLength(0)
+    expect(session.localTurns.map((turn) => turn.id)).toContain(
+      "relay-ack-before-error"
+    )
+    expect(api().getTimelineTurns(99)[0]?.turn.id).toBe(
+      "relay-ack-before-error"
+    )
+  })
+
+  it("does not reconcile an uncertain turn with a detail request started before the send", async () => {
+    let resolveDetail!: (detail: DbConversationDetail) => void
+    mockGetFolderConversation.mockImplementationOnce(
+      () =>
+        new Promise<DbConversationDetail>((resolve) => {
+          resolveDetail = resolve
+        })
+    )
+    renderProvider(<RuntimeCapture />)
+    const api = () => runtimeHolder.current!
+
+    act(() => {
+      api().refetchDetail(99)
+    })
+    act(() => {
+      api().appendOptimisticTurn(
+        99,
+        userTurn("relay-after-fetch-start"),
+        "relay-after-fetch-start"
+      )
+      api().markOptimisticTurnUncertain(99, "relay-after-fetch-start")
+    })
+    await act(async () => {
+      resolveDetail(detailWithTitle("stale-pre-send-detail"))
+      await Promise.resolve()
+    })
+
+    const session = api().getSession(99)!
+    expect(session.optimisticTurns.map((turn) => turn.id)).toEqual([
+      "relay-after-fetch-start",
+    ])
+    expect(session.uncertainOptimisticTurnIds).toContain(
+      "relay-after-fetch-start"
+    )
+    expect(api().getTimelineTurns(99)[0]?.turn.id).toBe(
+      "relay-after-fetch-start"
+    )
+  })
+
+  it("drops an unconfirmed uncertain turn when authoritative detail is reloaded", async () => {
+    mockGetFolderConversation.mockResolvedValueOnce(
+      detailWithTitle("persisted")
+    )
+    renderProvider(<RuntimeCapture />)
+    const api = () => runtimeHolder.current!
+
+    act(() => {
+      api().appendOptimisticTurn(
+        99,
+        userTurn("relay-never-arrived"),
+        "relay-never-arrived"
+      )
+      api().markOptimisticTurnUncertain(99, "relay-never-arrived")
+    })
+    await act(async () => {
+      api().refetchDetail(99)
+      await Promise.resolve()
+    })
+
+    expect(api().getSession(99)?.optimisticTurns).toHaveLength(0)
+    expect(api().getTimelineTurns(99)).toHaveLength(0)
+  })
+})
+
 /**
  * Delegation-child viewer projection in `getTimelineTurns`. When the sub-agent
  * dialog marks a session `liveOwnsActiveTurn` and supplies the kickoff task:

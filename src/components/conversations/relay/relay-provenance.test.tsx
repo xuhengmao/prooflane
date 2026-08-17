@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 
 import type { RelayProvenance } from "@/lib/types"
 import { RelayProvenanceItem } from "./relay-provenance"
+import { renderWithRelayIntl } from "./relay-test-utils"
 
 const provenance: RelayProvenance = {
   relayId: 7,
@@ -41,7 +42,7 @@ const provenance: RelayProvenance = {
 
 describe("RelayProvenanceItem", () => {
   it("renders a compact source row and opens immutable details", () => {
-    render(<RelayProvenanceItem provenance={provenance} />)
+    renderWithRelayIntl(<RelayProvenanceItem provenance={provenance} />)
 
     const trigger = screen.getByRole("button", {
       name: /已接续.*产品需求讨论/,
@@ -56,5 +57,20 @@ describe("RelayProvenanceItem", () => {
     expect(screen.getByText("实现登录")).toBeInTheDocument()
     expect(screen.getByText("src/auth.ts")).toBeInTheDocument()
     expect(screen.queryByText(/canonicalContext/)).not.toBeInTheDocument()
+  })
+
+  it("uses the active locale when the source title is no longer available", () => {
+    renderWithRelayIntl(
+      <RelayProvenanceItem
+        provenance={{
+          ...provenance,
+          source: { ...provenance.source, title: "" },
+        }}
+      />
+    )
+
+    expect(
+      screen.getByRole("button", { name: /已接续.*会话 #11/ })
+    ).toBeInTheDocument()
   })
 })

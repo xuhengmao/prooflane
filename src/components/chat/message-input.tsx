@@ -176,7 +176,7 @@ export interface ComposerInjectContent {
 }
 
 interface MessageInputProps {
-  onSend: (draft: PromptDraft, modeId?: string | null) => void
+  onSend: (draft: PromptDraft, modeId?: string | null) => boolean | void
   placeholder?: string
   defaultPath?: string
   disabled?: boolean
@@ -1661,7 +1661,8 @@ export function MessageInput({
       return
     }
 
-    onSend(draft, showModeSelector ? effectiveModeId : null)
+    const accepted = onSend(draft, showModeSelector ? effectiveModeId : null)
+    if (accepted === false) return
     if (effectiveDraftStorageKey) {
       clearMessageInputDraftV2(effectiveDraftStorageKey)
     }

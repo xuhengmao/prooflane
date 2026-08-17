@@ -340,6 +340,15 @@ describe("conversation relay transport API", () => {
     })
   })
 
+  it("includes the bound conversation id when restoring after a restart", async () => {
+    await Reflect.apply(getRelayContextByDraft, null, ["conv-91", 91])
+
+    expect(mocks.call).toHaveBeenCalledWith("get_relay_context_by_draft", {
+      targetDraftId: "conv-91",
+      targetConversationId: 91,
+    })
+  })
+
   it("patches the scope and backend-derived model selection", async () => {
     const input: RelayPatchInput = {
       scope,

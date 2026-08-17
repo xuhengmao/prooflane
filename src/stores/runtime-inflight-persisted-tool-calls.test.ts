@@ -103,6 +103,8 @@ function seedSession(detail: DbConversationDetail, liveMessage?: LiveMessage) {
     backgroundTurns: [],
     pendingBackgroundSettlements: [],
     optimisticTurns: [],
+    uncertainOptimisticTurnIds: new Set<string>(),
+    confirmedOptimisticTurnIds: new Set<string>(),
     liveMessage: liveMessage ?? null,
     syncState: "idle" as const,
     activeTurnToken: null,

@@ -250,8 +250,10 @@ describe("ConversationDetailPanel new conversation layout", () => {
   it("blocks every unresolved relay state and clears stale entry state after persistence", () => {
     expect(source).toContain("isRelayEntryBlockingFirstSend(")
     expect(source).toContain("shouldBlockRelaySend(")
-    expect(source).toContain("if (relaySendBlockedRef.current) return")
-    const guardIdx = source.indexOf("if (relaySendBlockedRef.current) return")
+    expect(source).toContain("if (relaySendBlockedRef.current) return false")
+    const guardIdx = source.indexOf(
+      "if (relaySendBlockedRef.current) return false"
+    )
     const optimisticIdx = source.indexOf(
       "const optimisticTurn = buildOptimisticUserTurnFromDraft("
     )
@@ -265,9 +267,52 @@ describe("ConversationDetailPanel new conversation layout", () => {
     const cleanup = source.slice(cleanupIdx, cleanupIdx + 240)
     expect(cleanup).toContain("clearRelayEntry()")
     expect(cleanup).toContain("clearRelay()")
-    expect(source).toContain(
-      'status={relaySendBlocked ? "connecting" : composerConnStatus}'
+    expect(source).toMatch(
+      /status=\{\s*relaySendBlocked\s*&&\s*composerConnStatus\s*!==\s*"prompting"\s*\?\s*"connecting"\s*:\s*composerConnStatus\s*\}/
     )
+
+    const persistedShellStart = source.indexOf("<ConversationShell")
+    const persistedShell = source.slice(
+      persistedShellStart,
+      source.indexOf("promptCapabilities=", persistedShellStart)
+    )
+    expect(persistedShellStart).toBeGreaterThan(-1)
+    expect(persistedShell).toMatch(
+      /status=\{\s*relaySendBlocked\s*&&\s*connStatus\s*!==\s*"prompting"\s*\?\s*"connecting"\s*:\s*connStatus\s*\}/
+    )
+  })
+
+  it("checks the relay send gate before removing the queued head", () => {
+    const timerStart = source.indexOf("const timer = setTimeout(() => {")
+    const timerEnd = source.indexOf("}, wait)", timerStart)
+    expect(timerStart).toBeGreaterThan(-1)
+    expect(timerEnd).toBeGreaterThan(timerStart)
+
+    const flush = source.slice(timerStart, timerEnd)
+    const relayGuard = flush.indexOf("relaySendBlockedRef.current")
+    const dequeue = flush.indexOf("autoSendQueueRef.current()")
+    expect(relayGuard).toBeGreaterThan(-1)
+    expect(dequeue).toBeGreaterThan(relayGuard)
+  })
+
+  it("keeps later queued messages behind a relay draft awaiting manual retry", () => {
+    expect(source).toContain("const relayQueuePausedRef = useRef(false)")
+
+    const timerStart = source.indexOf("const timer = setTimeout(() => {")
+    const timerEnd = source.indexOf("}, wait)", timerStart)
+    const flush = source.slice(timerStart, timerEnd)
+    const pausedGuard = flush.indexOf("relayQueuePausedRef.current")
+    const dequeue = flush.indexOf("autoSendQueueRef.current()")
+
+    expect(pausedGuard).toBeGreaterThan(-1)
+    expect(dequeue).toBeGreaterThan(pausedGuard)
+
+    const retryStart = source.indexOf("const retryingPausedRelay =")
+    const retryRouting = source.slice(retryStart, retryStart + 720)
+    expect(retryStart).toBeGreaterThan(-1)
+    expect(retryRouting).toContain("!retryingPausedRelay")
+    expect(retryRouting).toContain("shouldQueueDirectSend(")
+    expect(source).toContain("setRelayQueuePaused(true)")
   })
 
   it("routes picker, drag-and-drop, and queued sidebar intents through one preview flow", () => {
@@ -542,8 +587,8 @@ describe("ConversationDetailPanel send-path hardening", () => {
     // The composer reads a downgraded status so its send affordance is disabled
     // during the transient mismatch window instead of inviting a rejected send.
     expect(source).toContain("composerConnStatus")
-    expect(source).toContain(
-      'status={relaySendBlocked ? "connecting" : composerConnStatus}'
+    expect(source).toMatch(
+      /status=\{\s*relaySendBlocked\s*&&\s*composerConnStatus\s*!==\s*"prompting"\s*\?\s*"connecting"\s*:\s*composerConnStatus\s*\}/
     )
   })
 
@@ -558,6 +603,43 @@ describe("ConversationDetailPanel send-path hardening", () => {
     )
     expect(guardIdx).toBeGreaterThan(-1)
     expect(optimisticIdx).toBeGreaterThan(guardIdx)
+  })
+
+  it("single-flights a relay send before optimistic mutation and preserves its queued successor", () => {
+    expect(source).toContain("const relaySendPendingRef = useRef(false)")
+
+    const handleSendStart = source.indexOf("const handleSend = useCallback(")
+    const pendingGuardIdx = source.indexOf(
+      "if (relaySendPendingRef.current)",
+      handleSendStart
+    )
+    const optimisticIdx = source.indexOf(
+      "const optimisticTurn = buildOptimisticUserTurnFromDraft(",
+      handleSendStart
+    )
+    expect(pendingGuardIdx).toBeGreaterThan(handleSendStart)
+    expect(optimisticIdx).toBeGreaterThan(pendingGuardIdx)
+
+    const pendingGuard = source.slice(pendingGuardIdx, pendingGuardIdx + 260)
+    expect(pendingGuard).toContain("if (fromQueueFlush) return false")
+    expect(pendingGuard).toContain(
+      "mqEnqueue(draft, selectedModeIdArg ?? null)"
+    )
+    expect(pendingGuard).toContain("return true")
+
+    const flushStart = source.indexOf(
+      "// Flush queued messages whenever the agent is idle"
+    )
+    const dequeueIdx = source.indexOf(
+      "const next = autoSendQueueRef.current()",
+      flushStart
+    )
+    const flushPendingGuardIdx = source.indexOf(
+      "relaySendPendingRef.current",
+      flushStart
+    )
+    expect(flushPendingGuardIdx).toBeGreaterThan(flushStart)
+    expect(dequeueIdx).toBeGreaterThan(flushPendingGuardIdx)
   })
 
   it("fully restores pre-send state when the create fails", () => {

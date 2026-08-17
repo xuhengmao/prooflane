@@ -6,7 +6,7 @@ use crate::acp::manager::ConnectionManager;
 use crate::app_error::AppCommandError;
 use crate::conversation_relay::service::{
     cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
-    get_relay_context_by_draft_core, preview_relay_context_core, remove_relay_context_core,
+    get_relay_context_by_target_core, preview_relay_context_core, remove_relay_context_core,
     reserve_relay_preview_core, update_conversation_capabilities_core, update_relay_context_core,
     RelayPatchRequest, RelayPreviewRequest, UpdateConversationCapabilitiesInput,
 };
@@ -69,8 +69,9 @@ pub async fn cancel_relay_preview(request_id: String) -> bool {
 pub async fn get_relay_context_by_draft(
     db: tauri::State<'_, AppDatabase>,
     target_draft_id: String,
+    target_conversation_id: Option<i32>,
 ) -> Result<Option<RelayContextPackView>, AppCommandError> {
-    get_relay_context_by_draft_core(&db.conn, &target_draft_id).await
+    get_relay_context_by_target_core(&db.conn, &target_draft_id, target_conversation_id).await
 }
 
 #[tauri::command]

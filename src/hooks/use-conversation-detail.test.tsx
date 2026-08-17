@@ -27,6 +27,8 @@ function seedSession(detail: DbConversationDetail | null) {
           backgroundTurns: [],
           pendingBackgroundSettlements: [],
           optimisticTurns: [],
+          uncertainOptimisticTurnIds: new Set<string>(),
+          confirmedOptimisticTurnIds: new Set<string>(),
           liveMessage: null,
           syncState: "idle",
           activeTurnToken: null,

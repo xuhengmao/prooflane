@@ -12,7 +12,7 @@ use codeg_lib::conversation_relay::context::{
 };
 use codeg_lib::conversation_relay::service::{
     cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
-    get_relay_context_by_draft_core, preview_relay_context_core,
+    get_relay_context_by_draft_core, get_relay_context_by_target_core, preview_relay_context_core,
     preview_relay_context_from_rounds_with_summarizer_core, remove_relay_context_core,
     reserve_relay_preview_core, update_conversation_capabilities_core,
     update_relay_context_with_summarizer_core, RelayPatchRequest, RelayPreviewRequest,
@@ -32,7 +32,7 @@ use codeg_lib::db::service::conversation_capability_service::{
 use codeg_lib::db::service::conversation_service::update_external_id;
 use codeg_lib::db::service::relay_context_pack_service::{
     bind_to_conversation, claim_consume, create_or_replace_draft, get_active_by_draft, get_by_id,
-    get_context_bearing_attempts_by_target, get_restorable_by_draft,
+    get_context_bearing_attempts_by_target, get_restorable_by_draft, invalidate_claim,
     invalidate_unconsumed_by_source, mark_consumed, mark_uncertain, recover_claimed_as_uncertain,
     release_claim, remove_unclaimed, ConsumeClaim, NewRelayPack,
 };
@@ -420,6 +420,30 @@ async fn disabling_relay_soft_removes_only_unconsumed_packs() {
 }
 
 #[tokio::test]
+async fn disabling_relay_soft_removes_an_unclaimed_invalid_pack() {
+    let db = seeded_relay_db().await;
+    relay_context_pack::Entity::update_many()
+        .col_expr(
+            relay_context_pack::Column::Status,
+            sea_orm::sea_query::Expr::value("invalid"),
+        )
+        .col_expr(
+            relay_context_pack::Column::InvalidReason,
+            sea_orm::sea_query::Expr::value(Some("relay_rounds_changed".to_owned())),
+        )
+        .filter(relay_context_pack::Column::Id.eq(1))
+        .exec(&db.conn)
+        .await
+        .unwrap();
+
+    set_relay_enabled(&db.conn, &EventEmitter::Noop, false)
+        .await
+        .unwrap();
+
+    assert_eq!(status(&db.conn, 1).await, "removed");
+}
+
+#[tokio::test]
 async fn disabling_relay_does_not_interrupt_a_claimed_pack() {
     let db = seeded_relay_db().await;
     claim_consume(&db.conn, 1, "message-disable-in-flight")
@@ -441,6 +465,72 @@ async fn disabling_relay_does_not_interrupt_a_claimed_pack() {
     .await
     .unwrap();
     assert_eq!(consumed.status, "consumed");
+}
+
+#[tokio::test]
+async fn releasing_a_claim_after_disabling_relay_removes_the_pack() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-disabled-release")
+        .await
+        .unwrap();
+    set_relay_enabled(&db.conn, &EventEmitter::Noop, false)
+        .await
+        .unwrap();
+
+    let released = release_claim(&db.conn, 1, "message-disabled-release")
+        .await
+        .unwrap();
+
+    assert_eq!(released.status, "removed");
+    assert!(released.consume_client_message_id.is_none());
+    assert!(released.consume_attempt_state.is_none());
+}
+
+#[tokio::test]
+async fn invalidating_a_claim_after_disabling_relay_removes_the_pack() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-disabled-invalid")
+        .await
+        .unwrap();
+    set_relay_enabled(&db.conn, &EventEmitter::Noop, false)
+        .await
+        .unwrap();
+
+    let invalid = invalidate_claim(
+        &db.conn,
+        1,
+        "message-disabled-invalid",
+        RelayErrorCode::RelayModelChanged,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(invalid.status, "removed");
+    assert_eq!(
+        invalid.invalid_reason.as_deref(),
+        Some("relay_model_changed")
+    );
+}
+
+#[tokio::test]
+async fn marking_a_claim_uncertain_after_disabling_relay_removes_the_pack() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-disabled-uncertain")
+        .await
+        .unwrap();
+    set_relay_enabled(&db.conn, &EventEmitter::Noop, false)
+        .await
+        .unwrap();
+
+    let uncertain = mark_uncertain(&db.conn, 1, "message-disabled-uncertain")
+        .await
+        .unwrap();
+
+    assert_eq!(uncertain.status, "removed");
+    assert_eq!(
+        uncertain.consume_attempt_state.as_deref(),
+        Some("uncertain")
+    );
 }
 
 #[tokio::test]
@@ -831,6 +921,42 @@ async fn refreshed_preview_preserves_the_released_attached_target() {
     let replaced = get_by_id(&db.conn, original.id).await.unwrap();
     assert_eq!(replaced.status, "removed");
     assert_eq!(replaced.target_conversation_id, None);
+}
+
+#[tokio::test]
+async fn bound_relay_restores_by_conversation_when_the_tab_id_changes() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-restart-restore").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let target = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let original = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "restart-restore-preview",
+            "new-original-tab",
+            source,
+            RelayScopeType::RecentRounds,
+        ))
+        .await,
+        vec![relay_round("round-1", "restore after restart")],
+        &RunnerBackedFailingSummarizer,
+    )
+    .await
+    .unwrap();
+    let txn = db.conn.begin().await.unwrap();
+    bind_to_conversation(&txn, original.id, "new-original-tab", target)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    let restored = get_relay_context_by_target_core(&db.conn, "conv-restarted", Some(target))
+        .await
+        .unwrap()
+        .expect("bound relay should restore through its conversation id");
+
+    assert_eq!(restored.id, original.id);
+    assert_eq!(restored.target_draft_id, "new-original-tab");
+    assert_eq!(restored.target_conversation_id, Some(target));
 }
 
 #[tokio::test]
@@ -1399,6 +1525,48 @@ async fn cancelled_preview_does_not_replace_the_previous_active_pack() {
             .id,
         original.id
     );
+}
+
+#[tokio::test]
+async fn preview_finishing_after_relay_is_disabled_cannot_persist() {
+    let db = fresh_in_memory_db().await;
+    let folder_id = seed_folder(&db, "C:/workspace/relay-disabled-preview").await;
+    let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let summarizer = BlockingSummarizer {
+        entered: entered.clone(),
+        release: release.clone(),
+    };
+    let preview = preview_relay_context_from_rounds_with_summarizer_core(
+        &db,
+        reserved_preview_request(preview_request(
+            "disabled-preview-request",
+            "draft-disabled-preview",
+            source,
+            RelayScopeType::Summary,
+        ))
+        .await,
+        vec![relay_round("round-1", "disable during summary")],
+        &summarizer,
+    );
+    tokio::pin!(preview);
+    tokio::select! {
+        () = entered.notified() => {}
+        result = &mut preview => panic!("preview completed before disable: {result:?}"),
+    }
+
+    set_relay_enabled(&db.conn, &EventEmitter::Noop, false)
+        .await
+        .unwrap();
+    release.notify_one();
+    let error = preview.await.unwrap_err();
+
+    assert_eq!(error.message, RelayErrorCode::RelayDisabled.to_string());
+    assert!(get_restorable_by_draft(&db.conn, "draft-disabled-preview")
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]
@@ -2071,7 +2239,7 @@ async fn consumed_provenance_uses_immutable_snapshot_and_deleted_source_fallback
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(deleted_source.source.title, format!("会话 #{source}"));
+    assert!(deleted_source.source.title.is_empty());
 }
 
 #[test]
@@ -3450,6 +3618,34 @@ async fn a_claimed_relay_cannot_be_removed_while_the_prompt_outcome_is_pending()
 }
 
 #[tokio::test]
+async fn a_claimed_relay_is_not_restored_by_another_window() {
+    let db = seeded_relay_db().await;
+    let target = get_by_id(&db.conn, 1)
+        .await
+        .unwrap()
+        .target_conversation_id
+        .unwrap();
+    claim_consume(&db.conn, 1, "message-in-flight")
+        .await
+        .unwrap();
+
+    assert!(
+        get_restorable_by_draft(&db.conn, "draft-claim")
+            .await
+            .unwrap()
+            .is_none(),
+        "a claimed draft is owned by the in-flight sender"
+    );
+    assert!(
+        get_relay_context_by_target_core(&db.conn, "conv-other-window", Some(target))
+            .await
+            .unwrap()
+            .is_none(),
+        "a second window must not restore an in-flight claim"
+    );
+}
+
+#[tokio::test]
 async fn startup_recovery_turns_an_abandoned_claim_into_actionable_uncertain_state() {
     let db = seeded_relay_db().await;
     claim_consume(&db.conn, 1, "message-abandoned")
@@ -3483,6 +3679,30 @@ async fn startup_recovery_turns_an_abandoned_claim_into_actionable_uncertain_sta
             .unwrap()
             .status,
         "removed"
+    );
+}
+
+#[tokio::test]
+async fn startup_recovery_removes_an_abandoned_claim_when_relay_is_disabled() {
+    let db = seeded_relay_db().await;
+    claim_consume(&db.conn, 1, "message-disabled-recovery")
+        .await
+        .unwrap();
+    set_relay_enabled(&db.conn, &EventEmitter::Noop, false)
+        .await
+        .unwrap();
+
+    assert_eq!(recover_claimed_as_uncertain(&db.conn).await.unwrap(), 1);
+
+    let recovered = get_by_id(&db.conn, 1).await.unwrap();
+    assert_eq!(recovered.status, "removed");
+    assert_eq!(
+        recovered.invalid_reason.as_deref(),
+        Some("relay_send_uncertain")
+    );
+    assert_eq!(
+        recovered.consume_attempt_state.as_deref(),
+        Some("uncertain")
     );
 }
 
@@ -3533,7 +3753,7 @@ async fn an_uncertain_relay_can_be_removed_without_erasing_the_attempt_record() 
 }
 
 #[tokio::test]
-async fn refreshing_an_uncertain_relay_preserves_the_old_cleanup_anchor() {
+async fn refreshing_and_consuming_an_uncertain_relay_keeps_cleanup_without_restoring_it() {
     let db = fresh_in_memory_db().await;
     let folder_id = seed_folder(&db, "C:/workspace/relay-refresh-uncertain").await;
     let source = seed_conversation(&db, folder_id, AgentType::Codex).await;
@@ -3609,4 +3829,19 @@ async fn refreshing_an_uncertain_relay_preserves_the_old_cleanup_anchor() {
         .collect::<Vec<_>>();
     anchor_ids.sort_unstable();
     assert_eq!(anchor_ids, vec![original.id, refreshed.id]);
+
+    assert!(
+        get_restorable_by_draft(&db.conn, "draft-refresh-uncertain")
+            .await
+            .unwrap()
+            .is_none(),
+        "a newer consumed attempt must supersede the old uncertain draft"
+    );
+    assert!(
+        get_relay_context_by_target_core(&db.conn, "conv-refresh-uncertain", Some(target),)
+            .await
+            .unwrap()
+            .is_none(),
+        "restart recovery must not surface a superseded cleanup anchor"
+    );
 }
