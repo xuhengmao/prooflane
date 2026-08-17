@@ -161,6 +161,14 @@ export interface ConversationRuntimeSession {
 
   // Temporary state
   optimisticTurns: MessageTurn[]
+  // Optimistic user turns whose relay request may or may not have reached the
+  // backend. They stay visible, but must not be promoted by an unrelated later
+  // COMPLETE_TURN until an exact-id backend user_message confirms receipt.
+  uncertainOptimisticTurnIds: Set<string>
+  // Exact-id backend user_message echoes can precede a later transport error.
+  // Keep that receipt evidence so MARK_OPTIMISTIC_TURN_UNCERTAIN cannot
+  // downgrade a message the backend already accepted.
+  confirmedOptimisticTurnIds: Set<string>
   liveMessage: LiveMessage | null
 
   // Sync
@@ -268,6 +276,10 @@ type Action =
       type: "FETCH_DETAIL_SUCCESS"
       conversationId: number
       detail: DbConversationDetail
+      // Only uncertain turns present before the request began may be
+      // reconciled by its response. A pre-send request cannot resolve a later
+      // indeterminate send merely because its response arrives afterward.
+      uncertainOptimisticTurnIdsAtStart: ReadonlySet<string>
       /**
        * Keep `liveMessage` / `optimisticTurns` / `localTurns` across this
        * detail load even though `syncState` isn't "awaiting_persist". The
@@ -355,6 +367,13 @@ type Action =
       conversationId: number
       turn: MessageTurn
       turnToken: string
+    }
+  | {
+      // Keep an indeterminate relay send visible without letting a later,
+      // unrelated completion make it look successfully persisted.
+      type: "MARK_OPTIMISTIC_TURN_UNCERTAIN"
+      conversationId: number
+      id: string
     }
   | {
       // Roll back an optimistic user turn that never reached the backend
@@ -451,6 +470,8 @@ function createEmptySession(
     backgroundTurns: [],
     pendingBackgroundSettlements: [],
     optimisticTurns: [],
+    uncertainOptimisticTurnIds: new Set(),
+    confirmedOptimisticTurnIds: new Set(),
     liveMessage: null,
     syncState: "idle",
     activeTurnToken: null,
@@ -1587,6 +1608,38 @@ function reducer(
         action.detail.transcript_watermark ?? null,
         action.detail.uncovered_prefix_max_ts ?? null
       )
+      // Reconcile only indeterminate sends that were already indeterminate when
+      // this request started. A pre-send request cannot prove whether a later
+      // send reached the backend, even when its response arrives afterward.
+      const reconciledUncertainIds = new Set<string>()
+      for (const id of action.uncertainOptimisticTurnIdsAtStart) {
+        if (current.uncertainOptimisticTurnIds.has(id)) {
+          reconciledUncertainIds.add(id)
+        }
+      }
+      const nextUncertainIds = new Set(current.uncertainOptimisticTurnIds)
+      for (const id of reconciledUncertainIds) nextUncertainIds.delete(id)
+      const nextOptimisticTurns =
+        reconciledUncertainIds.size === 0
+          ? current.optimisticTurns
+          : current.optimisticTurns.filter(
+              (turn) => !reconciledUncertainIds.has(turn.id)
+            )
+      const hasUnreconciledUncertainTurns = nextUncertainIds.size > 0
+      const liveBufferPatch =
+        isActivelyInteracting || hasUnreconciledUncertainTurns
+          ? keepAllLiveBuffers
+            ? { optimisticTurns: nextOptimisticTurns }
+            : { localTurns: [], optimisticTurns: nextOptimisticTurns }
+          : { localTurns: [], optimisticTurns: [], liveMessage: null }
+      const remainingOptimisticIds = new Set(
+        liveBufferPatch.optimisticTurns.map((turn) => turn.id)
+      )
+      const nextConfirmedIds = new Set(
+        [...current.confirmedOptimisticTurnIds].filter((id) =>
+          remainingOptimisticIds.has(id)
+        )
+      )
 
       const nextSession: ConversationRuntimeSession = {
         ...current,
@@ -1596,11 +1649,9 @@ function reducer(
         externalId: nextExternalId ?? current.externalId,
         sessionStats: action.detail.session_stats ?? current.sessionStats,
         backgroundTurns: nextBackgroundTurns,
-        ...(isActivelyInteracting
-          ? keepAllLiveBuffers
-            ? {}
-            : { localTurns: [] }
-          : { localTurns: [], optimisticTurns: [], liveMessage: null }),
+        uncertainOptimisticTurnIds: nextUncertainIds,
+        confirmedOptimisticTurnIds: nextConfirmedIds,
+        ...liveBufferPatch,
       }
 
       const nextByConversationId = new Map(state.byConversationId)
@@ -1768,9 +1819,21 @@ function reducer(
       // a snapshot into localTurns, the live turn re-streams under the same id,
       // and a second COMPLETE_TURN would append it again. Identical ids mean the
       // same underlying turn, so the later (most complete) copy supersedes.
+      const hasUncertainOptimisticTurns =
+        current.uncertainOptimisticTurnIds.size > 0
+      const retainedOptimisticTurns = hasUncertainOptimisticTurns
+        ? current.optimisticTurns.filter((turn) =>
+            current.uncertainOptimisticTurnIds.has(turn.id)
+          )
+        : []
+      const promotableOptimisticTurns = hasUncertainOptimisticTurns
+        ? current.optimisticTurns.filter(
+            (turn) => !current.uncertainOptimisticTurnIds.has(turn.id)
+          )
+        : current.optimisticTurns
       const promotedRaw = [
         ...current.localTurns,
-        ...current.optimisticTurns,
+        ...promotableOptimisticTurns,
         ...streamingTurns,
       ]
       const promotedLastIndexById = new Map<string, number>()
@@ -1813,7 +1876,11 @@ function reducer(
       return updateSessionInState(state, action.conversationId, () => ({
         ...current,
         localTurns: promoted,
-        optimisticTurns: [],
+        optimisticTurns: retainedOptimisticTurns,
+        uncertainOptimisticTurnIds: new Set(
+          retainedOptimisticTurns.map((turn) => turn.id)
+        ),
+        confirmedOptimisticTurnIds: new Set(),
         liveMessage: null,
         syncState: "idle",
         activeTurnToken: null,
@@ -1935,9 +2002,15 @@ function reducer(
     case "APPEND_OPTIMISTIC_TURN":
       return updateSessionInState(state, action.conversationId, (current) => {
         const capture = batchStartCapture(current, action.turn.id)
+        const nextUncertainIds = new Set(current.uncertainOptimisticTurnIds)
+        nextUncertainIds.delete(action.turn.id)
+        const nextConfirmedIds = new Set(current.confirmedOptimisticTurnIds)
+        nextConfirmedIds.delete(action.turn.id)
         return {
           ...current,
           optimisticTurns: [...current.optimisticTurns, action.turn],
+          uncertainOptimisticTurnIds: nextUncertainIds,
+          confirmedOptimisticTurnIds: nextConfirmedIds,
           syncState: "awaiting_persist",
           activeTurnToken: action.turnToken,
           historyAssistantBaseline: capture.baseline,
@@ -1945,6 +2018,35 @@ function reducer(
           batchBoundaryPrefixHash: capture.boundaryHash,
         }
       })
+
+    case "MARK_OPTIMISTIC_TURN_UNCERTAIN": {
+      const current = state.byConversationId.get(action.conversationId)
+      if (
+        !current ||
+        !current.optimisticTurns.some((turn) => turn.id === action.id)
+      ) {
+        return state
+      }
+      if (current.confirmedOptimisticTurnIds.has(action.id)) return state
+      if (
+        current.uncertainOptimisticTurnIds.has(action.id) &&
+        current.syncState === "idle"
+      ) {
+        return state
+      }
+      const nextUncertainIds = new Set(current.uncertainOptimisticTurnIds)
+      nextUncertainIds.add(action.id)
+      const hasConfirmedOptimisticTurn = current.optimisticTurns.some(
+        (turn) => !nextUncertainIds.has(turn.id)
+      )
+      return updateSessionInState(state, action.conversationId, (s) => ({
+        ...s,
+        uncertainOptimisticTurnIds: nextUncertainIds,
+        syncState: hasConfirmedOptimisticTurn ? s.syncState : "idle",
+        activeTurnToken:
+          s.activeTurnToken === action.id ? null : s.activeTurnToken,
+      }))
+    }
 
     case "REMOVE_OPTIMISTIC_TURN": {
       const current = state.byConversationId.get(action.conversationId)
@@ -1954,14 +2056,25 @@ function reducer(
       )
       // Not found → no-op (avoid a needless re-render / identity change).
       if (remaining.length === current.optimisticTurns.length) return state
+      const nextUncertainIds = new Set(current.uncertainOptimisticTurnIds)
+      nextUncertainIds.delete(action.id)
+      const nextConfirmedIds = new Set(current.confirmedOptimisticTurnIds)
+      nextConfirmedIds.delete(action.id)
+      const hasConfirmedRemaining = remaining.some(
+        (turn) => !nextUncertainIds.has(turn.id)
+      )
       return updateSessionInState(state, action.conversationId, (s) => ({
         ...s,
         optimisticTurns: remaining,
+        uncertainOptimisticTurnIds: nextUncertainIds,
+        confirmedOptimisticTurnIds: nextConfirmedIds,
         // Drop back to idle once the last in-flight optimistic turn is rolled
         // back, so the `awaiting_persist` set on append doesn't linger and
         // suppress the next detail reconciliation. Concurrent optimistic turns
         // (if any) keep us awaiting_persist.
-        syncState: remaining.length === 0 ? "idle" : s.syncState,
+        syncState: hasConfirmedRemaining ? s.syncState : "idle",
+        activeTurnToken:
+          s.activeTurnToken === action.id ? null : s.activeTurnToken,
       }))
     }
 
@@ -1978,6 +2091,25 @@ function reducer(
       // `batchStartCapture` is a no-op once the batch has turns, so a dup echo
       // mid-batch doesn't move it.
       const capture = batchStartCapture(current, id)
+      const confirmsOptimisticTurn = current.optimisticTurns.some(
+        (turn) => turn.id === id && turn.role === "user"
+      )
+      if (confirmsOptimisticTurn) {
+        const nextUncertainIds = new Set(current.uncertainOptimisticTurnIds)
+        nextUncertainIds.delete(id)
+        const nextConfirmedIds = new Set(current.confirmedOptimisticTurnIds)
+        nextConfirmedIds.add(id)
+        return updateSessionInState(state, action.conversationId, (s) => ({
+          ...s,
+          uncertainOptimisticTurnIds: nextUncertainIds,
+          confirmedOptimisticTurnIds: nextConfirmedIds,
+          syncState: "awaiting_persist",
+          activeTurnToken: s.activeTurnToken ?? id,
+          historyAssistantBaseline: capture.baseline,
+          batchBoundaryIndex: capture.boundaryIndex,
+          batchBoundaryPrefixHash: capture.boundaryHash,
+        }))
+      }
       const captureOnly = (): ConversationRuntimeState =>
         capture.baseline === current.historyAssistantBaseline &&
         capture.boundaryIndex === current.batchBoundaryIndex &&
@@ -2170,6 +2302,14 @@ function reducer(
         detailError: to.detailError ?? from.detailError,
         localTurns: [...from.localTurns, ...to.localTurns],
         optimisticTurns: [...from.optimisticTurns, ...to.optimisticTurns],
+        uncertainOptimisticTurnIds: new Set([
+          ...from.uncertainOptimisticTurnIds,
+          ...to.uncertainOptimisticTurnIds,
+        ]),
+        confirmedOptimisticTurnIds: new Set([
+          ...from.confirmedOptimisticTurnIds,
+          ...to.confirmedOptimisticTurnIds,
+        ]),
         liveMessage: mergedLiveMessage,
         syncState: to.syncState !== "idle" ? to.syncState : from.syncState,
         activeTurnToken: to.activeTurnToken ?? from.activeTurnToken,
@@ -2345,6 +2485,7 @@ export interface RuntimeActions {
     turn: MessageTurn,
     turnToken: string
   ) => void
+  markOptimisticTurnUncertain: (conversationId: number, id: string) => void
   removeOptimisticTurn: (conversationId: number, id: string) => void
   appendViewerUserTurn: (conversationId: number, turn: MessageTurn) => void
   applyBackgroundActivity: (
@@ -2938,12 +3079,20 @@ function computeTimelinePrefix(
       phase: "optimistic",
     })
   )
+  // Normally optimistic messages are the newest phase and append after local
+  // turns. An indeterminate send can remain optimistic while a later, unrelated
+  // turn completes into `localTurns`; merge those phases by their real send
+  // timestamps so the later reply never renders above the older user message.
+  const localBackgroundAndOptimistic =
+    session.uncertainOptimisticTurnIds.size > 0
+      ? mergeTimelineByTimestamp(optimistic, localAndBackground)
+      : [...localAndBackground, ...optimistic]
 
   // Dedupe the prefix on its own — prefix-internal collisions (promoted
   // local vs persisted copies, optimistic vs stamped persisted prompts)
   // resolve identically with or without a streaming tail, so the result is
   // reusable across batches.
-  const rawPrefix = [...persisted, ...localAndBackground, ...optimistic]
+  const rawPrefix = [...persisted, ...localBackgroundAndOptimistic]
   const prefix = dedupeTimeline(rawPrefix)
   const prefixKeys = new Set<string>()
   for (const item of prefix) {
@@ -3072,11 +3221,19 @@ export const useConversationRuntimeStore = create<ConversationRuntimeStore>()((
     }
 
     const generation = bumpFetchGeneration(conversationId)
+    const uncertainOptimisticTurnIdsAtStart = new Set(
+      session?.uncertainOptimisticTurnIds ?? []
+    )
     dispatch({ type: "FETCH_DETAIL_START", conversationId })
     getFolderConversation(conversationId, { tailTurns: TAIL_TURNS_DEFAULT })
       .then((detail) => {
         if (!isLatestGeneration(conversationId, generation)) return
-        dispatch({ type: "FETCH_DETAIL_SUCCESS", conversationId, detail })
+        dispatch({
+          type: "FETCH_DETAIL_SUCCESS",
+          conversationId,
+          detail,
+          uncertainOptimisticTurnIdsAtStart,
+        })
       })
       .catch((error: unknown) => {
         if (!isLatestGeneration(conversationId, generation)) return
@@ -3103,6 +3260,9 @@ export const useConversationRuntimeStore = create<ConversationRuntimeStore>()((
     const session = get().byConversationId.get(conversationId)
     const fetchId = session?.dbConversationId ?? conversationId
     const generation = bumpFetchGeneration(conversationId)
+    const uncertainOptimisticTurnIdsAtStart = new Set(
+      session?.uncertainOptimisticTurnIds ?? []
+    )
     dispatch({ type: "FETCH_DETAIL_START", conversationId })
     fetchDetailWindowed(fetchId, session?.detail ?? null)
       .then((detail) => {
@@ -3111,6 +3271,7 @@ export const useConversationRuntimeStore = create<ConversationRuntimeStore>()((
           type: "FETCH_DETAIL_SUCCESS",
           conversationId,
           detail,
+          uncertainOptimisticTurnIdsAtStart,
           preserveLive: options?.preserveLive ?? false,
         })
       })
@@ -3225,6 +3386,9 @@ export const useConversationRuntimeStore = create<ConversationRuntimeStore>()((
       // times and the attempt cap bounds each run — but it's why this is the one
       // detail fetcher that both triggers and can re-trigger itself.
       const generation = bumpFetchGeneration(conversationId)
+      const uncertainOptimisticTurnIdsAtStart = new Set(
+        cur.uncertainOptimisticTurnIds
+      )
       fetchDetailWindowed(fetchId, cur.detail)
         .then((detail) => {
           if (cancelled) return
@@ -3279,6 +3443,7 @@ export const useConversationRuntimeStore = create<ConversationRuntimeStore>()((
               type: "FETCH_DETAIL_SUCCESS",
               conversationId,
               detail,
+              uncertainOptimisticTurnIdsAtStart,
               preserveLive: false,
             })
           }
@@ -3469,6 +3634,12 @@ export const useConversationRuntimeStore = create<ConversationRuntimeStore>()((
         conversationId,
         turn,
         turnToken,
+      }),
+    markOptimisticTurnUncertain: (conversationId, id) =>
+      dispatch({
+        type: "MARK_OPTIMISTIC_TURN_UNCERTAIN",
+        conversationId,
+        id,
       }),
     removeOptimisticTurn: (conversationId, id) =>
       dispatch({ type: "REMOVE_OPTIMISTIC_TURN", conversationId, id }),

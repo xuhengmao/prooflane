@@ -72,6 +72,14 @@ function makeLabels(): ExportLabels {
     system: "System",
     toolResult: "Tool result",
     toolError: "Tool error",
+    relayContinuedFrom: (title) => `Continued from "${title}"`,
+    relayConversationFallback: (id) => `Conversation #${id}`,
+    relayCompactSummary: "Condensed summary",
+    relayRecentCompleteRounds: (count) => `Latest ${count} complete rounds`,
+    relayCustomCompleteRounds: (count) => `${count} custom complete rounds`,
+    relayMessageCount: (count) => `${count} messages`,
+    relayFileCount: (count) => `${count} files`,
+    relayTodoCount: (count) => `${count} todos`,
     statusLabels: {},
   }
 }
@@ -122,7 +130,11 @@ function makeRelayData(): ExportConversationData {
   data.provenance = {
     relayId: 7,
     snapshotSha256,
-    source: { conversationId: 11, folderId: 2, title: "产品需求讨论" },
+    source: {
+      conversationId: 11,
+      folderId: 2,
+      title: "Product requirements",
+    },
     scope: { scopeType: "recent_rounds", selectedRoundIds: ["round-1"] },
     summary: {
       goals: ["PRIVATE_SUMMARY"],
@@ -277,13 +289,46 @@ describe("relay provenance export", () => {
       const contents = String(
         (mockInvoke.mock.calls[0][1] as { contents: string }).contents
       )
-      expect(contents).toContain("已接续")
-      expect(contents).toContain("产品需求讨论")
+      expect(contents).toContain("Continued from")
+      expect(contents).toContain("Product requirements")
+      expect(contents).not.toMatch(/[\u3400-\u9fff]/u)
       expect(contents).not.toContain("SECRET_RELAY_BODY")
       expect(contents).not.toContain("canonicalContext")
       expect(contents).not.toContain("PRIVATE_SUMMARY")
       expect(contents).not.toContain("PRIVATE_ROUND_USER")
       expect(contents).not.toContain("PRIVATE_ROUND_ASSISTANT")
+    }
+  )
+
+  it.each([
+    [
+      "Markdown",
+      exportAsMarkdown,
+      "/Users/me/out.md",
+      'Continued from "Conversation #11"',
+    ],
+    [
+      "HTML",
+      exportAsHtml,
+      "/Users/me/out.html",
+      "Continued from &quot;Conversation #11&quot;",
+    ],
+  ])(
+    "localizes a missing %s relay source title at export time",
+    async (_, exporter, path, expectedSource) => {
+      mockIsDesktop.mockReturnValue(true)
+      mockSave.mockResolvedValue(path)
+      mockInvoke.mockResolvedValue(undefined)
+      const data = makeRelayData()
+      data.provenance!.source.title = ""
+
+      await exporter(data)
+
+      const contents = String(
+        (mockInvoke.mock.calls[0][1] as { contents: string }).contents
+      )
+      expect(contents).toContain(expectedSource)
+      expect(contents).not.toMatch(/[\u3400-\u9fff]/u)
     }
   )
 

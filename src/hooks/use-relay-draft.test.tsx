@@ -134,6 +134,7 @@ const defaultOptions = {
   targetAgentType: "codex" as const,
   targetModel: null as string | null,
   enabled: true,
+  sendPending: false,
 }
 
 describe("useRelayDraft", () => {
@@ -162,6 +163,37 @@ describe("useRelayDraft", () => {
     )
   })
 
+  it("does not cancel an explicit preview when delayed subscriptions become ready", async () => {
+    const { api, useRelayDraft } = await setup()
+    const ready = deferred<void>()
+    const previewResult = deferred<RelayContextPack>()
+    let previewSignal: AbortSignal | undefined
+    subscriptionGate = ready.promise
+    vi.mocked(api.previewRelayContext).mockImplementation((_input, signal) => {
+      previewSignal = signal
+      return previewResult.promise
+    })
+    const { result } = renderHook(() => useRelayDraft(defaultOptions))
+    await waitFor(() =>
+      expect(eventHandlers.get("conversation-relay://changed")?.size).toBe(1)
+    )
+
+    let previewPromise!: Promise<void>
+    act(() => {
+      previewPromise = result.current.preview(44)
+    })
+    await waitFor(() => expect(previewSignal).toBeDefined())
+    ready.resolve()
+    await act(async () => ready.promise)
+
+    expect(previewSignal?.aborted).toBe(false)
+    expect(api.getRelayContextByDraft).not.toHaveBeenCalled()
+
+    previewResult.resolve(pack)
+    await act(async () => previewPromise)
+    expect(result.current.relay).toEqual(pack)
+  })
+
   it("restores the existing draft pack without listing conversation history", async () => {
     const { api, useRelayDraft } = await setup()
     vi.mocked(api.getRelayContextByDraft).mockResolvedValue(pack)
@@ -169,6 +201,155 @@ describe("useRelayDraft", () => {
 
     await waitFor(() => expect(result.current.relay).toEqual(pack))
     expect(api.previewRelayContext).not.toHaveBeenCalled()
+  })
+
+  it("restores and follows events by bound conversation id after restart", async () => {
+    const { api, useRelayDraft } = await setup()
+    const attached = makePack({
+      status: "attached",
+      targetDraftId: "new-original-tab",
+      targetConversationId: 91,
+    })
+    vi.mocked(api.getRelayContextByDraft).mockResolvedValue(attached)
+    const { result } = renderHook(() =>
+      useRelayDraft({
+        ...defaultOptions,
+        targetDraftId: "conv-91",
+        targetConversationId: 91,
+      })
+    )
+
+    await waitFor(() => expect(result.current.relay).toEqual(attached))
+    expect(api.getRelayContextByDraft).toHaveBeenCalledWith("conv-91", 91)
+
+    act(() =>
+      emitRelay({
+        relayId: attached.id,
+        targetDraftId: "new-original-tab",
+        targetConversationId: 91,
+        status: "invalid",
+        errorCode: "relay_send_uncertain",
+      })
+    )
+
+    expect(result.current.relay?.status).toBe("invalid")
+    expect(result.current.relay?.invalidReason).toBe("relay_send_uncertain")
+  })
+
+  it("keeps the current relay available to settle a failure while its claim is hidden", async () => {
+    const { api, useRelayDraft } = await setup()
+    const hiddenClaim = deferred<RelayContextPack | null>()
+    vi.mocked(api.getRelayContextByDraft)
+      .mockResolvedValueOnce(pack)
+      .mockReturnValueOnce(hiddenClaim.promise)
+    const { result, rerender } = renderHook(
+      ({ targetConversationId, sendPending }) =>
+        useRelayDraft({
+          ...defaultOptions,
+          targetConversationId,
+          sendPending,
+        }),
+      {
+        initialProps: {
+          targetConversationId: null as number | null,
+          sendPending: false,
+        },
+      }
+    )
+    await waitFor(() => expect(result.current.relay).toEqual(pack))
+
+    rerender({ targetConversationId: 91, sendPending: true })
+    await waitFor(() =>
+      expect(api.getRelayContextByDraft).toHaveBeenCalledTimes(2)
+    )
+
+    act(() => result.current.markSendFailure("relay_model_changed"))
+    expect(result.current.relay).toEqual({
+      ...pack,
+      status: "invalid",
+      invalidReason: "relay_model_changed",
+    })
+
+    await act(async () => {
+      hiddenClaim.resolve(null)
+      await hiddenClaim.promise
+    })
+    expect(result.current.relay).toEqual({
+      ...pack,
+      status: "invalid",
+      invalidReason: "relay_model_changed",
+    })
+  })
+
+  it("refreshes a restored bound pack with its persisted draft id", async () => {
+    const { api, useRelayDraft } = await setup()
+    const attached = makePack({
+      status: "attached",
+      targetDraftId: "new-original-tab",
+      targetConversationId: 91,
+    })
+    const refreshed = makePack({
+      id: 8,
+      status: "attached",
+      targetDraftId: "new-original-tab",
+      targetConversationId: 91,
+    })
+    vi.mocked(api.getRelayContextByDraft).mockResolvedValue(attached)
+    vi.mocked(api.previewRelayContext).mockResolvedValue(refreshed)
+    const { result } = renderHook(() =>
+      useRelayDraft({
+        ...defaultOptions,
+        targetDraftId: "conv-91",
+        targetConversationId: 91,
+      })
+    )
+    await waitFor(() => expect(result.current.relay).toEqual(attached))
+
+    await act(async () => result.current.refresh())
+
+    expect(api.previewRelayContext).toHaveBeenCalledWith(
+      expect.objectContaining({ targetDraftId: "new-original-tab" }),
+      expect.any(AbortSignal)
+    )
+    expect(result.current.relay).toEqual(refreshed)
+  })
+
+  it("updates a restored bound pack scope with its persisted draft id", async () => {
+    const { api, useRelayDraft } = await setup()
+    const attached = makePack({
+      status: "attached",
+      targetDraftId: "new-original-tab",
+      targetConversationId: 91,
+    })
+    const scope = {
+      scopeType: "custom_rounds" as const,
+      selectedRoundIds: ["round-2"],
+    }
+    vi.mocked(api.getRelayContextByDraft).mockResolvedValue(attached)
+    vi.mocked(api.previewRelayContext).mockResolvedValue(
+      makePack({
+        id: 8,
+        status: "attached",
+        targetDraftId: "new-original-tab",
+        targetConversationId: 91,
+        scope,
+      })
+    )
+    const { result } = renderHook(() =>
+      useRelayDraft({
+        ...defaultOptions,
+        targetDraftId: "conv-91",
+        targetConversationId: 91,
+      })
+    )
+    await waitFor(() => expect(result.current.relay).toEqual(attached))
+
+    await act(async () => result.current.updateScope(scope))
+
+    expect(api.previewRelayContext).toHaveBeenCalledWith(
+      expect.objectContaining({ targetDraftId: "new-original-tab", scope }),
+      expect.any(AbortSignal)
+    )
   })
 
   it("keeps an initial recovery failure visible and retryable until no pack is confirmed", async () => {

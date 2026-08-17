@@ -28,6 +28,8 @@ function seedSession(sessionStats: SessionStats) {
           backgroundTurns: [],
           pendingBackgroundSettlements: [],
           optimisticTurns: [],
+          uncertainOptimisticTurnIds: new Set<string>(),
+          confirmedOptimisticTurnIds: new Set<string>(),
           liveMessage: null,
           syncState: "awaiting_persist",
           activeTurnToken: null,

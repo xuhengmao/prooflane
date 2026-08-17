@@ -110,6 +110,17 @@ const requiredRelayUiKeys = [
   "adjust",
   "remove",
   "continueInNewConversation",
+  "continuedFrom",
+  "provenanceTitle",
+  "messagesLabel",
+  "filesLabel",
+  "todosLabel",
+  "continuedAt",
+  "includedRounds",
+  "roundNumber",
+  "messageCount",
+  "fileCount",
+  "todoCount",
 ] as const
 
 const localizedRelayComponents = [
@@ -119,6 +130,7 @@ const localizedRelayComponents = [
   "src/components/conversations/relay/relay-conversation-picker.tsx",
   "src/components/conversations/relay/relay-scope-editor.tsx",
   "src/components/conversations/relay/relay-dialog-controller.tsx",
+  "src/components/conversations/relay/relay-provenance.tsx",
   "src/components/conversations/sidebar-conversation-card.tsx",
 ] as const
 

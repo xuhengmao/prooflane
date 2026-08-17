@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { ArrowRightLeft, ChevronRight, FileText } from "lucide-react"
+import { useLocale, useTranslations } from "next-intl"
 
 import {
   Sheet,
@@ -17,40 +18,53 @@ interface RelayProvenanceItemProps {
 
 const SUMMARY_SECTIONS: Array<{
   key: Exclude<keyof RelaySummary, "files">
-  label: string
 }> = [
-  { key: "goals", label: "目标" },
-  { key: "decisions", label: "关键结论" },
-  { key: "progress", label: "处理进度" },
-  { key: "todos", label: "待办事项" },
-  { key: "constraints", label: "约束" },
-  { key: "openQuestions", label: "待确认问题" },
+  { key: "goals" },
+  { key: "decisions" },
+  { key: "progress" },
+  { key: "todos" },
+  { key: "constraints" },
+  { key: "openQuestions" },
 ]
 
-function scopeLabel(scope: RelayScopeType, rounds: number): string {
+function scopeLabel(
+  scope: RelayScopeType,
+  labels: {
+    summary: string
+    recentRounds: string
+    customRounds: string
+  }
+): string {
   switch (scope) {
     case "summary":
-      return "精简摘要"
+      return labels.summary
     case "recent_rounds":
-      return `最近 ${rounds} 个完整轮次`
+      return labels.recentRounds
     case "custom_rounds":
-      return `自定义 ${rounds} 个完整轮次`
+      return labels.customRounds
   }
 }
 
-function consumedAtLabel(value: string | null): string | null {
+function consumedAtLabel(value: string | null, locale: string): string | null {
   if (!value) return null
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale)
 }
 
 export function RelayProvenanceItem({ provenance }: RelayProvenanceItemProps) {
   const [open, setOpen] = useState(false)
-  const scope = scopeLabel(
-    provenance.scope.scopeType,
-    provenance.includedRounds.length
-  )
-  const consumedAt = consumedAtLabel(provenance.consumedAt)
+  const t = useTranslations("Folder.chat.relay")
+  const locale = useLocale()
+  const rounds = provenance.includedRounds.length
+  const scope = scopeLabel(provenance.scope.scopeType, {
+    summary: t("compactSummary"),
+    recentRounds: t("recentCompleteRounds", { count: rounds }),
+    customRounds: t("customCompleteRounds", { count: rounds }),
+  })
+  const consumedAt = consumedAtLabel(provenance.consumedAt, locale)
+  const sourceTitle =
+    provenance.source.title.trim() ||
+    t("conversationFallback", { id: provenance.source.conversationId })
 
   return (
     <>
@@ -64,7 +78,7 @@ export function RelayProvenanceItem({ provenance }: RelayProvenanceItemProps) {
           aria-hidden="true"
         />
         <span className="min-w-0 flex-1 truncate">
-          已接续《{provenance.source.title}》
+          {t("continuedFrom", { title: sourceTitle })}
         </span>
         <span className="hidden shrink-0 text-[0.6875rem] text-muted-foreground/80 sm:inline">
           {scope}
@@ -78,23 +92,23 @@ export function RelayProvenanceItem({ provenance }: RelayProvenanceItemProps) {
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className="w-[min(92vw,34rem)] sm:max-w-lg">
           <SheetHeader className="border-b">
-            <SheetTitle>接力来源</SheetTitle>
+            <SheetTitle>{t("provenanceTitle")}</SheetTitle>
             <p className="pr-8 text-sm text-muted-foreground">
-              《{provenance.source.title}》 · {scope}
+              {t("continuedFrom", { title: sourceTitle })} · {scope}
             </p>
           </SheetHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8">
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-b py-4 text-xs">
-              <dt className="text-muted-foreground">消息</dt>
+              <dt className="text-muted-foreground">{t("messagesLabel")}</dt>
               <dd>{provenance.stats.messageCount}</dd>
-              <dt className="text-muted-foreground">文件</dt>
+              <dt className="text-muted-foreground">{t("filesLabel")}</dt>
               <dd>{provenance.stats.fileCount}</dd>
-              <dt className="text-muted-foreground">待办</dt>
+              <dt className="text-muted-foreground">{t("todosLabel")}</dt>
               <dd>{provenance.stats.todoCount}</dd>
               {consumedAt ? (
                 <>
-                  <dt className="text-muted-foreground">接续时间</dt>
+                  <dt className="text-muted-foreground">{t("continuedAt")}</dt>
                   <dd>{consumedAt}</dd>
                 </>
               ) : null}
@@ -102,14 +116,14 @@ export function RelayProvenanceItem({ provenance }: RelayProvenanceItemProps) {
 
             {provenance.summary ? (
               <section className="border-b py-4">
-                <h3 className="mb-3 text-sm font-medium">摘要</h3>
+                <h3 className="mb-3 text-sm font-medium">{t("summary")}</h3>
                 <div className="space-y-3">
-                  {SUMMARY_SECTIONS.map(({ key, label }) => {
+                  {SUMMARY_SECTIONS.map(({ key }) => {
                     const values = provenance.summary?.[key] ?? []
                     return values.length > 0 ? (
                       <div key={key}>
                         <h4 className="mb-1 text-xs text-muted-foreground">
-                          {label}
+                          {t(`summarySections.${key}`)}
                         </h4>
                         <ul className="space-y-1 text-sm">
                           {values.map((value, index) => (
@@ -127,12 +141,14 @@ export function RelayProvenanceItem({ provenance }: RelayProvenanceItemProps) {
 
             {provenance.includedRounds.length > 0 ? (
               <section className="border-b py-4">
-                <h3 className="mb-3 text-sm font-medium">已接入轮次</h3>
+                <h3 className="mb-3 text-sm font-medium">
+                  {t("includedRounds")}
+                </h3>
                 <div className="divide-y">
                   {provenance.includedRounds.map((round, index) => (
                     <div key={round.id} className="space-y-2 py-3 first:pt-0">
                       <p className="text-xs text-muted-foreground">
-                        轮次 {index + 1}
+                        {t("roundNumber", { count: index + 1 })}
                       </p>
                       <p className="whitespace-pre-wrap break-words text-sm">
                         {round.userText}
@@ -150,7 +166,9 @@ export function RelayProvenanceItem({ provenance }: RelayProvenanceItemProps) {
 
             {provenance.files.length > 0 ? (
               <section className="py-4">
-                <h3 className="mb-3 text-sm font-medium">相关文件</h3>
+                <h3 className="mb-3 text-sm font-medium">
+                  {t("relatedFiles")}
+                </h3>
                 <ul className="space-y-2">
                   {provenance.files.map((file, index) => (
                     <li

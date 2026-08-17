@@ -667,6 +667,44 @@ describe("MessageInput (RichComposer integration)", () => {
     expect(sendButton).toBeDisabled()
   })
 
+  it("preserves text and attachments when the parent rejects the send", async () => {
+    const onSend = vi.fn(() => false)
+    const { container } = renderInput({ onSend })
+    const textbox = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>('[role="textbox"]')
+      expect(element).not.toBeNull()
+      return element as HTMLElement
+    })
+
+    act(() => composerHandle.current?.setText("keep this relay draft"))
+    const image = new File(["image-bytes"], "relay-proof.png", {
+      type: "image/png",
+    })
+    fireEvent.paste(textbox, {
+      clipboardData: {
+        files: [image],
+        items: [{ kind: "file", getAsFile: () => image }],
+        types: ["Files"],
+        getData: () => "",
+      },
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByRole("img", { name: "relay-proof.png" })
+      ).toBeInTheDocument()
+    )
+
+    await userEvent.click(
+      screen.getByTitle(enMessages.Folder.chat.messageInput.send)
+    )
+
+    expect(onSend).toHaveBeenCalledOnce()
+    expect(composerHandle.current?.getText()).toBe("keep this relay draft")
+    expect(
+      screen.getByRole("img", { name: "relay-proof.png" })
+    ).toBeInTheDocument()
+  })
+
   it("renders prompt optimization and speech controls before the primary send action", async () => {
     const { container } = renderInput({})
     await waitFor(() =>

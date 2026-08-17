@@ -45,6 +45,14 @@ export interface ExportLabels {
   system: string
   toolResult: string
   toolError: string
+  relayContinuedFrom: (title: string) => string
+  relayConversationFallback: (conversationId: number) => string
+  relayCompactSummary: string
+  relayRecentCompleteRounds: (count: number) => string
+  relayCustomCompleteRounds: (count: number) => string
+  relayMessageCount: (count: number) => string
+  relayFileCount: (count: number) => string
+  relayTodoCount: (count: number) => string
   statusLabels: Record<string, string>
 }
 
@@ -158,27 +166,36 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;")
 }
 
-function relayScopeMetadata(provenance: RelayProvenance): string {
+function relayScopeMetadata(
+  provenance: RelayProvenance,
+  labels: ExportLabels
+): string {
   const rounds = provenance.includedRounds.length
   switch (provenance.scope.scopeType) {
     case "summary":
-      return "精简摘要"
+      return labels.relayCompactSummary
     case "recent_rounds":
-      return `最近 ${rounds} 个完整轮次`
+      return labels.relayRecentCompleteRounds(rounds)
     case "custom_rounds":
-      return `自定义 ${rounds} 个完整轮次`
+      return labels.relayCustomCompleteRounds(rounds)
   }
 }
 
-function relayMetadata(provenance: RelayProvenance): string {
-  const counts = [`${provenance.stats.messageCount} 条消息`]
+function relayMetadata(
+  provenance: RelayProvenance,
+  labels: ExportLabels
+): string {
+  const sourceTitle =
+    provenance.source.title.trim() ||
+    labels.relayConversationFallback(provenance.source.conversationId)
+  const counts = [labels.relayMessageCount(provenance.stats.messageCount)]
   if (provenance.stats.fileCount > 0) {
-    counts.push(`${provenance.stats.fileCount} 个文件`)
+    counts.push(labels.relayFileCount(provenance.stats.fileCount))
   }
   if (provenance.stats.todoCount > 0) {
-    counts.push(`${provenance.stats.todoCount} 项待办`)
+    counts.push(labels.relayTodoCount(provenance.stats.todoCount))
   }
-  return `已接续《${provenance.source.title}》 · ${relayScopeMetadata(provenance)} · ${counts.join(" · ")}`
+  return `${labels.relayContinuedFrom(sourceTitle)} · ${relayScopeMetadata(provenance, labels)} · ${counts.join(" · ")}`
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -524,7 +541,7 @@ async function buildHtmlDocument(
       if (!provenanceInserted && provenance && turn.role === "user") {
         provenanceInserted = true
         rows.push(
-          `<div class="relay-provenance">${escapeHtml(relayMetadata(provenance))}</div>`
+          `<div class="relay-provenance">${escapeHtml(relayMetadata(provenance, labels))}</div>`
         )
       }
       const turnMeta: string[] = []
@@ -578,7 +595,7 @@ export async function exportAsMarkdown(
   for (const turn of turns) {
     if (!provenanceInserted && provenance && turn.role === "user") {
       provenanceInserted = true
-      parts.push(`> ${relayMetadata(provenance)}`)
+      parts.push(`> ${relayMetadata(provenance, labels)}`)
       parts.push("")
     }
     parts.push(`## ${localizeRole(turn.role, labels)}`)

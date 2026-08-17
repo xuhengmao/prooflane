@@ -193,9 +193,13 @@ export async function previewRelayContext(
 }
 
 export function getRelayContextByDraft(
-  targetDraftId: string
+  targetDraftId: string,
+  targetConversationId?: number | null
 ): Promise<RelayContextPack | null> {
-  return getTransport().call("get_relay_context_by_draft", { targetDraftId })
+  return getTransport().call("get_relay_context_by_draft", {
+    targetDraftId,
+    ...(targetConversationId == null ? {} : { targetConversationId }),
+  })
 }
 
 export function updateRelayContext(

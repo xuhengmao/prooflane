@@ -94,6 +94,8 @@ function emptySession(conversationId: number): ConversationRuntimeSession {
     backgroundTurns: [],
     pendingBackgroundSettlements: [],
     optimisticTurns: [],
+    uncertainOptimisticTurnIds: new Set(),
+    confirmedOptimisticTurnIds: new Set(),
     liveMessage: null,
     syncState: "idle",
     activeTurnToken: null,

@@ -6,7 +6,7 @@ use sea_orm::{
     TransactionTrait,
 };
 
-use crate::db::entities::relay_context_pack;
+use crate::db::entities::{conversation_capability_setting, relay_context_pack};
 use crate::db::error::DbError;
 use crate::models::conversation_relay::{RelayError, RelayErrorCode};
 
@@ -66,6 +66,18 @@ where
         .await
         .map_err(relay_db_error)?
         .ok_or_else(|| relay_error(RelayErrorCode::RelaySourceNotFound))
+}
+
+async fn relay_is_enabled<C>(conn: &C) -> Result<bool, RelayError>
+where
+    C: ConnectionTrait,
+{
+    Ok(conversation_capability_setting::Entity::find_by_id(1)
+        .one(conn)
+        .await
+        .map_err(relay_db_error)?
+        .map(|setting| setting.relay_enabled)
+        .unwrap_or(false))
 }
 
 pub async fn get_by_id(
@@ -244,8 +256,20 @@ pub async fn get_active_by_draft(
         .filter(relay_context_pack::Column::TargetDraftId.eq(target_draft_id))
         .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
         .filter(relay_context_pack::Column::InvalidReason.is_null())
+        .filter(consume_not_claimed())
         .one(conn)
         .await?)
+}
+
+fn is_restorable(pack: &relay_context_pack::Model) -> bool {
+    if pack.consume_attempt_state.as_deref() == Some(CLAIMED) {
+        return false;
+    }
+    match pack.status.as_str() {
+        STATUS_DRAFT | STATUS_ATTACHED => pack.invalid_reason.is_none(),
+        STATUS_INVALID => pack.invalid_reason.is_some(),
+        _ => false,
+    }
 }
 
 pub async fn get_restorable_by_draft(
@@ -255,16 +279,45 @@ pub async fn get_restorable_by_draft(
     if let Some(active) = get_active_by_draft(conn, target_draft_id).await? {
         return Ok(Some(active));
     }
-
-    Ok(relay_context_pack::Entity::find()
+    let latest = relay_context_pack::Entity::find()
         .filter(relay_context_pack::Column::TargetDraftId.eq(target_draft_id))
-        .filter(relay_context_pack::Column::Status.eq(STATUS_INVALID))
-        .filter(relay_context_pack::Column::InvalidReason.is_not_null())
-        .filter(consume_not_claimed())
-        .order_by_desc(relay_context_pack::Column::UpdatedAt)
         .order_by_desc(relay_context_pack::Column::Id)
         .one(conn)
-        .await?)
+        .await?;
+    Ok(latest.filter(is_restorable))
+}
+
+pub async fn get_restorable_by_target(
+    conn: &DatabaseConnection,
+    target_draft_id: &str,
+    target_conversation_id: Option<i32>,
+) -> Result<Option<relay_context_pack::Model>, DbError> {
+    let target = || {
+        let mut condition =
+            Condition::any().add(relay_context_pack::Column::TargetDraftId.eq(target_draft_id));
+        if let Some(conversation_id) = target_conversation_id {
+            condition =
+                condition.add(relay_context_pack::Column::TargetConversationId.eq(conversation_id));
+        }
+        condition
+    };
+    if let Some(active) = relay_context_pack::Entity::find()
+        .filter(target())
+        .filter(relay_context_pack::Column::Status.is_in([STATUS_DRAFT, STATUS_ATTACHED]))
+        .filter(relay_context_pack::Column::InvalidReason.is_null())
+        .filter(consume_not_claimed())
+        .order_by_desc(relay_context_pack::Column::Id)
+        .one(conn)
+        .await?
+    {
+        return Ok(Some(active));
+    }
+    let latest = relay_context_pack::Entity::find()
+        .filter(target())
+        .order_by_desc(relay_context_pack::Column::Id)
+        .one(conn)
+        .await?;
+    Ok(latest.filter(is_restorable))
 }
 
 pub async fn bind_to_conversation(
@@ -397,16 +450,19 @@ pub async fn release_claim(
     client_message_id: &str,
 ) -> Result<relay_context_pack::Model, RelayError> {
     let txn = conn.begin().await.map_err(relay_db_error)?;
-    let updated = relay_context_pack::Entity::update_many()
-        .col_expr(
-            relay_context_pack::Column::Status,
-            Expr::case(
-                relay_context_pack::Column::InvalidReason.is_not_null(),
-                STATUS_INVALID,
-            )
-            .finally(STATUS_ATTACHED)
-            .into(),
+    let relay_enabled = relay_is_enabled(&txn).await?;
+    let status = if relay_enabled {
+        Expr::case(
+            relay_context_pack::Column::InvalidReason.is_not_null(),
+            STATUS_INVALID,
         )
+        .finally(STATUS_ATTACHED)
+        .into()
+    } else {
+        Expr::value(STATUS_REMOVED)
+    };
+    let updated = relay_context_pack::Entity::update_many()
+        .col_expr(relay_context_pack::Column::Status, status)
         .col_expr(
             relay_context_pack::Column::ConsumeClientMessageId,
             Expr::value(Option::<String>::None),
@@ -444,11 +500,13 @@ pub async fn invalidate_claim(
     reason: RelayErrorCode,
 ) -> Result<relay_context_pack::Model, RelayError> {
     let txn = conn.begin().await.map_err(relay_db_error)?;
+    let status = if relay_is_enabled(&txn).await? {
+        STATUS_INVALID
+    } else {
+        STATUS_REMOVED
+    };
     let updated = relay_context_pack::Entity::update_many()
-        .col_expr(
-            relay_context_pack::Column::Status,
-            Expr::value(STATUS_INVALID),
-        )
+        .col_expr(relay_context_pack::Column::Status, Expr::value(status))
         .col_expr(
             relay_context_pack::Column::InvalidReason,
             Expr::value(Some(reason.to_string())),
@@ -489,11 +547,13 @@ pub async fn mark_uncertain(
     client_message_id: &str,
 ) -> Result<relay_context_pack::Model, RelayError> {
     let txn = conn.begin().await.map_err(relay_db_error)?;
+    let status = if relay_is_enabled(&txn).await? {
+        STATUS_INVALID
+    } else {
+        STATUS_REMOVED
+    };
     let updated = relay_context_pack::Entity::update_many()
-        .col_expr(
-            relay_context_pack::Column::Status,
-            Expr::value(STATUS_INVALID),
-        )
+        .col_expr(relay_context_pack::Column::Status, Expr::value(status))
         .col_expr(
             relay_context_pack::Column::InvalidReason,
             Expr::value(Some(RelayErrorCode::RelaySendUncertain.to_string())),
@@ -523,11 +583,18 @@ pub async fn mark_uncertain(
 }
 
 pub async fn recover_claimed_as_uncertain(conn: &DatabaseConnection) -> Result<u64, DbError> {
+    let status = if conversation_capability_setting::Entity::find_by_id(1)
+        .one(conn)
+        .await?
+        .map(|setting| setting.relay_enabled)
+        .unwrap_or(false)
+    {
+        STATUS_INVALID
+    } else {
+        STATUS_REMOVED
+    };
     let recovered = relay_context_pack::Entity::update_many()
-        .col_expr(
-            relay_context_pack::Column::Status,
-            Expr::value(STATUS_INVALID),
-        )
+        .col_expr(relay_context_pack::Column::Status, Expr::value(status))
         .col_expr(
             relay_context_pack::Column::InvalidReason,
             Expr::value(Some(RelayErrorCode::RelaySendUncertain.to_string())),

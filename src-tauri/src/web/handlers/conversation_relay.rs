@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::extract::{Extension, Path};
+use axum::extract::{Extension, Path, Query};
 use axum::Json;
 use serde::Deserialize;
 
@@ -8,7 +8,7 @@ use crate::app_error::AppCommandError;
 use crate::app_state::AppState;
 use crate::conversation_relay::service::{
     cancel_relay_preview_core, get_conversation_capabilities_core, get_conversation_relay_core,
-    get_relay_context_by_draft_core, preview_relay_context_core, remove_relay_context_core,
+    get_relay_context_by_target_core, preview_relay_context_core, remove_relay_context_core,
     reserve_relay_preview_core, update_conversation_capabilities_core, update_relay_context_core,
     RelayPatchRequest, RelayPreviewRequest, UpdateConversationCapabilitiesInput,
 };
@@ -19,6 +19,13 @@ use crate::models::{RelayContextPackView, RelayProvenanceView};
 #[serde(rename_all = "camelCase")]
 pub struct DraftIdParams {
     target_draft_id: String,
+    target_conversation_id: Option<i32>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetConversationQuery {
+    target_conversation_id: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,16 +105,27 @@ pub async fn get_relay_context_by_draft(
     Json(params): Json<DraftIdParams>,
 ) -> Result<Json<Option<RelayContextPackView>>, AppCommandError> {
     Ok(Json(
-        get_relay_context_by_draft_core(&state.db.conn, &params.target_draft_id).await?,
+        get_relay_context_by_target_core(
+            &state.db.conn,
+            &params.target_draft_id,
+            params.target_conversation_id,
+        )
+        .await?,
     ))
 }
 
 pub async fn get_relay_context_by_draft_rest(
     Extension(state): Extension<Arc<AppState>>,
     Path(target_draft_id): Path<String>,
+    Query(query): Query<TargetConversationQuery>,
 ) -> Result<Json<Option<RelayContextPackView>>, AppCommandError> {
     Ok(Json(
-        get_relay_context_by_draft_core(&state.db.conn, &target_draft_id).await?,
+        get_relay_context_by_target_core(
+            &state.db.conn,
+            &target_draft_id,
+            query.target_conversation_id,
+        )
+        .await?,
     ))
 }
 

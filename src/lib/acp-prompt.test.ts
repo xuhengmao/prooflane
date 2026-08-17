@@ -60,7 +60,7 @@ describe("acpPrompt relay transport contract", () => {
     expect(mocks.call).toHaveBeenCalledWith(
       "acp_prompt",
       expect.objectContaining({ relayId: 7, targetDraftId: "draft-1" }),
-      { timeoutMs: 50_000 }
+      { timeoutMs: 600_000 }
     )
   })
 })

@@ -12,6 +12,7 @@ import type { ExportLabels } from "@/lib/export-conversation"
  */
 export function useExportLabels(): ExportLabels {
   const tExport = useTranslations("Folder.conversation.exportLabels")
+  const tRelay = useTranslations("Folder.chat.relay")
   const tStatus = useTranslations("Folder.statusLabels")
   return useMemo<ExportLabels>(
     () => ({
@@ -32,6 +33,16 @@ export function useExportLabels(): ExportLabels {
       system: tExport("system"),
       toolResult: tExport("toolResult"),
       toolError: tExport("toolError"),
+      relayContinuedFrom: (title) => tRelay("continuedFrom", { title }),
+      relayConversationFallback: (id) => tRelay("conversationFallback", { id }),
+      relayCompactSummary: tRelay("compactSummary"),
+      relayRecentCompleteRounds: (count) =>
+        tRelay("recentCompleteRounds", { count }),
+      relayCustomCompleteRounds: (count) =>
+        tRelay("customCompleteRounds", { count }),
+      relayMessageCount: (count) => tRelay("messageCount", { count }),
+      relayFileCount: (count) => tRelay("fileCount", { count }),
+      relayTodoCount: (count) => tRelay("todoCount", { count }),
       statusLabels: {
         in_progress: tStatus("in_progress"),
         pending_review: tStatus("pending_review"),
@@ -39,6 +50,6 @@ export function useExportLabels(): ExportLabels {
         cancelled: tStatus("cancelled"),
       },
     }),
-    [tExport, tStatus]
+    [tExport, tRelay, tStatus]
   )
 }

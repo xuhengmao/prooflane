@@ -39,10 +39,12 @@ const RELAY_INVALID_REASONS = new Set([
 
 interface RelayDraftOptions {
   targetDraftId: string
+  targetConversationId?: number | null
   targetFolderId: number | null
   targetAgentType: AgentType
   targetModel: string | null
   enabled: boolean
+  sendPending: boolean
 }
 
 type RetryOperation =
@@ -57,6 +59,7 @@ type RetryOperation =
 interface LocalRemoval {
   relayId: number
   targetDraftId: string
+  targetConversationId: number | null
 }
 
 function isBudgetExceeded(error: unknown): boolean {
@@ -130,10 +133,12 @@ function scopeForRefresh(scope: RelayScopeSelection): RelayScopeSelection {
 
 export function useRelayDraft({
   targetDraftId,
+  targetConversationId = null,
   targetFolderId,
   targetAgentType,
   targetModel,
   enabled,
+  sendPending,
 }: RelayDraftOptions): {
   relay: RelayContextPack | null
   loading: boolean
@@ -156,17 +161,21 @@ export function useRelayDraft({
   const relayRef = useRef<RelayContextPack | null>(null)
   const latestRef = useRef({
     targetDraftId,
+    targetConversationId,
     targetFolderId,
     targetAgentType,
     targetModel,
     enabled,
+    sendPending,
   })
   latestRef.current = {
     targetDraftId,
+    targetConversationId,
     targetFolderId,
     targetAgentType,
     targetModel,
     enabled,
+    sendPending,
   }
 
   const operationGenerationRef = useRef(0)
@@ -217,6 +226,18 @@ export function useRelayDraft({
     []
   )
 
+  const matchesCurrentTarget = useCallback(
+    (draftId: string, conversationId?: number | null) => {
+      const current = latestRef.current
+      return (
+        draftId === current.targetDraftId ||
+        (current.targetConversationId != null &&
+          conversationId === current.targetConversationId)
+      )
+    },
+    []
+  )
+
   const loadExisting = useCallback(async () => {
     if (!allowedRef.current || !subscriptionsReadyRef.current) return
     const current = latestRef.current
@@ -227,7 +248,10 @@ export function useRelayDraft({
     retryOperationRef.current = null
     setLoading(true)
     try {
-      const existing = await getRelayContextByDraft(draftId)
+      const existing = await getRelayContextByDraft(
+        draftId,
+        current.targetConversationId
+      )
       if (isCurrent(generation, draftId, lifecycle)) {
         if (
           existing &&
@@ -237,7 +261,16 @@ export function useRelayDraft({
         ) {
           configurationRefreshPendingRef.current = true
         }
-        commitRelay(existing)
+        const currentRelay = relayRef.current
+        const keepInFlightRelay =
+          existing === null &&
+          current.sendPending &&
+          currentRelay !== null &&
+          matchesCurrentTarget(
+            currentRelay.targetDraftId,
+            currentRelay.targetConversationId
+          )
+        if (!keepInFlightRelay) commitRelay(existing)
         setRecoveryError(false)
       }
     } catch (error) {
@@ -252,7 +285,7 @@ export function useRelayDraft({
       }
       if (isCurrent(generation, draftId, lifecycle)) setLoading(false)
     }
-  }, [commitRelay, invalidatePending, isCurrent])
+  }, [commitRelay, invalidatePending, isCurrent, matchesCurrentTarget])
 
   const runPreview = useCallback(
     async (
@@ -262,6 +295,15 @@ export function useRelayDraft({
       if (!allowedRef.current) return
       const current = latestRef.current
       const draftId = current.targetDraftId
+      const currentRelay = relayRef.current
+      const previewTargetDraftId =
+        currentRelay &&
+        matchesCurrentTarget(
+          currentRelay.targetDraftId,
+          currentRelay.targetConversationId
+        )
+          ? currentRelay.targetDraftId
+          : draftId
       const lifecycle = lifecycleGenerationRef.current
       const selectedScope =
         requestedScope ?? relayRef.current?.scope ?? DEFAULT_SCOPE
@@ -273,7 +315,7 @@ export function useRelayDraft({
       try {
         const next = await previewRelayContext(
           {
-            targetDraftId: draftId,
+            targetDraftId: previewTargetDraftId,
             sourceConversationId,
             targetFolderId: current.targetFolderId,
             targetAgentType: current.targetAgentType,
@@ -305,7 +347,13 @@ export function useRelayDraft({
         }
       }
     },
-    [clearUndoTimer, commitRelay, invalidatePending, isCurrent]
+    [
+      clearUndoTimer,
+      commitRelay,
+      invalidatePending,
+      isCurrent,
+      matchesCurrentTarget,
+    ]
   )
 
   const preview = useCallback(
@@ -407,7 +455,10 @@ export function useRelayDraft({
         undoTimerRef.current = null
         if (
           mountedRef.current &&
-          latestRef.current.targetDraftId === removed.targetDraftId &&
+          matchesCurrentTarget(
+            removed.targetDraftId,
+            removed.targetConversationId
+          ) &&
           relayRef.current?.id === removed.id &&
           relayRef.current.status === "removed"
         ) {
@@ -418,7 +469,7 @@ export function useRelayDraft({
         }
       }, UNDO_REMOVE_WINDOW_MS)
     },
-    [clearUndoTimer, commitRelay]
+    [clearUndoTimer, commitRelay, matchesCurrentTarget]
   )
 
   const remove = useCallback(async () => {
@@ -430,7 +481,8 @@ export function useRelayDraft({
     const generation = invalidatePending()
     localRemovalRef.current = {
       relayId: currentRelay.id,
-      targetDraftId: draftId,
+      targetDraftId: currentRelay.targetDraftId,
+      targetConversationId: currentRelay.targetConversationId,
     }
     retryOperationRef.current = null
     setLoading(true)
@@ -446,7 +498,10 @@ export function useRelayDraft({
     } catch (error) {
       if (
         localRemovalRef.current?.relayId === currentRelay.id &&
-        localRemovalRef.current.targetDraftId === draftId
+        matchesCurrentTarget(
+          localRemovalRef.current.targetDraftId,
+          localRemovalRef.current.targetConversationId
+        )
       ) {
         localRemovalRef.current = null
       }
@@ -454,7 +509,13 @@ export function useRelayDraft({
     } finally {
       if (isCurrent(generation, draftId, lifecycle)) setLoading(false)
     }
-  }, [commitRelay, invalidatePending, isCurrent, scheduleUndoExpiry])
+  }, [
+    commitRelay,
+    invalidatePending,
+    isCurrent,
+    matchesCurrentTarget,
+    scheduleUndoExpiry,
+  ])
 
   const undoRemove = useCallback(async () => {
     const removed = relayRef.current
@@ -501,7 +562,15 @@ export function useRelayDraft({
     clearUndoTimer()
     localRemovalRef.current = null
     retryOperationRef.current = null
-    commitRelay(null)
+    const currentRelay = relayRef.current
+    const keepInFlightRelay =
+      latestRef.current.sendPending &&
+      currentRelay !== null &&
+      matchesCurrentTarget(
+        currentRelay.targetDraftId,
+        currentRelay.targetConversationId
+      )
+    if (!keepInFlightRelay) commitRelay(null)
     setLoading(allowedRef.current)
     setRecoveryError(false)
 
@@ -515,12 +584,17 @@ export function useRelayDraft({
         return
       }
       subscriptionsReadyRef.current = true
+      const explicitPreviewInFlight = previewAbortRef.current !== null
       if (allowedRef.current) {
-        void loadExisting().catch(() => {})
+        if (!explicitPreviewInFlight) void loadExisting().catch(() => {})
       } else {
         setLoading(false)
       }
-      if (reconnectBeforeReady && allowedRef.current) {
+      if (
+        reconnectBeforeReady &&
+        allowedRef.current &&
+        !explicitPreviewInFlight
+      ) {
         void loadExisting().catch(() => {})
       }
     }
@@ -563,14 +637,20 @@ export function useRelayDraft({
           if (
             disposed ||
             lifecycleGenerationRef.current !== lifecycle ||
-            change.targetDraftId !== latestRef.current.targetDraftId
+            !matchesCurrentTarget(
+              change.targetDraftId,
+              change.targetConversationId
+            )
           ) {
             return
           }
           if (change.status === "removed") {
             if (
               localRemovalRef.current?.relayId === change.relayId &&
-              localRemovalRef.current.targetDraftId === change.targetDraftId
+              matchesCurrentTarget(
+                localRemovalRef.current.targetDraftId,
+                localRemovalRef.current.targetConversationId
+              )
             ) {
               return
             }
@@ -650,6 +730,8 @@ export function useRelayDraft({
     commitRelay,
     invalidatePending,
     loadExisting,
+    matchesCurrentTarget,
+    targetConversationId,
     targetDraftId,
   ])
 
