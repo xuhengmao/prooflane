@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { NextIntlClientProvider } from "next-intl"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 import {
@@ -19,6 +21,37 @@ const defaultProps: ComposerRuntimeBarContentProps = {
   phase: "thinking",
   editStats: { files: 0, additions: 0, deletions: 0 },
   toolCallCount: 0,
+}
+
+const runtimeGridColumns = "grid-cols-[minmax(12rem,1fr)_minmax(0,auto)_auto]"
+
+function readGlobalsCss(): string {
+  return readFileSync(join(process.cwd(), "src/app/globals.css"), {
+    encoding: "utf8",
+  })
+}
+
+function extractCssBlock(css: string, selector: string): string {
+  const start = css.indexOf(selector)
+  expect(start).toBeGreaterThanOrEqual(0)
+
+  const openingBrace = css.indexOf("{", start)
+  expect(openingBrace).toBeGreaterThanOrEqual(0)
+
+  let depth = 0
+  for (let index = openingBrace; index < css.length; index++) {
+    if (css[index] === "{") {
+      depth += 1
+    }
+    if (css[index] === "}") {
+      depth -= 1
+    }
+    if (depth === 0) {
+      return css.slice(openingBrace + 1, index)
+    }
+  }
+
+  throw new Error(`Unclosed CSS block for ${selector}`)
 }
 
 function renderRuntimeBar(
@@ -123,12 +156,89 @@ describe("ComposerRuntimeBarContent", () => {
     expect(primary).toContainElement(
       screen.getByTestId("composer-status-elapsed")
     )
-    expect(secondary).toHaveClass("min-w-0", "shrink")
+    expect(secondary).toHaveAttribute("data-composer-runtime-slot", "secondary")
+    expect(secondary).toHaveAttribute(
+      "data-composer-runtime-priority",
+      "compressible"
+    )
+    expect(secondary).toHaveClass("min-w-0", "overflow-hidden")
     expect(
       secondary.querySelectorAll(".prooflane-composer-runtime-secondary-label")
     ).toHaveLength(2)
     expect(retry).toHaveClass("shrink-0")
     expect(retry.parentElement).toBe(bar)
+  })
+
+  it("uses a three-column layout contract that protects primary details at 24rem", () => {
+    const onRetry = vi.fn()
+
+    render(
+      <div style={{ width: "24rem" }}>
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <ComposerRuntimeBarContent
+            {...defaultProps}
+            editStats={{ files: 2, additions: 500, deletions: 100 }}
+            onRetry={onRetry}
+            phase="streaming"
+            status="failed"
+            statusLabel="Connection failed while waiting for the agent response"
+            toolCallCount={20}
+          />
+        </NextIntlClientProvider>
+      </div>
+    )
+
+    const bar = screen.getByTestId("composer-runtime-bar")
+    const primary = screen.getByTestId("composer-runtime-primary")
+    const secondary = screen.getByTestId("composer-runtime-secondary")
+    const retry = screen.getByRole("button", { name: "Retry" })
+    const secondaryLabels = secondary.querySelectorAll(
+      ".prooflane-composer-runtime-secondary-label"
+    )
+
+    expect(bar.parentElement).toHaveStyle({ width: "24rem" })
+    expect(bar).toHaveClass("grid", runtimeGridColumns)
+    expect(bar).not.toHaveClass("flex")
+    expect(primary).toHaveAttribute("data-composer-runtime-slot", "primary")
+    expect(primary).toHaveClass("min-w-0", "overflow-hidden")
+    expect(primary).not.toHaveClass("flex-1")
+    expect(primary).toContainElement(screen.getByRole("status"))
+    expect(primary).toContainElement(
+      screen.getByTestId("composer-status-elapsed")
+    )
+    expect(secondary).toHaveAttribute("data-composer-runtime-slot", "secondary")
+    expect(secondary).toHaveAttribute(
+      "data-composer-runtime-priority",
+      "compressible"
+    )
+    expect(secondary).toHaveClass("min-w-0", "overflow-hidden")
+    expect(secondaryLabels).toHaveLength(2)
+    for (const label of secondaryLabels) {
+      expect(label).toHaveClass("min-w-0", "truncate")
+    }
+    expect(retry).toHaveAttribute("data-composer-runtime-slot", "action")
+    expect(retry).toHaveClass("shrink-0")
+    expect(retry.parentElement).toBe(bar)
+  })
+
+  it("compresses secondary labels in the 24rem container-query band", () => {
+    const globalsCss = readGlobalsCss()
+    const midWidthQuery = extractCssBlock(
+      globalsCss,
+      "@container (max-width: 28rem)"
+    )
+    const narrowQuery = extractCssBlock(
+      globalsCss,
+      "@container (max-width: 22rem)"
+    )
+
+    expect(midWidthQuery).toContain(
+      ".prooflane-composer-runtime-secondary-label"
+    )
+    expect(midWidthQuery).toContain("max-width: 4.5rem;")
+    expect(midWidthQuery).not.toContain("display: none")
+    expect(narrowQuery).toContain(".prooflane-composer-runtime-secondary-label")
+    expect(narrowQuery).toContain("display: none;")
   })
 })
 

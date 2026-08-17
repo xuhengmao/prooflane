@@ -84,12 +84,13 @@ export function ComposerRuntimeBarContent({
 
   return (
     <div
-      className="prooflane-composer-runtime-bar flex min-w-0 flex-nowrap items-center overflow-hidden px-3 py-1.5 text-xs text-muted-foreground"
+      className="prooflane-composer-runtime-bar grid min-w-0 grid-cols-[minmax(12rem,1fr)_minmax(0,auto)_auto] items-center gap-x-3 overflow-hidden px-3 py-1.5 text-xs text-muted-foreground"
       data-composer-runtime-state={status}
       data-testid="composer-runtime-bar"
     >
       <div
-        className="flex min-w-0 flex-1 items-center gap-x-3"
+        className="flex min-w-0 items-center gap-x-3 overflow-hidden"
+        data-composer-runtime-slot="primary"
         data-testid="composer-runtime-primary"
       >
         <span
@@ -135,13 +136,15 @@ export function ComposerRuntimeBarContent({
       </div>
 
       <div
-        className="prooflane-composer-runtime-secondary flex min-w-0 shrink items-center gap-x-3 overflow-hidden"
+        className="prooflane-composer-runtime-secondary flex min-w-0 items-center justify-self-end gap-x-3 overflow-hidden"
+        data-composer-runtime-priority="compressible"
+        data-composer-runtime-slot="secondary"
         data-testid="composer-runtime-secondary"
       >
         {editStats.files > 0 && (
           <span className="prooflane-composer-runtime-secondary-stat flex min-w-0 items-center gap-1">
             <FilePenLine aria-hidden="true" className="h-3 w-3 shrink-0" />
-            <span className="prooflane-composer-runtime-secondary-label truncate">
+            <span className="prooflane-composer-runtime-secondary-label min-w-0 truncate">
               {editSummary}
             </span>
           </span>
@@ -150,7 +153,7 @@ export function ComposerRuntimeBarContent({
         {toolCallLabel !== null && (
           <span className="prooflane-composer-runtime-secondary-stat flex min-w-0 items-center gap-1">
             <Wrench aria-hidden="true" className="h-3 w-3 shrink-0" />
-            <span className="prooflane-composer-runtime-secondary-label truncate">
+            <span className="prooflane-composer-runtime-secondary-label min-w-0 truncate">
               {toolCallLabel}
             </span>
           </span>
@@ -161,6 +164,7 @@ export function ComposerRuntimeBarContent({
         <button
           aria-label={retryLabel}
           className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          data-composer-runtime-slot="action"
           onClick={onRetry}
           title={retryLabel}
           type="button"
