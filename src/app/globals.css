@@ -2241,7 +2241,10 @@ div.monaco-diff-editor.side-by-side .editor.modified {
 
 .prooflane-composer-runtime-bar {
   --prooflane-composer-status: #38BF63;
+  container-type: inline-size;
   width: 100%;
+  flex-wrap: nowrap;
+  overflow: hidden;
   border-bottom: 1px solid
     color-mix(in oklab, var(--prooflane-composer-status) 38%, var(--border));
   border-start-start-radius: calc(var(--radius-xl) - 1px);
@@ -2254,6 +2257,12 @@ div.monaco-diff-editor.side-by-side .editor.modified {
   transition:
     border-bottom-color 150ms ease,
     background-color 150ms ease;
+}
+
+@container (max-width: 28rem) {
+  .prooflane-composer-runtime-secondary {
+    font-size: 0.6875rem;
+  }
 }
 
 .prooflane-composer-runtime-bar[data-composer-runtime-state="failed"] {

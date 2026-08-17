@@ -84,74 +84,86 @@ export function ComposerRuntimeBarContent({
 
   return (
     <div
-      className="prooflane-composer-runtime-bar flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 text-xs text-muted-foreground"
+      className="prooflane-composer-runtime-bar flex min-w-0 flex-nowrap items-center overflow-hidden px-3 py-1.5 text-xs text-muted-foreground"
       data-composer-runtime-state={status}
       data-testid="composer-runtime-bar"
     >
-      <span
-        className={cn(
-          "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center",
-          activeRun && "animate-pulse motion-reduce:animate-none"
-        )}
-        data-testid="composer-runtime-agent"
-      >
-        {agentType ? (
-          <AgentIcon agentType={agentType} className="h-3.5 w-3.5" />
-        ) : (
-          <Bot aria-hidden="true" className="h-3.5 w-3.5" />
-        )}
-      </span>
-
-      {phase !== null && <span>{tLive(phase)}</span>}
-
-      <span
-        aria-atomic="true"
-        aria-live="polite"
-        className="inline-flex min-w-0 items-center gap-1.5 break-words"
-        role="status"
+      <div
+        className="flex min-w-0 flex-1 items-center gap-x-3"
+        data-testid="composer-runtime-primary"
       >
         <span
-          aria-hidden="true"
-          className="prooflane-composer-status-dot h-1.5 w-1.5 shrink-0 rounded-full"
-        />
-        <span title={statusLabel}>{statusLabel}</span>
-      </span>
+          className={cn(
+            "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center",
+            activeRun && "animate-pulse motion-reduce:animate-none"
+          )}
+          data-testid="composer-runtime-agent"
+        >
+          {agentType ? (
+            <AgentIcon agentType={agentType} className="h-3.5 w-3.5" />
+          ) : (
+            <Bot aria-hidden="true" className="h-3.5 w-3.5" />
+          )}
+        </span>
 
-      {elapsedLabel !== null && (
+        {phase !== null && <span className="shrink-0">{tLive(phase)}</span>}
+
         <span
-          className="inline-flex items-center gap-1"
-          data-testid="composer-status-elapsed"
+          aria-atomic="true"
+          aria-live="polite"
+          className="inline-flex min-w-0 flex-1 items-center gap-1.5"
+          role="status"
         >
-          <Timer aria-hidden="true" className="h-3 w-3 shrink-0" />
-          {elapsedLabel}
+          <span
+            aria-hidden="true"
+            className="prooflane-composer-status-dot h-1.5 w-1.5 shrink-0 rounded-full"
+          />
+          <span className="truncate" title={statusLabel}>
+            {statusLabel}
+          </span>
         </span>
-      )}
 
-      {editStats.files > 0 && (
-        <span className="inline-flex items-center gap-1">
-          <FilePenLine aria-hidden="true" className="h-3 w-3 shrink-0" />
-          {editSummary}
-        </span>
-      )}
+        {elapsedLabel !== null && (
+          <span
+            className="inline-flex shrink-0 items-center gap-1"
+            data-testid="composer-status-elapsed"
+          >
+            <Timer aria-hidden="true" className="h-3 w-3 shrink-0" />
+            {elapsedLabel}
+          </span>
+        )}
+      </div>
 
-      {toolCallLabel !== null && (
-        <span className="inline-flex items-center gap-1">
-          <Wrench aria-hidden="true" className="h-3 w-3 shrink-0" />
-          {toolCallLabel}
-        </span>
-      )}
+      <div
+        className="prooflane-composer-runtime-secondary flex shrink-0 items-center gap-x-3"
+        data-testid="composer-runtime-secondary"
+      >
+        {editStats.files > 0 && (
+          <span className="inline-flex items-center gap-1">
+            <FilePenLine aria-hidden="true" className="h-3 w-3 shrink-0" />
+            {editSummary}
+          </span>
+        )}
 
-      {status === "failed" && onRetry && (
-        <button
-          aria-label={retryLabel}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={onRetry}
-          title={retryLabel}
-          type="button"
-        >
-          <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-        </button>
-      )}
+        {toolCallLabel !== null && (
+          <span className="inline-flex items-center gap-1">
+            <Wrench aria-hidden="true" className="h-3 w-3 shrink-0" />
+            {toolCallLabel}
+          </span>
+        )}
+
+        {status === "failed" && onRetry && (
+          <button
+            aria-label={retryLabel}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onRetry}
+            title={retryLabel}
+            type="button"
+          >
+            <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     </div>
   )
 }

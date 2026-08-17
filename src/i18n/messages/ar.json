@@ -2721,7 +2721,7 @@
         "cancel": "إلغاء",
         "send": "إرسال",
         "statusGenerating": "جارٍ التفكير...",
-        "statusToolRunning": "جارٍ تشغيل {tool}...",
+        "statusToolRunning": "جارٍ استدعاء أداة...",
         "statusWaitingPermission": "بانتظار إذنك",
         "statusWaitingQuestion": "بانتظار إجابتك",
         "statusWaitingPlanApproval": "بانتظار الموافقة على الخطة",

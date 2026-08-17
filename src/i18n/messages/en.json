@@ -2723,7 +2723,7 @@
         "cancel": "Cancel",
         "send": "Send",
         "statusGenerating": "Thinking...",
-        "statusToolRunning": "Running {tool}...",
+        "statusToolRunning": "Calling tool...",
         "statusWaitingPermission": "Waiting for your permission",
         "statusWaitingQuestion": "Waiting for your answer",
         "statusWaitingPlanApproval": "Waiting for plan approval",

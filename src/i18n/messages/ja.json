@@ -2721,7 +2721,7 @@
         "cancel": "キャンセル",
         "send": "送信",
         "statusGenerating": "考え中...",
-        "statusToolRunning": "{tool} を実行中...",
+        "statusToolRunning": "ツールを呼び出しています...",
         "statusWaitingPermission": "許可を待っています",
         "statusWaitingQuestion": "回答を待っています",
         "statusWaitingPlanApproval": "プランの承認を待っています",

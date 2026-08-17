@@ -46,8 +46,12 @@ describe("ComposerRuntimeBarContent", () => {
     const liveStatus = screen.getByRole("status")
 
     expect(bar).toHaveAttribute("data-composer-runtime-state", "tool_running")
-    expect(bar).toHaveClass("flex-wrap")
+    expect(bar).toHaveClass("min-w-0")
+    expect(bar).not.toHaveClass("flex-wrap")
     expect(bar.querySelector('[class~="hidden"]')).toBeNull()
+    expect(screen.getByTestId("composer-runtime-primary")).toHaveClass(
+      "min-w-0"
+    )
     expect(liveStatus).toHaveTextContent("Calling Read")
     expect(bar).toHaveTextContent("Streaming")
     expect(screen.getByTestId("composer-status-elapsed")).toHaveTextContent(
@@ -56,8 +60,12 @@ describe("ComposerRuntimeBarContent", () => {
     expect(liveStatus).not.toContainElement(
       screen.getByTestId("composer-status-elapsed")
     )
-    expect(bar).toHaveTextContent("2F +5/-1")
-    expect(bar).toHaveTextContent("2 tool uses")
+    expect(screen.getByTestId("composer-runtime-secondary")).toHaveTextContent(
+      "2F +5/-1"
+    )
+    expect(screen.getByTestId("composer-runtime-secondary")).toHaveTextContent(
+      "2 tool uses"
+    )
     expect(screen.getByTestId("composer-runtime-agent")).toHaveClass(
       "animate-pulse",
       "motion-reduce:animate-none"

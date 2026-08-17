@@ -2721,7 +2721,7 @@
         "cancel": "Abbrechen",
         "send": "Senden",
         "statusGenerating": "Denkt nach...",
-        "statusToolRunning": "{tool} wird ausgeführt...",
+        "statusToolRunning": "Tool wird aufgerufen...",
         "statusWaitingPermission": "Wartet auf deine Berechtigung",
         "statusWaitingQuestion": "Wartet auf deine Antwort",
         "statusWaitingPlanApproval": "Wartet auf die Planfreigabe",

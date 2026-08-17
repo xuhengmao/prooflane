@@ -148,9 +148,9 @@ describe("i18n locale key parity vs en.json", () => {
   )
 
   it.each(locales)(
-    "%s preserves the tool-name placeholder",
+    "%s omits the tool-name placeholder",
     (_locale, messages) => {
-      expect(messages.Folder.chat.messageInput.statusToolRunning).toContain(
+      expect(messages.Folder.chat.messageInput.statusToolRunning).not.toContain(
         "{tool}"
       )
     }
