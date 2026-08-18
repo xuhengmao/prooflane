@@ -21,6 +21,7 @@ pub mod chat_channel;
 pub mod commands;
 pub mod conversation_relay;
 pub mod db;
+pub mod design;
 pub mod folder_links;
 pub mod git_credential;
 pub mod git_repo;
