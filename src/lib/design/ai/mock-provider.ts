@@ -5,9 +5,12 @@ import type {
   DesignAiProvider,
   GenerateChangeSetInput,
 } from "./provider"
+import { assertSafeContext } from "./provider"
+import { validateChangeSetShape } from "./changeset-guard"
 
 export class MockDesignAiProvider implements DesignAiProvider {
   async generateChangeSet(input: GenerateChangeSetInput): Promise<AIChangeSet> {
+    assertSafeContext(input.context)
     if (input.scenario === "failure") throw new Error("mock_provider_failure")
     const title = input.document.nodes.find((node) => node.type === "text")
     const operations: Command[] =
@@ -29,7 +32,7 @@ export class MockDesignAiProvider implements DesignAiProvider {
       baseRevision,
       operations,
     })
-    return {
+    const result: AIChangeSet = {
       ...changeSet,
       intent: "Update the fixture title from the prompt",
       targetNodeIds: operations.flatMap((operation) =>
@@ -41,5 +44,8 @@ export class MockDesignAiProvider implements DesignAiProvider {
       provider: "deterministic-mock",
       createdAt: "2026-01-01T00:00:00.000Z",
     }
+    const shape = validateChangeSetShape(result)
+    if (!shape.ok) throw new Error(shape.errors[0])
+    return result
   }
 }

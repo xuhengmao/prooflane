@@ -3,6 +3,8 @@ import type {
   DesignAiProvider,
   GenerateChangeSetInput,
 } from "./provider"
+import { assertSafeContext } from "./provider"
+import { validateChangeSet, validateChangeSetShape } from "./changeset-guard"
 
 export interface RealModelSmokeTransport {
   request(input: GenerateChangeSetInput): Promise<unknown>
@@ -14,9 +16,12 @@ export class OptInRealModelSmokeProvider implements DesignAiProvider {
 
   async generateChangeSet(input: GenerateChangeSetInput): Promise<AIChangeSet> {
     if (!this.transport) throw new Error("real_model_smoke_opt_in_required")
+    assertSafeContext(input.context)
     const result = await this.transport.request(input)
-    if (!result || typeof result !== "object")
-      throw new Error("real_model_smoke_invalid_response")
+    const shape = validateChangeSetShape(result)
+    if (!shape.ok) throw new Error(shape.errors[0])
+    const guard = validateChangeSet(result as AIChangeSet, input.document)
+    if (!guard.ok) throw new Error(guard.errors[0])
     return result as AIChangeSet
   }
 }

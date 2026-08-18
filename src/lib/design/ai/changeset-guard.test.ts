@@ -55,4 +55,52 @@ describe("ChangeSet guard", () => {
       riskLevel: "low",
     })
   })
+
+  it("rejects empty and unknown operations without applying them", () => {
+    const empty = createChangeSet({ baseRevision: "r1", operations: [] })
+    expect(validateChangeSet(empty, document)).toEqual({
+      ok: false,
+      errors: ["empty_changeset"],
+    })
+
+    const unknown = {
+      id: "unknown",
+      baseRevision: "r1",
+      operations: [{ type: "RunScript", id: "title" }],
+    }
+    expect(validateChangeSet(unknown as never, document)).toEqual({
+      ok: false,
+      errors: ["unknown_command"],
+    })
+  })
+
+  it("checks CreateNode parent scope and asset paths", () => {
+    const create = createChangeSet({
+      baseRevision: "r1",
+      operations: [
+        {
+          type: "CreateNode",
+          node: {
+            id: "image",
+            type: "image",
+            parentId: "outside",
+            assetRef: "../secret.png",
+          },
+        },
+      ],
+    })
+    expect(
+      validateChangeSet(create, document, {
+        allowedNodeIds: ["title"],
+        allowCreate: true,
+      })
+    ).toEqual({
+      ok: false,
+      errors: [
+        "scope_violation",
+        "parent_scope_violation",
+        "asset_path_escape",
+      ],
+    })
+  })
 })

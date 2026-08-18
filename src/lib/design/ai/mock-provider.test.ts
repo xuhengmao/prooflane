@@ -43,4 +43,16 @@ describe("MockDesignAiProvider", () => {
     })
     expect(conflict.baseRevision).toBe("stale-revision")
   })
+
+  it("rejects sensitive context before generating a ChangeSet", async () => {
+    const provider = new MockDesignAiProvider()
+    await expect(
+      provider.generateChangeSet({
+        fixtureId: "starter",
+        document,
+        prompt: "x",
+        context: "api_key=do-not-store",
+      })
+    ).rejects.toThrow("sensitive_context_rejected")
+  })
 })
