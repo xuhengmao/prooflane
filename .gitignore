@@ -55,3 +55,7 @@ src-tauri/binaries/
 
 # pnpm local store (pnpm 11+)
 .pnpm-store/
+
+# DES-0 generated review artifacts are retained locally and copied to docs.
+des-0-artifacts/*
+!des-0-artifacts/.gitkeep
