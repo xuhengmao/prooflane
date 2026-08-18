@@ -80,7 +80,7 @@
   },
   {
     "name": "ask_user_question",
-    "description": "Ask the user one or more multiple-choice questions and BLOCK until they answer. The questions render as interactive cards above the user's input box; this call returns only once the user submits their choices (or dismisses the card). Use ONLY when you are blocked on a decision that is genuinely the user's to make — one you cannot resolve from the request, the code, or sensible defaults (e.g. which approach, which format, which library, which of several files). Do NOT use it to ask 'should I proceed?' or to confirm an obvious default, and do NOT use it for open-ended questions that aren't a small set of discrete choices. The user can always pick 'Other' and type a custom answer, so don't add your own 'Other' option. If you want to recommend a choice, put it first and append ' (Recommended)' to its label. Prefer ONE call with a few related questions over many sequential calls.",
+    "description": "Ask the user only when you are missing a required decision or piece of information and you cannot safely continue from the request, the code, or sensible defaults. The questions render as interactive cards above the user's input box; this call returns only once the user submits their choices (or dismisses the card). Use it for discrete blocking decisions that must come from the user, and do NOT ask for a plain-text reply like A/B/C in the body. Do not use it for ordinary advice, approach comparisons, should-we-continue questions, or anything you can reasonably default. If you need free-form information and no explicit choices exist, send options: [] to request a structured free-text answer. If you do have options, the host already supplies the fallback 'Other' choice, so do not add your own. If you want to recommend a choice, put it first and append ' (Recommended)' to its label. Prefer ONE call with a few related questions over many sequential calls.",
     "inputSchema": {
       "type": "object",
       "required": ["questions"],
@@ -108,24 +108,33 @@
                 "description": "If true, the user may select multiple options; otherwise it's a single choice."
               },
               "options": {
-                "type": "array",
-                "minItems": 2,
-                "maxItems": 4,
-                "description": "2-4 selectable choices.",
-                "items": {
-                  "type": "object",
-                  "required": ["label", "description"],
-                  "properties": {
-                    "label": {
-                      "type": "string",
-                      "description": "Concise choice text. Append ' (Recommended)' to the first option to recommend it."
-                    },
-                    "description": {
-                      "type": "string",
-                      "description": "What this choice means or its trade-off."
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "maxItems": 0,
+                    "description": "Use an empty list when the user must provide free-form information and there are no explicit options to present."
+                  },
+                  {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 4,
+                    "description": "2-4 selectable choices.",
+                    "items": {
+                      "type": "object",
+                      "required": ["label", "description"],
+                      "properties": {
+                        "label": {
+                          "type": "string",
+                          "description": "Concise choice text. Append ' (Recommended)' to the first option to recommend it."
+                        },
+                        "description": {
+                          "type": "string",
+                          "description": "What this choice means or its trade-off."
+                        }
+                      }
                     }
                   }
-                }
+                ]
               }
             }
           }

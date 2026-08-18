@@ -123,6 +123,18 @@ const requiredRelayUiKeys = [
   "todoCount",
 ] as const
 
+const requiredLiveTurnStatsKeys = [
+  "thinking",
+  "streaming",
+  "elapsedHours",
+  "elapsedMinutes",
+  "elapsedSeconds",
+  "toolUseCount",
+  "outputRatePending",
+  "outputRateEstimated",
+  "outputRateMeasured",
+] as const
+
 const localizedRelayComponents = [
   "src/components/conversations/relay/relay-entry-status.tsx",
   "src/components/conversations/relay/relay-preview-drawer.tsx",
@@ -148,9 +160,9 @@ describe("i18n locale key parity vs en.json", () => {
   )
 
   it.each(locales)(
-    "%s preserves the tool-name placeholder",
+    "%s omits the tool-name placeholder",
     (_locale, messages) => {
-      expect(messages.Folder.chat.messageInput.statusToolRunning).toContain(
+      expect(messages.Folder.chat.messageInput.statusToolRunning).not.toContain(
         "{tool}"
       )
     }
@@ -179,6 +191,17 @@ describe("conversation relay release copy", () => {
     expect(
       Object.keys(referenceRelay.chat?.relay?.errors ?? {}).sort()
     ).toEqual([...relayErrorCodes].sort())
+  })
+
+  it("defines the required live-turn stats keys in the zh-CN reference locale", () => {
+    const liveTurnStats = (zhCN as Record<string, unknown>).Folder as {
+      chat?: { liveTurnStats?: Record<string, string> }
+    }
+
+    expect(liveTurnStats.chat?.liveTurnStats).toEqual(expect.any(Object))
+    for (const key of requiredLiveTurnStatsKeys) {
+      expect(liveTurnStats.chat?.liveTurnStats).toHaveProperty(key)
+    }
   })
 
   it.each(localizedRelayComponents)(

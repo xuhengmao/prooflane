@@ -2241,7 +2241,12 @@ div.monaco-diff-editor.side-by-side .editor.modified {
 
 .prooflane-composer-runtime-bar {
   --prooflane-composer-status: #38BF63;
+  container-type: inline-size;
   width: 100%;
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(0, auto) auto;
+  column-gap: 0.75rem;
+  overflow: hidden;
   border-bottom: 1px solid
     color-mix(in oklab, var(--prooflane-composer-status) 38%, var(--border));
   border-start-start-radius: calc(var(--radius-xl) - 1px);
@@ -2254,6 +2259,22 @@ div.monaco-diff-editor.side-by-side .editor.modified {
   transition:
     border-bottom-color 150ms ease,
     background-color 150ms ease;
+}
+
+@container (max-width: 28rem) {
+  .prooflane-composer-runtime-secondary {
+    gap: 0.5rem;
+  }
+
+  .prooflane-composer-runtime-secondary-label {
+    max-width: 4.5rem;
+  }
+}
+
+@container (max-width: 22rem) {
+  .prooflane-composer-runtime-secondary-label {
+    display: none;
+  }
 }
 
 .prooflane-composer-runtime-bar[data-composer-runtime-state="failed"] {
@@ -2280,6 +2301,11 @@ div.monaco-diff-editor.side-by-side .editor.modified {
 
 .prooflane-composer-status-dot {
   background-color: var(--prooflane-composer-status);
+}
+
+.prooflane-composer-runtime-token-rate {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .prooflane-composer-runtime-bar[data-composer-runtime-state="failed"]

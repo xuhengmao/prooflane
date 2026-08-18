@@ -437,18 +437,20 @@ describe("MessageInput (RichComposer integration)", () => {
           promptCapabilities={CAPS}
           isPrompting
           promptStartedAt={startedAt}
-          activeToolTitle="Reading project files"
+          activeToolTitle={
+            'powershell -Command "Get-ChildItem -Recurse -Force"'
+          }
         />
       </NextIntlClientProvider>
     )
 
     expect(chrome).toHaveAttribute("data-composer-state", "tool_running")
+    const bar = screen.getByTestId("composer-runtime-bar")
     expect(screen.getByRole("status")).toHaveTextContent(
-      enMessages.Folder.chat.messageInput.statusToolRunning.replace(
-        "{tool}",
-        "Reading project files"
-      )
+      enMessages.Folder.chat.messageInput.statusToolRunning
     )
+    expect(bar).not.toHaveTextContent("Get-ChildItem")
+    expect(screen.queryByTitle(/Get-ChildItem/)).toBeNull()
   })
 
   it("gives waiting for user precedence and removes the flowing status", async () => {

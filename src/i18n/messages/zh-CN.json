@@ -2723,7 +2723,7 @@
         "cancel": "取消",
         "send": "发送",
         "statusGenerating": "正在思考...",
-        "statusToolRunning": "正在运行 {tool}...",
+        "statusToolRunning": "正在调用工具...",
         "statusWaitingPermission": "等待你的授权",
         "statusWaitingQuestion": "等待你的回答",
         "statusWaitingPlanApproval": "等待计划确认",
@@ -3022,7 +3022,10 @@
         "elapsedHours": "{value} 小时",
         "elapsedMinutes": "{value} 分钟",
         "elapsedSeconds": "{value} 秒",
-        "toolUseCount": "{count} 次工具调用"
+        "toolUseCount": "{count} 次工具调用",
+        "outputRatePending": "输出速度待定",
+        "outputRateEstimated": "估算输出速度：{value} 个 tokens/s",
+        "outputRateMeasured": "实测输出速度：{value} 个 tokens/s"
       },
       "jsonTree": {
         "viewRaw": "查看原始 JSON",
