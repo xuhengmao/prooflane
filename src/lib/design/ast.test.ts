@@ -37,6 +37,31 @@ describe("Design AST", () => {
     ])
   })
 
+  it("accepts the complete v1 node vocabulary and rejects non-Text text fields", () => {
+    const result = validateDesignDocument(
+      doc([
+        { id: "document", type: "document" },
+        { id: "page", type: "page", parentId: "document" },
+        { id: "frame", type: "frame", parentId: "page" },
+        { id: "group", type: "group", parentId: "frame" },
+        { id: "rectangle", type: "rectangle", parentId: "group" },
+        { id: "shape", type: "shape", parentId: "group" },
+        { id: "text", type: "text", parentId: "group", text: "hello" },
+        {
+          id: "image",
+          type: "image",
+          parentId: "group",
+          assetRef: "assets/a.png",
+        },
+      ])
+    )
+    expect(result.ok).toBe(true)
+    expect(
+      validateDesignDocument(doc([{ id: "shape", type: "shape", text: "bad" }]))
+        .errors[0].code
+    ).toBe("invalid_field")
+  })
+
   it("does not mutate input and produces stable ordering", () => {
     const input = doc([
       { id: "b", type: "group" },

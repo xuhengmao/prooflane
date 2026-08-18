@@ -42,6 +42,23 @@ export function applyChangeSet(
         message: "ChangeSet base revision is stale",
       },
     }
+  if (
+    selection?.some(
+      (index) =>
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= changeSet.operations.length
+    )
+  )
+    return {
+      ok: false,
+      document,
+      applied: [],
+      error: {
+        code: "invalid_selection",
+        message: "ChangeSet selection contains an invalid operation index",
+      },
+    }
   const selected = selection
     ? changeSet.operations
         .map((_, index) => index)

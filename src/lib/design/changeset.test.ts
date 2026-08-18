@@ -36,4 +36,29 @@ describe("change sets", () => {
     expect(result.ok).toBe(false)
     expect(result.error?.code).toBe("revision_conflict")
   })
+
+  it("rejects invalid selection indexes without throwing", () => {
+    const changeSet = createChangeSet({ baseRevision: "r0", operations: [] })
+    const result = applyChangeSet(base, changeSet, [-1])
+    expect(result.ok).toBe(false)
+    expect(result.error?.code).toBe("invalid_selection")
+    expect(result.document).toBe(base)
+  })
+
+  it("rolls back all changes when a later operation fails", () => {
+    const changeSet = createChangeSet({
+      baseRevision: "r0",
+      operations: [
+        {
+          type: "CreateNode",
+          node: { id: "a", type: "text", parentId: "root", text: "a" },
+        },
+        { type: "SetText", id: "root", text: "invalid" },
+      ],
+    })
+    const result = applyChangeSet(base, changeSet)
+    expect(result.ok).toBe(false)
+    expect(result.document).toBe(base)
+    expect(base.nodes.some((node) => node.id === "a")).toBe(false)
+  })
 })

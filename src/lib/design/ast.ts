@@ -1,12 +1,42 @@
-export type DesignNodeType = "group" | "frame" | "text" | "shape" | "image"
+export type DesignNodeType =
+  | "document"
+  | "page"
+  | "group"
+  | "frame"
+  | "rectangle"
+  | "shape"
+  | "text"
+  | "image"
+
+export interface DesignBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface DesignTransform {
+  x: number
+  y: number
+  scaleX: number
+  scaleY: number
+  rotation: number
+}
 
 export interface DesignNode {
   id: string
   type: DesignNodeType
   parentId?: string
+  children?: string[]
+  bounds?: DesignBounds
+  transform?: DesignTransform
+  opacity?: number
+  visible?: boolean
   locked?: boolean
   text?: string
-  [key: string]: unknown
+  assetRef?: string
+  style?: Record<string, string | number | boolean>
+  metadata?: Record<string, string | number | boolean>
 }
 
 export interface DesignDocument {
@@ -21,6 +51,7 @@ export type ValidationErrorCode =
   | "parent_cycle"
   | "unknown_type"
   | "missing_field"
+  | "invalid_field"
   | "missing_parent"
 export interface ValidationError {
   code: ValidationErrorCode
@@ -34,8 +65,11 @@ export interface ValidationResult {
 }
 
 const nodeTypes = new Set<DesignNodeType>([
+  "document",
+  "page",
   "group",
   "frame",
+  "rectangle",
   "text",
   "shape",
   "image",
@@ -67,6 +101,18 @@ export function validateDesignDocument(
       errors.push({
         code: "missing_field",
         message: "Text node requires text",
+        nodeId: node.id,
+      })
+    if (node.type !== "text" && node.text !== undefined)
+      errors.push({
+        code: "invalid_field",
+        message: "Only Text nodes may define text",
+        nodeId: node.id,
+      })
+    if (node.type === "image" && typeof node.assetRef !== "string")
+      errors.push({
+        code: "missing_field",
+        message: "Image node requires assetRef",
         nodeId: node.id,
       })
     if (node.parentId && !ids.has(node.parentId))

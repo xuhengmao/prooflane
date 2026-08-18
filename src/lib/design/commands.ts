@@ -85,6 +85,8 @@ export function applyCommand(
       inverse = { type: "MoveNode", id: command.id, parentId: target.parentId }
       target.parentId = command.parentId
     } else if (command.type === "SetText") {
+      if (target.type !== "text")
+        return fail(document, "invalid_type", "SetText requires a Text node")
       inverse = { type: "SetText", id: command.id, text: target.text ?? "" }
       target.text = command.text
     } else {
