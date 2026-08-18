@@ -142,6 +142,18 @@ describe("AskQuestionCard", () => {
     })
   })
 
+  it("does not submit a single-select choice until Submit is clicked", () => {
+    const onAnswer = renderCard(single)
+    fireEvent.click(screen.getByRole("radio", { name: /Incremental/ }))
+    expect(onAnswer).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    expect(onAnswer).toHaveBeenCalledTimes(1)
+    expect(onAnswer).toHaveBeenCalledWith("q-1", {
+      answers: [{ questionId: "qa", labels: ["Incremental"] }],
+      declined: false,
+    })
+  })
+
   it("disables Submit until something is selected", () => {
     renderCard(single)
     const submit = screen.getByRole("button", { name: "Submit" })
@@ -166,6 +178,19 @@ describe("AskQuestionCard", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "auth" }))
     fireEvent.click(screen.getByRole("checkbox", { name: "billing" }))
     fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    expect(onAnswer).toHaveBeenCalledWith("q-2", {
+      answers: [{ questionId: "qb", labels: ["auth", "billing"] }],
+      declined: false,
+    })
+  })
+
+  it("does not submit multi-select choices until Submit is clicked", () => {
+    const onAnswer = renderCard(multi)
+    fireEvent.click(screen.getByRole("checkbox", { name: "auth" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: "billing" }))
+    expect(onAnswer).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    expect(onAnswer).toHaveBeenCalledTimes(1)
     expect(onAnswer).toHaveBeenCalledWith("q-2", {
       answers: [{ questionId: "qb", labels: ["auth", "billing"] }],
       declined: false,
@@ -244,6 +269,45 @@ describe("AskQuestionCard", () => {
       answers: [{ questionId: "qf", labels: ["https://api.example.com"] }],
       declined: false,
     })
+  })
+
+  it("keeps a free-text answer after a failed submit and retries the same payload", async () => {
+    const freeText: PendingQuestionState = {
+      question_id: "q-free",
+      created_at: "2026-01-01T00:00:00Z",
+      questions: [
+        {
+          id: "free-1",
+          question: "Where is the workspace?",
+          header: "Workspace",
+          multi_select: false,
+          options: [],
+        },
+      ],
+    }
+    const answer = {
+      answers: [{ questionId: "free-1", labels: ["D:\\workspace\\demo"] }],
+      declined: false,
+    }
+    const onAnswer = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(undefined)
+    renderWith(freeText, onAnswer)
+
+    const input = screen.getByRole("textbox")
+    fireEvent.change(input, { target: { value: "D:\\workspace\\demo" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+
+    expect(onAnswer).toHaveBeenCalledTimes(1)
+    expect(onAnswer).toHaveBeenLastCalledWith("q-free", answer)
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent("Couldn't submit. Please try again.")
+    expect(screen.getByRole("textbox")).toHaveValue("D:\\workspace\\demo")
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    expect(onAnswer).toHaveBeenCalledTimes(2)
+    expect(onAnswer).toHaveBeenLastCalledWith("q-free", answer)
   })
 
   it("masks the input for a secret question", () => {

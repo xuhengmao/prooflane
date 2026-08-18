@@ -2721,7 +2721,7 @@
         "cancel": "취소",
         "send": "보내기",
         "statusGenerating": "생각 중...",
-        "statusToolRunning": "{tool} 실행 중...",
+        "statusToolRunning": "도구를 호출하는 중...",
         "statusWaitingPermission": "권한을 기다리는 중",
         "statusWaitingQuestion": "답변을 기다리는 중",
         "statusWaitingPlanApproval": "계획 승인을 기다리는 중",
@@ -3022,7 +3022,10 @@
         "elapsedHours": "{value}시간",
         "elapsedMinutes": "{value}분",
         "elapsedSeconds": "{value}초",
-        "toolUseCount": "도구 {count}회 사용"
+        "toolUseCount": "도구 {count}회 사용",
+        "outputRatePending": "출력 속도 대기 중",
+        "outputRateEstimated": "추정 출력 속도: 초당 {value} 토큰",
+        "outputRateMeasured": "실측 출력 속도: 초당 {value} 토큰"
       },
       "jsonTree": {
         "viewRaw": "원본 JSON 보기",

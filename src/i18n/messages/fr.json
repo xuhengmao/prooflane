@@ -2721,7 +2721,7 @@
         "cancel": "Annuler",
         "send": "Envoyer",
         "statusGenerating": "Réflexion en cours...",
-        "statusToolRunning": "Exécution de {tool}...",
+        "statusToolRunning": "Appel d’un outil...",
         "statusWaitingPermission": "En attente de votre autorisation",
         "statusWaitingQuestion": "En attente de votre réponse",
         "statusWaitingPlanApproval": "En attente de l'approbation du plan",
@@ -3022,7 +3022,10 @@
         "elapsedHours": "{value} h",
         "elapsedMinutes": "{value} min",
         "elapsedSeconds": "{value} s",
-        "toolUseCount": "{count, plural, one {# appel d'outil} other {# appels d'outil}}"
+        "toolUseCount": "{count, plural, one {# appel d'outil} other {# appels d'outil}}",
+        "outputRatePending": "Vitesse de sortie en attente",
+        "outputRateEstimated": "Vitesse de sortie estimée : {value} jetons par seconde",
+        "outputRateMeasured": "Vitesse de sortie mesurée : {value} jetons par seconde"
       },
       "jsonTree": {
         "viewRaw": "Afficher le JSON brut",

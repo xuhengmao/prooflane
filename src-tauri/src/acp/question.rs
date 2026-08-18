@@ -80,11 +80,10 @@ pub struct QuestionSpec {
     pub header: String,
     /// When true the user may select multiple options.
     pub multi_select: bool,
-    /// The choices (0..=[`MAX_OPTIONS`]). Empty means free-text: the card
-    /// renders only its always-present "Other" input (codex `request_user_input`
-    /// and MCP-server elicitations both ask open questions this way; the
-    /// codeg-mcp ask tool still requires [`MIN_OPTIONS`] at its own parse
-    /// layer).
+    /// The choices (0 or [`MIN_OPTIONS`]..=[`MAX_OPTIONS`]). Empty means
+    /// free-text: the card renders only its always-present "Other" input
+    /// (codex `request_user_input` and MCP-server elicitations both ask open
+    /// questions this way; the codeg-mcp ask tool also accepts that shape).
     pub options: Vec<QuestionOption>,
     /// True when the answer is a secret (codex `request_user_input` marks API
     /// keys etc. with `_meta.codex.isSecret`): the card masks the free-text
@@ -187,7 +186,8 @@ pub trait SessionQuestionAccess: Send + Sync {
 /// Validate + parse the MCP `ask_user_question` arguments into typed
 /// [`QuestionSpec`]s, minting a stable id per question. Enforces the contract
 /// (1..=[`MAX_QUESTIONS`] questions, each with a non-empty question + header
-/// ≤ [`MAX_HEADER_CHARS`] and [`MIN_OPTIONS`]..=[`MAX_OPTIONS`] labeled options)
+/// ≤ [`MAX_HEADER_CHARS`] and either 0 or [`MIN_OPTIONS`]..=[`MAX_OPTIONS`]
+/// labeled options)
 /// so a malformed call is rejected synchronously with a helpful message the LLM
 /// can fix, rather than round-tripping bad data. `multiSelect` defaults to
 /// false; an option `description` defaults to empty (lenient).
@@ -236,9 +236,9 @@ pub fn parse_questions(arguments: &Value) -> Result<Vec<QuestionSpec>, String> {
             .get("options")
             .and_then(|v| v.as_array())
             .ok_or_else(|| format!("questions[{qi}] is missing an `options` array"))?;
-        if opts.len() < MIN_OPTIONS || opts.len() > MAX_OPTIONS {
+        if opts.len() == 1 || opts.len() > MAX_OPTIONS {
             return Err(format!(
-                "questions[{qi}] must have between {MIN_OPTIONS} and {MAX_OPTIONS} options"
+                "questions[{qi}] must have either 0 or between {MIN_OPTIONS} and {MAX_OPTIONS} options"
             ));
         }
         let mut options = Vec::with_capacity(opts.len());
@@ -339,14 +339,13 @@ pub fn validate_specs(specs: &[QuestionSpec]) -> Result<(), String> {
                 "questions[{qi}] `header` exceeds {MAX_HEADER_CHARS} characters"
             ));
         }
-        // Unlike `parse_questions` (the codeg-mcp tool contract, which keeps
-        // its [`MIN_OPTIONS`] floor), typed specs allow 0..=[`MAX_OPTIONS`]:
-        // a question with no options is a legal free-text ask — the card
-        // renders its always-present "Other" input alone (codex elicitation
-        // and MCP-server forms ask open questions this way).
-        if q.options.len() > MAX_OPTIONS {
+        // Unlike `parse_questions` (the codeg-mcp tool contract), typed specs
+        // allow either a pure free-text ask (0 options) or a structured
+        // decision (2..=[`MAX_OPTIONS`] options). A single option is not a
+        // valid choice set and must not sneak past the parse layer.
+        if q.options.len() == 1 || q.options.len() > MAX_OPTIONS {
             return Err(format!(
-                "questions[{qi}] must have at most {MAX_OPTIONS} options"
+                "questions[{qi}] must have either 0 or between {MIN_OPTIONS} and {MAX_OPTIONS} options"
             ));
         }
         let mut seen_labels = std::collections::HashSet::new();
@@ -1348,6 +1347,31 @@ mod tests {
         assert!(!qs[0].id.is_empty());
     }
 
+    #[test]
+    fn parse_questions_accepts_free_text_but_rejects_one_option() {
+        let free = json!({
+            "questions": [{
+                "question": "Which path should I use?",
+                "header": "Path",
+                "multiSelect": false,
+                "options": []
+            }]
+        });
+        assert!(parse_questions(&free).unwrap()[0].options.is_empty());
+
+        let one = json!({
+            "questions": [{
+                "question": "Choose",
+                "header": "Choice",
+                "multiSelect": false,
+                "options": [{ "label": "Only", "description": "" }]
+            }]
+        });
+        assert!(parse_questions(&one)
+            .unwrap_err()
+            .contains("0 or between 2 and 4"));
+    }
+
     fn elicitation_raw(props: Value, required: Value) -> Value {
         json!({
             "mode": "form",
@@ -1803,6 +1827,10 @@ mod tests {
         assert!(
             validate_specs(&[spec("ok", 0, 0)]).is_ok(),
             "0 options is a legal free-text ask (elicitation / MCP forms)"
+        );
+        assert!(
+            validate_specs(&[spec("ok", 1, 0)]).is_err(),
+            "1 option is not a valid discrete choice and must not bypass parse"
         );
         assert!(
             validate_specs(&[spec("ok", MAX_OPTIONS + 1, 0)]).is_err(),

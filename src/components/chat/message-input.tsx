@@ -895,7 +895,7 @@ export function MessageInput({
       case "generating":
         return t("statusGenerating")
       case "tool_running":
-        return t("statusToolRunning", { tool: activeToolTitle ?? "" })
+        return t("statusToolRunning")
       case "waiting_for_user":
         switch (waitingReason) {
           case "permission":

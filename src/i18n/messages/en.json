@@ -2723,7 +2723,7 @@
         "cancel": "Cancel",
         "send": "Send",
         "statusGenerating": "Thinking...",
-        "statusToolRunning": "Running {tool}...",
+        "statusToolRunning": "Calling tool...",
         "statusWaitingPermission": "Waiting for your permission",
         "statusWaitingQuestion": "Waiting for your answer",
         "statusWaitingPlanApproval": "Waiting for plan approval",
@@ -3019,11 +3019,14 @@
       "liveTurnStats": {
         "thinking": "Thinking...",
         "streaming": "Streaming",
-        "elapsedHours": "{value}h",
-        "elapsedMinutes": "{value}m",
-        "elapsedSeconds": "{value}s",
-        "toolUseCount": "{count} tool {count, plural, one {use} other {uses}}"
-      },
+      "elapsedHours": "{value}h",
+      "elapsedMinutes": "{value}m",
+      "elapsedSeconds": "{value}s",
+      "toolUseCount": "{count} tool {count, plural, one {use} other {uses}}",
+      "outputRatePending": "Output speed pending",
+      "outputRateEstimated": "Estimated output speed: {value} tokens per second",
+      "outputRateMeasured": "Measured output speed: {value} tokens per second"
+    },
       "jsonTree": {
         "viewRaw": "Show raw JSON",
         "viewTree": "Show tree",
