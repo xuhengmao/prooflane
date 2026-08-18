@@ -62,7 +62,7 @@ Prooflane 不把“智能体回复结束”当作“任务完成”。目标流�
 
 卡片支持单选、多选、宿主自动补出的“其他”输入，以及 `options=[]` 的无预设选项自由输入。用户可以先修改所有选择和补充文本，点击“确认”后才一次性提交；提交失败会保留已选内容和输入内容并允许重试，提交成功后 Agent 会从原阻塞点继续执行。
 
-![Prooflane 结构化决策卡片支持单选、多选、“其他”和自由输入](docs/screenshots/structured-decision-card.png)
+![Prooflane 结构化决策卡片展示多选、“其他”输入和提交失败重试状态](docs/screenshots/structured-decision-card.png)
 
 ## 路线图
 
