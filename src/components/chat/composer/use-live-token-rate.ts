@@ -23,6 +23,16 @@ const EMPTY_SNAPSHOT: LiveTokenRateSnapshot = {
   source: "estimated",
 }
 
+interface PublishedSnapshot {
+  runId: string | null
+  snapshot: LiveTokenRateSnapshot
+}
+
+const EMPTY_PUBLISHED_SNAPSHOT: PublishedSnapshot = {
+  runId: null,
+  snapshot: EMPTY_SNAPSHOT,
+}
+
 function isAssistantLiveMessage(
   liveMessage: LiveMessage | null
 ): liveMessage is LiveMessage {
@@ -49,10 +59,15 @@ export function useLiveTokenRate(
     samplerRef.current = new LiveTokenRateSampler()
   }
 
-  const [snapshot, setSnapshot] =
-    useState<LiveTokenRateSnapshot>(EMPTY_SNAPSHOT)
+  const [snapshot, setSnapshot] = useState<PublishedSnapshot>(
+    EMPTY_PUBLISHED_SNAPSHOT
+  )
   const runId = buildRunId(input.liveMessage)
   const visibleText = extractVisibleAssistantText(input.liveMessage)
+  const displaySnapshot =
+    input.active && runId !== null && snapshot.runId === runId
+      ? snapshot.snapshot
+      : EMPTY_SNAPSHOT
 
   useEffect(() => {
     const sampler = samplerRef.current
@@ -60,8 +75,12 @@ export function useLiveTokenRate(
 
     if (!input.active || runId === null) {
       sampler.reset()
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 运行结束时必须同一轮渲染清空旧速度，避免复用残留快照。
-      setSnapshot(EMPTY_SNAPSHOT)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- render 已同步返回空快照；这里清状态 key，避免同一 run 再激活时复用旧速度。
+      setSnapshot((current) =>
+        current.runId === null && sameSnapshot(current.snapshot, EMPTY_SNAPSHOT)
+          ? current
+          : EMPTY_PUBLISHED_SNAPSHOT
+      )
       return
     }
 
@@ -74,7 +93,11 @@ export function useLiveTokenRate(
         now: Date.now(),
       })
 
-      setSnapshot((current) => (sameSnapshot(current, next) ? current : next))
+      setSnapshot((current) =>
+        current.runId === runId && sameSnapshot(current.snapshot, next)
+          ? current
+          : { runId, snapshot: next }
+      )
     }
 
     publish()
@@ -85,5 +108,5 @@ export function useLiveTokenRate(
     }
   }, [input.active, input.providerSample, runId, visibleText])
 
-  return snapshot
+  return displaySnapshot
 }

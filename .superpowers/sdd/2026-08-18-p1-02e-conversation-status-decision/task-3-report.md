@@ -64,3 +64,62 @@ pnpm exec tsc --noEmit
 
 - `pnpm exec tsc --noEmit` 仍被仓库既有的 release 测试类型错误阻塞。
 - 首版没有 provider 样本接入，因此运行时多数 Agent 会显示估算速度前缀 `≈`。
+
+## Fix round 1（2026-08-18）
+
+### RED
+
+- 命令（临时将 `%APPDATA%\npm` 放到 `PATH` 前，以使用本机可用的 `pnpm 11.9.0`，避免 Corepack shim 签名校验问题）：
+
+```powershell
+pnpm test -- src/components/chat/composer/use-live-token-rate.test.tsx src/components/chat/composer/composer-runtime-bar.test.tsx
+```
+
+- 结果：失败符合预期。
+- 失败点：
+  - `use-live-token-rate.test.tsx` 新增的 run 切换 render 记录断言捕获到旧 `{ tokensPerSecond: 2, source: "estimated" }`。
+  - `use-live-token-rate.test.tsx` 新增的 `active=false` render 记录断言同样捕获到旧 `2/s`。
+  - `composer-runtime-bar.test.tsx` 通过。
+
+### GREEN
+
+- 命令：
+
+```powershell
+pnpm test -- src/components/chat/composer/use-live-token-rate.test.tsx src/components/chat/composer/composer-runtime-bar.test.tsx src/components/chat/composer/live-token-rate.test.ts
+```
+
+- 结果：通过，3 个测试文件，21 个测试全部通过。
+
+- 命令：
+
+```powershell
+pnpm eslint -- src/components/chat/composer/use-live-token-rate.ts src/components/chat/composer/use-live-token-rate.test.tsx src/components/chat/composer/composer-runtime-bar.tsx src/components/chat/composer/composer-runtime-bar.test.tsx
+```
+
+- 结果：通过，无错误。
+
+- 命令：
+
+```powershell
+git diff --check
+```
+
+- 结果：通过，无空白错误。
+
+### 修复说明
+
+- `useLiveTokenRate` 的 React state 改为携带 `{ runId, snapshot }`。
+- render 阶段只在 `active === true` 且当前 `${liveMessage.id}:${liveMessage.startedAt}` 与已发布 `runId` 一致时返回已发布快照；新 run、非 assistant run 或 inactive 当前 render 立即返回 `{ tokensPerSecond: null, source: "estimated" }`。
+- `sampler.reset()`、500ms interval、interval cleanup 仍保留在 effect 中；没有在 render 中调用 sampler。
+- 状态条补充非 active 状态覆盖：即使传入非空速度，`failed` 状态也不渲染 `composer-token-rate`。
+
+### 自审
+
+- 保留正文增长、同一 run 窗口、500ms 发布节流、卸载清理行为。
+- 状态条速度仍只在 `generating` / `tool_running` 显示；主列 grid 优先于 secondary，重试按钮测试仍覆盖可见性。
+- 未修改 Task 2 sampler、README、Rust 文件；未触碰 `.superpowers/brainstorm/`。
+
+### 顾虑
+
+- 直接执行默认 `pnpm` shim 会触发 Corepack keyid 错误；本轮验证通过临时 PATH 优先使用 `%APPDATA%\npm\pnpm.cmd` 完成，版本同为 `11.9.0`。

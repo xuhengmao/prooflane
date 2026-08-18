@@ -194,10 +194,12 @@ describe("ComposerRuntimeBarContent", () => {
       elapsedLabel: null,
       phase: null,
       onRetry,
+      tokenRate: makeTokenRate({ tokensPerSecond: 96, source: "estimated" }),
     })
 
     expect(screen.getByRole("status")).toHaveTextContent(error)
     expect(screen.getByTitle(error)).toBeInTheDocument()
+    expect(screen.queryByTestId("composer-token-rate")).not.toBeInTheDocument()
     expect(screen.getByTestId("composer-runtime-agent")).not.toHaveClass(
       "animate-pulse"
     )
