@@ -102,7 +102,7 @@ const astBytes = (
 
 const isEscapingAssetPath = (assetRef: string): boolean => {
   if (!assetRef || assetRef.includes("\0")) return true
-  const normalized = assetRef.replaceAll("\\", "/")
+  const normalized = assetRef.replace(/\\/g, "/")
   if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) return true
   const parts = normalized.split("/")
   for (const part of parts) {
