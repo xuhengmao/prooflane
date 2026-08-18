@@ -617,7 +617,7 @@ git commit -m "docs(P1-02E): 介绍结构化选择卡片能力"
 
 ---
 
-### Task 7：全量门禁、视觉验收、外部文档同步和 Windows 打包
+### Task 7：全量门禁、视觉验收、外部文档同步和 Windows 打包（自动化验收完成）
 
 **文件：**
 - 修改：`docs/superpowers/specs/2026-08-18-p1-02e-conversation-status-decision-design.md`
@@ -628,7 +628,7 @@ git commit -m "docs(P1-02E): 介绍结构化选择卡片能力"
 - 消费：任务 1 至 6 的提交。
 - 产出：前后端门禁结果、深浅主题和窄宽度证据、可安装的 Windows NSIS 包、仓库/外部文档一致状态。
 
-- [ ] **步骤 1：运行前端完整门禁**
+- [x] **步骤 1：运行前端完整门禁**
 
 ```powershell
 pnpm test
@@ -637,9 +637,9 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-预期：命令全部以 0 退出；不允许通过跳过测试或降低 lint 规则获得绿灯。
+结果：测试 335/335 文件、4169/4169 通过；lint 和 Next build 退出码 0、生成 33 个静态页面。严格 TypeScript 仅保留仓库既有的两个 release 测试基线错误，未新增错误。
 
-- [ ] **步骤 2：运行 Rust 完整门禁**
+- [x] **步骤 2：运行 Rust 完整门禁**
 
 ```powershell
 Set-Location src-tauri
@@ -650,13 +650,13 @@ cargo test --lib --no-default-features
 cargo clippy --no-default-features --bin codeg-mcp -- -D warnings
 ```
 
-预期：全部通过；若出现与本分支无关的既有失败，记录准确命令、测试名和日志，不得笼统写“环境问题”。
+结果：两组 Clippy 通过，`ask_user_question` companion 为 4/4；P1-02E 问题模块在注入 Common Controls v6 manifest 的临时测试副本中为 37/37。默认 Windows 测试二进制的 `STATUS_ENTRYPOINT_NOT_FOUND` 和仓库既有 `cargo fmt --check` 差异已在规格记录。
 
-- [ ] **步骤 3：完成视觉与无障碍验收**
+- [ ] **步骤 3：完成视觉与无障碍验收（保留安装后人工复测）**
 
-至少检查：浅色/深色、中文/英文、常规宽度/窄窗口、生成中/工具中/等待/失败/停止、`prefers-reduced-motion`。确认状态条单行不遮挡按钮，长错误可截断且 `title` 可读，速度没有 `aria-live` 高频播报，工具详情只在时间线折叠卡片中可查看。
+自动化已覆盖状态条、窄窗口契约、无障碍文案和 reduced-motion 分支；真实第三方 Agent 阻塞会话及安装包启动后的深浅主题/主路径人工复测尚未在当前环境完成。
 
-- [ ] **步骤 4：更新规格状态并同步外部文档**
+- [x] **步骤 4：更新规格状态并同步外部文档**
 
 把仓库规格状态从“等待实施计划”改为“已实现，等待/完成验收”（按实际门禁结果选择），补充实际测试和安装包路径。将仓库专项规格与外部 `15-...设计规格.md` 保持内容一致，并把本计划原样同步为外部 `16-...实施计划.md`。
 
@@ -671,12 +671,12 @@ Get-FileHash -Algorithm SHA256 'D:\工作相关\工作文件\工作资料\AI项�
 
 预期：每一对 SHA256 相同。
 
-- [ ] **步骤 5：构建 Windows 安装包**
+- [x] **步骤 5：构建 Windows 安装包（NSIS）**
 
 回到仓库根目录运行：
 
 ```powershell
-pnpm tauri build
+pnpm tauri build --bundles nsis
 ```
 
 预期产物：
@@ -685,9 +685,9 @@ pnpm tauri build
 src-tauri/target/release/bundle/nsis/Prooflane_0.24.1-rc.1_x64-setup.exe
 ```
 
-记录文件大小、SHA256 和构建时间；启动安装包后复测工具状态、速度和选择卡片主路径。
+结果：安装包已生成，大小 `56,529,868` 字节，SHA256 `0D4FE883667FB49A1215CBE321EB011B17CD51016F2ADE4882AD47256D6615EE`，构建时间 `2026-08-18 13:48:26 +08:00`。默认 MSI 因 `0.24.1-rc.1` 预发布标识规则失败；NSIS 生成后因缺少 `TAURI_SIGNING_PRIVATE_KEY` 在 updater 签名步骤返回 1，但不影响本地安装包测试。
 
-- [ ] **步骤 6：检查变更范围并提交文档状态**
+- [x] **步骤 6：检查变更范围并提交文档状态**
 
 ```powershell
 git status --short
@@ -697,7 +697,7 @@ git diff --stat origin/main...HEAD
 
 不得提交 `.superpowers/brainstorm/` 临时内容、`node_modules`、`.next`、`out`、`target` 或安装包二进制。
 
-提交：
+提交（已完成）：
 
 ```powershell
 git add docs/superpowers/specs/2026-08-18-p1-02e-conversation-status-decision-design.md
@@ -708,14 +708,16 @@ git commit -m "docs(P1-02E): 同步实现与验收状态"
 
 ## 最终验收清单
 
-- [ ] 工具状态始终是通用文案，原始标题/命令/参数不在状态条 DOM、tooltip 或无障碍名称中。
-- [ ] 时间线工具卡片仍可展开，审计信息没有被删除。
-- [ ] 真实输出速度无 `≈`，正文估算速度有 `≈`，未就绪和零速度格式正确。
-- [ ] 速度不会跨会话、run、停止、失败、等待或重连串值。
-- [ ] 状态条窄窗口不换行、不增高输入框、不覆盖操作按钮。
-- [ ] 0 项问题显示自由输入，1 项问题被后端明确拒绝，2～4 项问题正常显示选择。
-- [ ] 单选、多选、“其他”和自由输入都必须点击确认才提交。
-- [ ] 提交失败保留用户选择，重试不会重复或丢失答案。
-- [ ] 普通 Markdown 建议列表不生成卡片；支持结构化通道的 Agent 不再把手工 `A/B/C` 作为正常路径。
-- [ ] README 已准确介绍结构化选择卡片的触发边界与完整交互。
-- [ ] 前端、Rust、lint、类型、构建、Clippy 和 Windows 打包均有实际运行证据。
+`[x]` 表示已有自动化或构建证据；`[ ]` 表示需要安装后人工或真实第三方 Agent 复测。
+
+- [x] 工具状态始终是通用文案，原始标题/命令/参数不在状态条 DOM、tooltip 或无障碍名称中。
+- [x] 时间线工具卡片仍可展开，审计信息没有被删除。
+- [x] 真实输出速度无 `≈`，正文估算速度有 `≈`，未就绪和零速度格式正确。
+- [x] 速度不会跨会话、run、停止、失败、等待或重连串值。
+- [x] 状态条窄窗口不换行、不增高输入框、不覆盖操作按钮。
+- [x] 0 项问题显示自由输入，1 项问题被后端明确拒绝，2～4 项问题正常显示选择。
+- [x] 单选、多选、“其他”和自由输入都必须点击确认才提交。
+- [x] 提交失败保留用户选择，重试不会重复或丢失答案。
+- [x] 普通 Markdown 建议列表不生成卡片；支持结构化通道的 Agent 不再把手工 `A/B/C` 作为正常路径。
+- [x] README 已准确介绍结构化选择卡片的触发边界与截图实际交互。
+- [x] 前端、Rust、lint、构建、Clippy 和 NSIS 产物均有实际证据；类型基线、fmt、MSI 和 updater 签名限制已记录。

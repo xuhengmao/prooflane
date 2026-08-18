@@ -4,7 +4,7 @@
 >
 > 更新日期：2026-08-18
 >
-> 状态：设计已确认，等待实施计划
+> 状态：已实现，自动化验收完成；Windows NSIS 已生成，updater 签名待配置
 >
 > 优先级：P1，先于 `P1-03/04A`
 >
@@ -286,3 +286,45 @@ estimated_tokens = CJK_codepoints + ceil(non_whitespace_non_CJK_codepoints / 4)
 - 实现完成后在 README 的核心会话能力中新增“结构化选择卡片”介绍，明确必要决策才触发、支持单选/多选/“其他”输入、用户确认后 Agent 从阻塞点继续；代码完成前不把规划写成现成功能。
 - PR 描述必须区分真实 Token 速度和估算速度，并附窄窗口与选择卡片截图。
 - 本阶段不需要数据库回滚；代码回滚后旧客户端忽略新增可选运行时字段。
+
+## 15. 实施与验收记录（2026-08-18）
+
+### 15.1 前端门禁
+
+- `pnpm test`：335 个测试文件、4169 个测试全部通过。
+- `pnpm lint`：退出码 0。
+- `pnpm build`：退出码 0，Next.js 生成 33 个静态页面。
+- `pnpm exec tsc --noEmit`：仅保留仓库既有基线错误
+  `src/lib/release-secrets.test.ts:27` 和 `src/lib/release-version.test.ts:25`，本阶段未新增类型错误。
+- 速度采样器新增的缩短检测回归为 12/12 通过；提交失败、结构化提问和结果卡相关回归已纳入前述全量测试。
+
+### 15.2 Rust 门禁与 Windows 限制
+
+- `cargo clippy --all-targets --features test-utils -- -D warnings`：通过。
+- `cargo clippy --no-default-features --bin codeg-mcp -- -D warnings`：通过。
+- `cargo test --lib --no-default-features ask_user_question`：4/4 通过。
+- P1-02E 问题模块在临时注入 Common Controls v6 manifest 的测试副本中为 37/37 通过。
+- 默认 Windows 测试二进制缺少 Common Controls v6 manifest 时会加载系统 `comctl32.dll` 5.82，触发
+  `STATUS_ENTRYPOINT_NOT_FOUND`；这属于测试宿主 manifest 限制，不是问题协议断言失败。
+- `cargo fmt --all -- --check` 仍报告仓库范围既有格式差异，未对未参与本阶段的文件做全仓格式化。
+
+### 15.3 Windows NSIS 产物
+
+使用 `pnpm tauri build --bundles nsis` 生成：
+
+```text
+src-tauri/target/release/bundle/nsis/Prooflane_0.24.1-rc.1_x64-setup.exe
+```
+
+记录：
+
+- 构建时间：`2026-08-18 13:48:26 +08:00`
+- 文件大小：`56,529,868` 字节
+- SHA256：`0D4FE883667FB49A1215CBE321EB011B17CD51016F2ADE4882AD47256D6615EE`
+- 文件头：`MZ`（Windows PE）
+
+默认 `pnpm tauri build` 会在 MSI 打包阶段拒绝 `0.24.1-rc.1` 的非纯数字预发布标识，因此本阶段只生成 NSIS。NSIS 文件已经生成，但由于环境未提供 `TAURI_SIGNING_PRIVATE_KEY`，updater 签名步骤返回退出码 1；当前 `.sig` 文件不是本次构建生成的签名，不能用于发布更新。
+
+### 15.4 证据边界
+
+`docs/screenshots/structured-decision-card.png` 是浏览器中真实 `AskQuestionCard` 组件的实机 UI 预览，展示多选、“其他”输入和提交失败重试状态；当前环境没有完成可重复的外部第三方 Agent 阻塞会话录制。Agent 协议、问题校验、确认、失败重试和恢复链路由前端/Rust 自动化测试覆盖，安装包启动后的人工主路径复测及 updater 私钥配置仍是发布前工作。
