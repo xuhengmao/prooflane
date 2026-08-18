@@ -163,7 +163,9 @@ export class LiveTokenRateSampler {
       input.now - this.lastObservedAt > WINDOW_MS
     const sourceChanged =
       this.currentSource !== null && this.currentSource !== source
-    const textShrank = visibleLength < this.lastVisibleTextLength
+    const textShrank =
+      visibleLength < this.lastVisibleTextLength ||
+      visibleTokens < this.lastVisibleTokens
 
     if (
       runChanged ||

@@ -317,6 +317,21 @@ describe("LiveTokenRateSampler", () => {
     })
   })
 
+  it("resets when estimated tokens shrink even if visible text length stays the same", () => {
+    const sampler = new LiveTokenRateSampler()
+
+    update(sampler, { visibleText: "你好ab", now: 0 })
+    expect(update(sampler, { visibleText: "你好ab", now: 1000 })).toEqual({
+      tokensPerSecond: 0,
+      source: "estimated",
+    })
+
+    expect(update(sampler, { visibleText: "abcd", now: 1500 })).toEqual({
+      tokensPerSecond: null,
+      source: "estimated",
+    })
+  })
+
   it("rejects non-finite timestamps without publishing invalid rates", () => {
     const sampler = new LiveTokenRateSampler()
 
