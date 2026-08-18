@@ -1,0 +1,29 @@
+{
+  "generatedAt": "2026-08-18T17:56:48.070Z",
+  "dependencies": [
+    {
+      "name": "@playwright/test",
+      "version": "1.51.1",
+      "source": "package.json",
+      "license": "需核对上游 LICENSE",
+      "status": "review_required",
+      "replacementCost": "中"
+    },
+    {
+      "name": "canvaskit-wasm",
+      "version": "0.40.0",
+      "source": "package.json",
+      "license": "需核对上游 LICENSE",
+      "status": "review_required",
+      "replacementCost": "中"
+    }
+  ],
+  "fonts": [
+    {
+      "name": "system-ui/Noto Sans CJK SC/Segoe UI Emoji",
+      "source": "system",
+      "status": "allowed"
+    }
+  ],
+  "blocking": false
+}

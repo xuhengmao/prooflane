@@ -12,6 +12,8 @@
     "design:fixtures": "node scripts/design-fixtures/generate-fixtures.mjs",
     "design:benchmark": "node scripts/design-benchmark.mjs",
     "design:report": "node scripts/design-report.mjs",
+    "design:license-audit": "node scripts/design-license-audit.mjs",
+    "design:go-no-go": "node scripts/design-go-no-go.mjs",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
