@@ -9,6 +9,11 @@ import type {
   RendererAdapter,
   RendererId,
 } from "@/lib/design/renderers/renderer"
+import {
+  previewChangeSet,
+  validateChangeSet,
+} from "@/lib/design/ai/changeset-guard"
+import { MockDesignAiProvider } from "@/lib/design/ai/mock-provider"
 
 const FIXTURES: Record<string, DesignDocument> = {
   starter: {
@@ -55,6 +60,8 @@ export function DesignLab() {
   const [status, setStatus] = useState("等待渲染")
   const [nodeCount, setNodeCount] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [aiStatus, setAiStatus] = useState("未运行 AI 验证")
+  const [aiPreview, setAiPreview] = useState<string>()
   const capability = useMemo(
     () => createRenderer(rendererId).capability,
     [rendererId]
@@ -88,6 +95,33 @@ export function DesignLab() {
     setStatus(`已采样 ${nodeCount} 个节点 · ${duration.toFixed(2)}ms`)
   }
 
+  const runAiValidation = async () => {
+    const provider = new MockDesignAiProvider()
+    try {
+      const changeSet = await provider.generateChangeSet({
+        fixtureId,
+        document,
+        prompt: "由 Mock AI 生成的标题",
+      })
+      const guard = validateChangeSet(changeSet, document, {
+        allowedNodeIds: changeSet.targetNodeIds,
+      })
+      if (!guard.ok) {
+        setAiStatus(`守卫拒绝：${guard.errors.join(", ")}`)
+        setAiPreview(undefined)
+        return
+      }
+      const preview = previewChangeSet(document, changeSet, changeSet.riskLevel)
+      setAiStatus("ChangeSet 已通过守卫，等待用户确认")
+      setAiPreview(
+        `${preview.changedNodeIds.length} 个节点将被修改 · ${preview.beforeRevision} → ${preview.afterRevision}`
+      )
+    } catch (error) {
+      setAiStatus(error instanceof Error ? error.message : "AI 验证失败")
+      setAiPreview(undefined)
+    }
+  }
+
   return (
     <main
       style={{
@@ -114,6 +148,9 @@ export function DesignLab() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => void runAiValidation()}>
+            Validate ChangeSet
+          </button>
           <button type="button" onClick={sample}>
             采样性能
           </button>
@@ -200,6 +237,13 @@ export function DesignLab() {
           >
             <span>{status}</span>
             <span>{capability?.available ? "available" : "diagnostic"}</span>
+          </div>
+          <div
+            data-testid="design-lab-ai-status"
+            style={{ marginBottom: 10, fontSize: 12, color: "#536071" }}
+          >
+            {aiStatus}
+            {aiPreview ? ` · ${aiPreview}` : ""}
           </div>
           <div
             ref={hostRef}

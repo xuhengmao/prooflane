@@ -17,4 +17,12 @@ describe("DesignLab", () => {
       (await screen.findAllByText(/CanvasKit WASM/)).length
     ).toBeGreaterThan(0)
   })
+
+  it("previews a deterministic ChangeSet without applying it", async () => {
+    render(<DesignLab />)
+    fireEvent.click(screen.getByRole("button", { name: "Validate ChangeSet" }))
+    expect(await screen.findByTestId("design-lab-ai-status")).toHaveTextContent(
+      "等待用户确认"
+    )
+  })
 })
