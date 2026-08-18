@@ -596,7 +596,8 @@ async fn build_tools_call_spawn(
             // Validate + parse the schema HERE so a malformed call gets a
             // synchronous -32602 the LLM can fix, rather than round-tripping bad
             // data. Stable per-question ids are minted now and flow through to
-            // the answer correlation.
+            // the answer correlation. The public schema allows either pure
+            // free-text (`options: []`) or a structured 2..=4 choice set.
             let questions = match parse_questions(&arguments) {
                 Ok(qs) => qs,
                 Err(msg) => return LineAction::Respond(err(id, -32602, msg)),
@@ -2261,6 +2262,42 @@ mod tests {
             .await,
         );
         assert_eq!(on, vec!["ask_user_question".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn ask_user_question_schema_supports_structured_decisions_and_free_text() {
+        let resp = unwrap_respond(
+            dispatch_with_features(
+                ASK_ONLY,
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            )
+            .await,
+        );
+        let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
+        let ask = tools
+            .iter()
+            .find(|t| t["name"] == "ask_user_question")
+            .unwrap();
+        let description = ask["description"].as_str().unwrap();
+        assert!(description.contains("do NOT ask for a plain-text reply like A/B/C in the body"));
+        assert!(description.contains("options: []"));
+
+        let any_of = ask["inputSchema"]["properties"]["questions"]["items"]["properties"]
+            ["options"]["anyOf"]
+            .as_array()
+            .unwrap();
+        assert!(
+            any_of
+                .iter()
+                .any(|schema| schema["maxItems"] == 0 && schema["minItems"].is_null()),
+            "options schema must allow empty options for required free-text input"
+        );
+        assert!(
+            any_of
+                .iter()
+                .any(|schema| { schema["minItems"] == json!(2) && schema["maxItems"] == json!(4) }),
+            "options schema must allow 2..=4 structured choices"
+        );
     }
 
     fn ask_args() -> Value {
