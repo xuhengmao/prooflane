@@ -114,7 +114,6 @@ export function estimateVisibleTokens(text: string): number {
 export class LiveTokenRateSampler {
   private runId: string | null = null
   private samples: TokenSample[] = []
-  private lastVisibleTokens = 0
   private lastVisibleTextLength = 0
   private lastObservedAt = Number.NEGATIVE_INFINITY
   private lastPublishedAt: number | null = null
@@ -128,7 +127,6 @@ export class LiveTokenRateSampler {
   reset(): void {
     this.runId = null
     this.samples = []
-    this.lastVisibleTokens = 0
     this.lastVisibleTextLength = 0
     this.lastObservedAt = Number.NEGATIVE_INFINITY
     this.lastPublishedAt = null
@@ -184,7 +182,6 @@ export class LiveTokenRateSampler {
       : "estimated"
 
     this.runId = input.runId
-    this.lastVisibleTokens = visibleTokens
     this.lastVisibleTextLength = visibleLength
     this.lastObservedAt = input.now
     this.currentSource = sampleSource
