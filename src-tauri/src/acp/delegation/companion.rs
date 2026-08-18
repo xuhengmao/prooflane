@@ -83,6 +83,23 @@ async fn send_broker_cancel(socket_path: &str, req: &BrokerCancelRequest) {
 /// broker's [`super::types::DelegationRequest`].
 pub const TOOL_SCHEMA_JSON: &str = include_str!("tool_schema.json");
 
+const ASK_USER_INSTRUCTIONS: &str = "When the user's decision is required to continue and you are presenting two or more explicit choices, you MUST call ask_user_question so Prooflane can render an interactive selection card. Do not present those blocking choices only as ordinary message text or ask the user to reply with A/B/C, a number, or a label. For ordinary non-blocking suggestions, explanations, or illustrative lists, respond normally without calling this tool.";
+
+fn initialize_result(features: CompanionFeatures) -> Value {
+    let mut result = json!({
+        "protocolVersion": "2024-11-05",
+        "serverInfo": {
+            "name": "codeg-mcp",
+            "version": env!("CARGO_PKG_VERSION"),
+        },
+        "capabilities": { "tools": {} },
+    });
+    if features.ask {
+        result["instructions"] = Value::String(ASK_USER_INSTRUCTIONS.to_string());
+    }
+    result
+}
+
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
@@ -366,17 +383,7 @@ pub async fn dispatch_line(
 
     let id = req.id.expect("checked is_none");
     match req.method.as_str() {
-        "initialize" => LineAction::Respond(ok(
-            id,
-            json!({
-                "protocolVersion": "2024-11-05",
-                "serverInfo": {
-                    "name": "codeg-mcp",
-                    "version": env!("CARGO_PKG_VERSION"),
-                },
-                "capabilities": { "tools": {} },
-            }),
-        )),
+        "initialize" => LineAction::Respond(ok(id, initialize_result(ctx.features))),
         "tools/list" => {
             // The embedded schema is a JSON array of every tool the companion
             // can carry; filter to the groups enabled for this launch so a
@@ -1580,6 +1587,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn initialize_requires_structured_card_for_blocking_explicit_choices() {
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#;
+        let resp = unwrap_respond(dispatch_with_features(ASK_ONLY, line).await);
+        let result = resp.result.unwrap();
+        let instructions = result["instructions"].as_str().unwrap_or_default();
+
+        assert!(instructions.contains("MUST call ask_user_question"));
+        assert!(instructions.contains("A/B/C"));
+        assert!(instructions.contains("ordinary non-blocking suggestions"));
+    }
+
+    #[tokio::test]
+    async fn initialize_omits_question_instructions_when_ask_is_disabled() {
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#;
+        let resp = unwrap_respond(dispatch_with_features(FEEDBACK_ONLY, line).await);
+        let result = resp.result.unwrap();
+
+        assert!(result.get("instructions").is_none());
+    }
+
+    #[tokio::test]
     async fn tools_list_returns_three_delegation_tools() {
         let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
         let resp = unwrap_respond(dispatch_for_test(line).await);
@@ -2280,6 +2308,8 @@ mod tests {
             .unwrap();
         let description = ask["description"].as_str().unwrap();
         assert!(description.contains("do NOT ask for a plain-text reply like A/B/C in the body"));
+        assert!(description.contains("you MUST call this tool"));
+        assert!(description.contains("ordinary non-blocking suggestions"));
         assert!(description.contains("options: []"));
 
         let any_of = ask["inputSchema"]["properties"]["questions"]["items"]["properties"]
