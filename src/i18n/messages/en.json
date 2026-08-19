@@ -4380,6 +4380,7 @@
       "saved": "Saved",
       "conflict": "An update is available",
       "saveError": "Could not save",
+      "unsaved": "Unsaved changes",
       "save": "Save",
       "name": "Design name",
       "project": "Project",
@@ -4406,6 +4407,7 @@
       "shape": "Shape (coming soon)"
     },
     "canvas": {
+      "label": "Design canvas",
       "title": "Empty canvas",
       "zoom": "Canvas zoom",
       "zoomOut": "Zoom out",

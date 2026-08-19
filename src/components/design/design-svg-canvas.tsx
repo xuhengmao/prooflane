@@ -7,6 +7,7 @@ import type { DesignBounds, DesignDocument, DesignNode } from "@/lib/design/ast"
 interface DesignSvgCanvasProps {
   document: DesignDocument
   zoom: number
+  ariaLabel: string
   selectedNodeId: string | null
   onSelectNode: (id: string | null) => void
   onMoveNode: (id: string, x: number, y: number) => void
@@ -17,6 +18,7 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
   const {
     document,
     zoom,
+    ariaLabel,
     selectedNodeId,
     onSelectNode,
     readOnly = false,
@@ -33,7 +35,7 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
       viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
       style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}
       role="listbox"
-      aria-label="Design canvas"
+      aria-label={ariaLabel}
       onClick={(event) => {
         if (event.target === event.currentTarget) onSelectNode(null)
       }}

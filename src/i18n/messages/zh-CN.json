@@ -4376,6 +4376,7 @@
       "saved": "已保存",
       "conflict": "已有更新",
       "saveError": "保存失败",
+      "unsaved": "未保存更改",
       "save": "保存",
       "name": "设计名称",
       "project": "项目",
@@ -4402,6 +4403,7 @@
       "shape": "形状（即将推出）"
     },
     "canvas": {
+      "label": "设计画布",
       "title": "空白画布",
       "zoom": "画布缩放",
       "zoomOut": "缩小",

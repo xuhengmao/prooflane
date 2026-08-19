@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl"
 import { describe, expect, it, vi } from "vitest"
 
 import enMessages from "@/i18n/messages/en.json"
+import type { DesignDocument } from "@/lib/design/ast"
 import type {
   DesignArtifactDetail,
   DesignArtifactService,
@@ -35,6 +36,26 @@ const detail: DesignArtifactDetail = {
   },
 }
 
+const existingDocument: DesignDocument = {
+  version: 1,
+  revision: "document-revision-1",
+  rootId: "existing-frame",
+  nodes: [
+    {
+      id: "existing-frame",
+      type: "frame",
+      bounds: { x: 0, y: 0, width: 1024, height: 768 },
+    },
+    {
+      id: "existing-title",
+      type: "text",
+      parentId: "existing-frame",
+      bounds: { x: 48, y: 48, width: 400, height: 64 },
+      text: "Existing design",
+    },
+  ],
+}
+
 function service(overrides: Partial<DesignArtifactService> = {}) {
   return {
     list: vi.fn(),
@@ -64,6 +85,55 @@ function renderWorkspace(designService: DesignArtifactService) {
 }
 
 describe("DesignWorkspace", () => {
+  it("renders the starter SVG for a placeholder without saving automatically", async () => {
+    const designService = service()
+    renderWorkspace(designService)
+
+    expect(await screen.findByText("Hello，Prooflane")).toBeTruthy()
+    expect(
+      screen.getByTestId("design-svg-canvas").getAttribute("viewBox")
+    ).toBe("0 0 1440 900")
+    expect(designService.saveRevision).not.toHaveBeenCalled()
+  })
+
+  it("restores an existing DesignDocument instead of replacing it", async () => {
+    renderWorkspace(
+      service({
+        get: vi.fn().mockResolvedValue({
+          ...detail,
+          revision: { ...detail.revision, document: existingDocument },
+        }),
+      })
+    )
+
+    expect(await screen.findByText("Existing design")).toBeTruthy()
+    expect(screen.queryByText("Hello，Prooflane")).toBeNull()
+    expect(
+      screen.getByTestId("design-svg-canvas").getAttribute("viewBox")
+    ).toBe("0 0 1024 768")
+  })
+
+  it("rejects a damaged design document instead of replacing it", async () => {
+    renderWorkspace(
+      service({
+        get: vi.fn().mockResolvedValue({
+          ...detail,
+          revision: {
+            ...detail.revision,
+            document: {
+              version: 1,
+              revision: "broken",
+              nodes: [{ id: "node", type: "unknown" }],
+            },
+          },
+        }),
+      })
+    )
+
+    expect(await screen.findByText("Could not load this design")).toBeTruthy()
+    expect(screen.queryByTestId("design-svg-canvas")).toBeNull()
+  })
+
   it("loads a real artifact detail and keeps the artifact across view changes", async () => {
     const designService = service()
     const user = userEvent.setup()
@@ -97,7 +167,10 @@ describe("DesignWorkspace", () => {
           artifactId: "artifact-1",
           expectedRevisionId: "revision-1",
           schemaVersion: 1,
-          document: detail.revision.document,
+          document: expect.objectContaining({
+            version: 1,
+            rootId: "root-frame",
+          }),
         })
       )
     )

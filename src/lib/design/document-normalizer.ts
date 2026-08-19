@@ -116,6 +116,7 @@ function isLegacyPlaceholder(input: unknown): boolean {
   if (keys.some((key) => !["schemaVersion", "brief", "pages"].includes(key)))
     return false
   if (input.brief !== undefined && typeof input.brief !== "string") return false
+  if (input.pages === undefined) return true
   if (!Array.isArray(input.pages)) return false
   return input.pages.every(
     (page) =>

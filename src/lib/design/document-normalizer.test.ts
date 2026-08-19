@@ -42,6 +42,18 @@ describe("design document normalizer", () => {
     expect(JSON.stringify(input)).toBe(before)
   })
 
+  it("normalizes the legacy placeholder that predates page metadata", () => {
+    const result = normalizeDesignDocument({
+      schemaVersion: 1,
+      brief: "A checkout page",
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("expected a normalized document")
+    expect(result.createdFromTemplate).toBe(true)
+    expect(result.document.rootId).toBe("root-frame")
+  })
+
   it("accepts an existing valid document without replacing its content", () => {
     const input: DesignDocument = {
       version: 1,

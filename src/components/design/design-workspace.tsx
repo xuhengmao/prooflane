@@ -27,6 +27,9 @@ import type {
   DesignArtifactService,
 } from "@/lib/design/artifact-service"
 import { desktopDesignArtifactService } from "@/lib/design/artifact-service"
+import type { DesignDocument } from "@/lib/design/ast"
+import { applyCommand } from "@/lib/design/commands"
+import { normalizeDesignDocument } from "@/lib/design/document-normalizer"
 import { DesignCanvasHost } from "./design-canvas-host"
 import { DesignComposerHost } from "./design-composer-host"
 
@@ -59,6 +62,9 @@ export function DesignWorkspace({
     setRightCollapsed,
   } = useDesignWorkspace()
   const [detail, setDetail] = useState<DesignArtifactDetail | null>(null)
+  const [document, setDocument] = useState<DesignDocument | null>(null)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [dirty, setDirty] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [saveState, setSaveState] = useState<SaveState>("idle")
@@ -72,7 +78,16 @@ export function DesignWorkspace({
       .get(artifactId)
       .then((next) => {
         if (!current) return
+        const normalized = normalizeDesignDocument(next.revision.document)
+        if (!normalized.ok) {
+          setLoading(false)
+          setError(true)
+          return
+        }
         setDetail(next)
+        setDocument(normalized.document)
+        setSelectedNodeId(null)
+        setDirty(normalized.createdFromTemplate)
         setLoading(false)
         setError(false)
       })
@@ -89,22 +104,41 @@ export function DesignWorkspace({
   }, [artifactId, service])
 
   const save = useCallback(async () => {
-    if (!detail || saveState === "saving") return
+    if (!detail || !document || saveState === "saving") return
     setSaveState("saving")
     try {
       const next = await service.saveRevision({
         artifactId: detail.artifact.id,
         expectedRevisionId: detail.revision.id,
         schemaVersion: detail.revision.schemaVersion,
-        document: detail.revision.document,
+        document,
       })
       setDetail(next)
+      setDirty(false)
       setSaveState("saved")
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       setSaveState(/conflict|revision/i.test(message) ? "conflict" : "error")
     }
-  }, [detail, saveState, service])
+  }, [detail, document, saveState, service])
+
+  const moveNode = useCallback(
+    (id: string, x: number, y: number) => {
+      if (!document) return
+      const node = document.nodes.find((entry) => entry.id === id)
+      if (!node?.bounds) return
+      const result = applyCommand(document, {
+        type: "UpdateNode",
+        id,
+        patch: { bounds: { ...node.bounds, x, y } },
+      })
+      if (!result.ok) return
+      setDocument(result.document)
+      setDirty(true)
+      setSaveState("idle")
+    },
+    [document]
+  )
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -121,7 +155,7 @@ export function DesignWorkspace({
     return <WorkspaceMessage message={t("workspace.loading")} />
   }
 
-  if (error || !detail) {
+  if (error || !detail || !document) {
     return (
       <WorkspaceMessage
         message={t("workspace.loadError")}
@@ -159,6 +193,7 @@ export function DesignWorkspace({
           )}
           {saveState === "conflict" && t("workspace.conflict")}
           {saveState === "error" && t("workspace.saveError")}
+          {saveState === "idle" && dirty && t("workspace.unsaved")}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <Button
@@ -258,6 +293,10 @@ export function DesignWorkspace({
           view={activeView}
           zoom={zoom}
           onZoomChange={setZoom}
+          document={document}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={setSelectedNodeId}
+          onMoveNode={moveNode}
         />
         {!rightCollapsed ? (
           <aside className="hidden w-56 shrink-0 border-l border-border/60 p-3 lg:block">

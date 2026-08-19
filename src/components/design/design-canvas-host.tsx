@@ -4,21 +4,31 @@ import { Frame, Minus, MousePointer2, Plus, Shapes, Type } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
+import type { DesignDocument } from "@/lib/design/ast"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { DesignSvgCanvas } from "./design-svg-canvas"
 
 export function DesignCanvasHost({
   view,
   zoom,
   onZoomChange,
+  document,
+  selectedNodeId,
+  onSelectNode,
+  onMoveNode,
 }: {
   view: "design" | "prototype" | "run"
   zoom: number
   onZoomChange: (zoom: number) => void
+  document: DesignDocument
+  selectedNodeId: string | null
+  onSelectNode: (id: string | null) => void
+  onMoveNode: (id: string, x: number, y: number) => void
 }) {
   const t = useTranslations("Design")
 
@@ -67,14 +77,15 @@ export function DesignCanvasHost({
         className="grid min-h-0 flex-1 place-items-center overflow-auto p-6"
         data-testid="design-canvas-host"
       >
-        <div
-          className="grid aspect-[4/3] w-full max-w-3xl place-items-center border border-dashed border-border/80 bg-background shadow-sm"
-          style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}
-        >
-          <p className="text-sm font-medium text-muted-foreground">
-            {t("canvas.title")}
-          </p>
-        </div>
+        <DesignSvgCanvas
+          document={document}
+          zoom={zoom}
+          ariaLabel={t("canvas.label")}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={onSelectNode}
+          onMoveNode={onMoveNode}
+          readOnly={view !== "design"}
+        />
       </div>
     </section>
   )

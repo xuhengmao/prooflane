@@ -64,6 +64,7 @@ function renderCanvas(
     <DesignSvgCanvas
       document={document}
       zoom={1}
+      ariaLabel="Design canvas"
       selectedNodeId={null}
       onSelectNode={onSelectNode}
       onMoveNode={onMoveNode}
