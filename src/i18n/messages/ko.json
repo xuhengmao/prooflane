@@ -1623,6 +1623,7 @@
       "newChatAction": "새 채팅",
       "automations": "자동화",
       "tasks": "할 일",
+      "design": "AI 디자인",
       "loadingSubsessions": "하위 대화 로드 중…"
     },
     "conversation": {

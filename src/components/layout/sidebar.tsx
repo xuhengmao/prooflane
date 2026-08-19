@@ -8,6 +8,7 @@ import {
   ListChevronsUpDown,
   Search,
   ListTodo,
+  Palette,
   SquarePen,
   Zap,
   type LucideIcon,
@@ -493,6 +494,15 @@ export function Sidebar() {
               </span>
             ) : null
           }
+        />
+        <SidebarNavButton
+          icon={Palette}
+          label={t("design")}
+          active={routeId === "design"}
+          onClick={() => {
+            if (isMobile) toggle()
+            setRoute("design")
+          }}
         />
       </div>
 

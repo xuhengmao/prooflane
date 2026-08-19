@@ -1623,6 +1623,7 @@
       "newChatAction": "Nuevo chat",
       "automations": "Automatizaciones",
       "tasks": "Tareas pendientes",
+      "design": "Diseño con IA",
       "loadingSubsessions": "Cargando subconversaciones…"
     },
     "conversation": {

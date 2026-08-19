@@ -1623,6 +1623,7 @@
       "newChatAction": "新しいチャット",
       "automations": "オートメーション",
       "tasks": "ToDo タスク",
+      "design": "AI デザイン",
       "loadingSubsessions": "サブ会話を読み込み中…"
     },
     "conversation": {

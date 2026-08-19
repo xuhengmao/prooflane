@@ -25,6 +25,7 @@ const spies = vi.hoisted(() => ({
 }))
 const mockState = vi.hoisted(() => ({
   activeFolder: { id: 7, path: "/x" } as { id: number; path: string } | null,
+  routeId: "conversations",
 }))
 
 // The conversation list is irrelevant here — stub it so the test exercises only
@@ -71,7 +72,7 @@ vi.mock("@/contexts/tasks-view-context", () => ({
 }))
 vi.mock("@/contexts/workbench-route-context", () => ({
   useWorkbenchRoute: () => ({
-    routeId: "conversations",
+    routeId: mockState.routeId,
     isConversations: true,
     setRoute: spies.setRoute,
     openConversations: spies.openConversations,
@@ -104,12 +105,36 @@ describe("Sidebar — fixed New chat / Search region", () => {
     spies.setRoute.mockClear()
     spies.openConversations.mockClear()
     mockState.activeFolder = { id: 7, path: "/x" }
+    mockState.routeId = "conversations"
   })
 
   it("Automations navigates to the automations route", () => {
     const { getByText } = renderSidebar()
     fireEvent.click(getByText("Automations"))
     expect(spies.setRoute).toHaveBeenCalledWith("automations")
+  })
+
+  it("AI Design follows To-dos and navigates to the design route", () => {
+    renderSidebar()
+    const todos = screen.getByRole("button", { name: "To-dos" })
+    const design = screen.getByRole("button", { name: "AI Design" })
+
+    expect(
+      todos.compareDocumentPosition(design) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    fireEvent.click(design)
+    expect(spies.setRoute).toHaveBeenCalledWith("design")
+  })
+
+  it("marks AI Design as the current page", () => {
+    mockState.routeId = "design"
+    renderSidebar()
+
+    expect(
+      screen
+        .getByRole("button", { name: "AI Design" })
+        .getAttribute("aria-current")
+    ).toBe("page")
   })
 
   it("New chat returns to the conversation workspace", () => {

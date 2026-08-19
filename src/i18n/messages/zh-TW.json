@@ -1623,6 +1623,7 @@
       "newChatAction": "新增聊天",
       "automations": "自動化",
       "tasks": "待辦任務",
+      "design": "AI 設計",
       "loadingSubsessions": "正在載入子會話…"
     },
     "conversation": {

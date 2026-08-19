@@ -1623,6 +1623,7 @@
       "newChatAction": "Neuer Chat",
       "automations": "Automatisierungen",
       "tasks": "To-dos",
+      "design": "KI-Design",
       "loadingSubsessions": "Unterkonversationen werden geladen…"
     },
     "conversation": {

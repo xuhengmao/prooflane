@@ -1623,6 +1623,7 @@
       "newChatAction": "محادثة جديدة",
       "automations": "الأتمتة",
       "tasks": "المهام قيد الانتظار",
+      "design": "تصميم بالذكاء الاصطناعي",
       "loadingSubsessions": "جارٍ تحميل المحادثات الفرعية…"
     },
     "conversation": {
