@@ -4386,7 +4386,11 @@
       "views": "Workspace views",
       "leftPanel": "Design structure",
       "rightPanel": "Properties",
-      "selectElement": "Select an element to inspect its properties"
+      "selectElement": "Select an element to inspect its properties",
+      "hideLeftPanel": "Hide layers panel",
+      "showLeftPanel": "Show layers panel",
+      "hideRightPanel": "Hide properties panel",
+      "showRightPanel": "Show properties panel"
     },
     "views": { "design": "Design", "prototype": "Prototype", "run": "Run" },
     "panels": {
@@ -4402,7 +4406,10 @@
       "shape": "Shape (coming soon)"
     },
     "canvas": {
-      "title": "Canvas host",
+      "title": "Empty canvas",
+      "zoom": "Canvas zoom",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
       "subtitle": "Professional canvas editing will be added in a later phase.",
       "designMode": "Design mode",
       "readOnlyMode": "Review mode"

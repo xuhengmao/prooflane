@@ -1,6 +1,6 @@
 "use client"
 
-import { Frame, MousePointer2, Shapes, Type } from "lucide-react"
+import { Frame, Minus, MousePointer2, Plus, Shapes, Type } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
@@ -13,8 +13,12 @@ import {
 
 export function DesignCanvasHost({
   view,
+  zoom,
+  onZoomChange,
 }: {
   view: "design" | "prototype" | "run"
+  zoom: number
+  onZoomChange: (zoom: number) => void
 }) {
   const t = useTranslations("Design")
 
@@ -32,12 +36,41 @@ export function DesignCanvasHost({
             ? t("canvas.designMode")
             : t("canvas.readOnlyMode")}
         </span>
+        <div
+          className="ml-2 flex items-center gap-1"
+          aria-label={t("canvas.zoom")}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("canvas.zoomOut")}
+            onClick={() => onZoomChange(zoom - 0.1)}
+          >
+            <Minus />
+          </Button>
+          <span className="w-12 text-center text-xs tabular-nums">
+            {Math.round(zoom * 100)}%
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("canvas.zoomIn")}
+            onClick={() => onZoomChange(zoom + 0.1)}
+          >
+            <Plus />
+          </Button>
+        </div>
       </div>
       <div
         className="grid min-h-0 flex-1 place-items-center overflow-auto p-6"
         data-testid="design-canvas-host"
       >
-        <div className="grid aspect-[4/3] w-full max-w-3xl place-items-center border border-dashed border-border/80 bg-background shadow-sm">
+        <div
+          className="grid aspect-[4/3] w-full max-w-3xl place-items-center border border-dashed border-border/80 bg-background shadow-sm"
+          style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}
+        >
           <p className="text-sm font-medium text-muted-foreground">
             {t("canvas.title")}
           </p>

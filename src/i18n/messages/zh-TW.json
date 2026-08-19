@@ -4382,7 +4382,11 @@
       "views": "工作台檢視",
       "leftPanel": "設計結構",
       "rightPanel": "屬性",
-      "selectElement": "選取元素以查看屬性"
+      "selectElement": "選取元素以查看屬性",
+      "hideLeftPanel": "隱藏圖層面板",
+      "showLeftPanel": "顯示圖層面板",
+      "hideRightPanel": "隱藏屬性面板",
+      "showRightPanel": "顯示屬性面板"
     },
     "views": { "design": "設計", "prototype": "原型", "run": "執行" },
     "panels": {
@@ -4399,6 +4403,9 @@
     },
     "canvas": {
       "title": "空白畫布",
+      "zoom": "畫布縮放",
+      "zoomOut": "縮小",
+      "zoomIn": "放大",
       "subtitle": "專業畫布編輯將在後續階段加入。",
       "designMode": "設計模式",
       "readOnlyMode": "審查模式"

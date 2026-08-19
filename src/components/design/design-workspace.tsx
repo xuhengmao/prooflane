@@ -7,14 +7,21 @@ import {
   Check,
   Layers3,
   PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRight,
+  PanelRightClose,
+  PanelRightOpen,
   Save,
 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { useDesignWorkspace } from "@/contexts/design-workspace-context"
+import {
+  clearDesignWorkspaceSession,
+  useDesignWorkspace,
+} from "@/contexts/design-workspace-context"
 import type {
   DesignArtifactDetail,
   DesignArtifactService,
@@ -38,7 +45,19 @@ export function DesignWorkspace({
   onBack,
 }: DesignWorkspaceProps) {
   const t = useTranslations("Design")
-  const { openHome, panel, setPanel, view, setView } = useDesignWorkspace()
+  const {
+    openHome,
+    panel,
+    setPanel,
+    view,
+    setView,
+    zoom,
+    setZoom,
+    leftCollapsed,
+    rightCollapsed,
+    setLeftCollapsed,
+    setRightCollapsed,
+  } = useDesignWorkspace()
   const [detail, setDetail] = useState<DesignArtifactDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -57,8 +76,10 @@ export function DesignWorkspace({
         setLoading(false)
         setError(false)
       })
-      .catch(() => {
+      .catch((cause) => {
         if (!current) return
+        const message = cause instanceof Error ? cause.message : String(cause)
+        if (/404|not found/i.test(message)) clearDesignWorkspaceSession()
         setLoading(false)
         setError(true)
       })
@@ -162,56 +183,93 @@ export function DesignWorkspace({
       </header>
 
       <nav
-        className="flex h-10 shrink-0 items-center justify-center gap-1 border-b border-border/60 px-3"
+        className="grid h-10 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-border/60 px-3"
         aria-label={t("workspace.views")}
       >
-        {(["design", "prototype", "run"] as const).map((view) => (
-          <Button
-            key={view}
-            type="button"
-            variant={activeView === view ? "secondary" : "ghost"}
-            size="sm"
-            aria-pressed={activeView === view}
-            onClick={() => setView(view)}
-          >
-            {t(`views.${view}`)}
-          </Button>
-        ))}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={
+            leftCollapsed
+              ? t("workspace.showLeftPanel")
+              : t("workspace.hideLeftPanel")
+          }
+          onClick={() => setLeftCollapsed(!leftCollapsed)}
+        >
+          {leftCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+        </Button>
+        <div className="flex items-center gap-1">
+          {(["design", "prototype", "run"] as const).map((view) => (
+            <Button
+              key={view}
+              type="button"
+              variant={activeView === view ? "secondary" : "ghost"}
+              size="sm"
+              aria-pressed={activeView === view}
+              onClick={() => setView(view)}
+            >
+              {t(`views.${view}`)}
+            </Button>
+          ))}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="justify-self-end"
+          aria-label={
+            rightCollapsed
+              ? t("workspace.showRightPanel")
+              : t("workspace.hideRightPanel")
+          }
+          onClick={() => setRightCollapsed(!rightCollapsed)}
+        >
+          {rightCollapsed ? <PanelRightOpen /> : <PanelRightClose />}
+        </Button>
       </nav>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-52 shrink-0 border-r border-border/60 p-3 md:block">
-          <div className="mb-2 flex items-center gap-2 text-xs font-medium">
-            <PanelLeft className="size-3.5" aria-hidden="true" />
-            {t("workspace.leftPanel")}
-          </div>
-          <div className="grid gap-1">
-            {(["layers", "assets", "components", "variables"] as const).map(
-              (value) => (
-                <Button
-                  key={value}
-                  type="button"
-                  variant={panel === value ? "secondary" : "ghost"}
-                  size="sm"
-                  className="justify-start"
-                  onClick={() => setPanel(value)}
-                >
-                  <Layers3 /> {t(`panels.${value}`)}
-                </Button>
-              )
-            )}
-          </div>
-        </aside>
-        <DesignCanvasHost view={activeView} />
-        <aside className="hidden w-56 shrink-0 border-l border-border/60 p-3 lg:block">
-          <div className="flex items-center gap-2 text-xs font-medium">
-            <PanelRight className="size-3.5" aria-hidden="true" />
-            {t("workspace.rightPanel")}
-          </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            {t("workspace.selectElement")}
-          </p>
-        </aside>
+        {!leftCollapsed ? (
+          <aside className="hidden w-52 shrink-0 border-r border-border/60 p-3 md:block">
+            <div className="mb-2 flex items-center gap-2 text-xs font-medium">
+              <PanelLeft className="size-3.5" aria-hidden="true" />
+              {t("workspace.leftPanel")}
+            </div>
+            <div className="grid gap-1">
+              {(["layers", "assets", "components", "variables"] as const).map(
+                (value) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant={panel === value ? "secondary" : "ghost"}
+                    size="sm"
+                    className="justify-start"
+                    onClick={() => setPanel(value)}
+                  >
+                    <Layers3 /> {t(`panels.${value}`)}
+                  </Button>
+                )
+              )}
+            </div>
+          </aside>
+        ) : null}
+        <DesignCanvasHost
+          view={activeView}
+          zoom={zoom}
+          onZoomChange={setZoom}
+        />
+        {!rightCollapsed ? (
+          <aside className="hidden w-56 shrink-0 border-l border-border/60 p-3 lg:block">
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <PanelRight className="size-3.5" aria-hidden="true" />
+              {t("workspace.rightPanel")}
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t("workspace.selectElement")}
+            </p>
+          </aside>
+        ) : null}
       </div>
 
       <DesignComposerHost />

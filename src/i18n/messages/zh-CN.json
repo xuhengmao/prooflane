@@ -4382,7 +4382,11 @@
       "views": "工作台视图",
       "leftPanel": "设计结构",
       "rightPanel": "属性",
-      "selectElement": "选择元素查看属性"
+      "selectElement": "选择元素查看属性",
+      "hideLeftPanel": "隐藏图层面板",
+      "showLeftPanel": "显示图层面板",
+      "hideRightPanel": "隐藏属性面板",
+      "showRightPanel": "显示属性面板"
     },
     "views": { "design": "设计", "prototype": "原型", "run": "运行" },
     "panels": {
@@ -4399,6 +4403,9 @@
     },
     "canvas": {
       "title": "空白画布",
+      "zoom": "画布缩放",
+      "zoomOut": "缩小",
+      "zoomIn": "放大",
       "subtitle": "专业画布编辑将在后续阶段加入。",
       "designMode": "设计模式",
       "readOnlyMode": "审查模式"

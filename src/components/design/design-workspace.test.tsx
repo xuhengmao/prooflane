@@ -9,6 +9,7 @@ import type {
   DesignArtifactService,
 } from "@/lib/design/artifact-service"
 import { DesignWorkspaceProvider } from "@/contexts/design-workspace-context"
+import { WORKSPACE_SESSION_STORAGE_KEY } from "@/lib/design/workspace-session"
 import { DesignWorkspace } from "./design-workspace"
 
 const detail: DesignArtifactDetail = {
@@ -125,6 +126,10 @@ describe("DesignWorkspace", () => {
   })
 
   it("shows a recovery action when the artifact cannot be loaded", async () => {
+    localStorage.setItem(
+      WORKSPACE_SESSION_STORAGE_KEY,
+      JSON.stringify({ version: 1, artifactId: "missing" })
+    )
     const designService = service({
       get: vi.fn().mockRejectedValue(new Error("artifact not found")),
     })
@@ -143,7 +148,20 @@ describe("DesignWorkspace", () => {
     )
 
     expect(await screen.findByText("Could not load this design")).toBeTruthy()
+    expect(localStorage.getItem(WORKSPACE_SESSION_STORAGE_KEY)).toBeNull()
     await user.click(screen.getByRole("button", { name: "Back to designs" }))
     expect(onBack).toHaveBeenCalled()
+  })
+
+  it("offers zoom and panel visibility controls without resizing the canvas host", async () => {
+    const user = userEvent.setup()
+    renderWorkspace(service())
+    await screen.findByDisplayValue("Checkout flow")
+
+    await user.click(screen.getByRole("button", { name: "Zoom in" }))
+    expect(screen.getByText("110%")).toBeTruthy()
+    await user.click(screen.getByRole("button", { name: "Hide layers panel" }))
+    expect(screen.queryByText("Design structure")).toBeNull()
+    expect(screen.getByTestId("design-canvas-host")).toBeTruthy()
   })
 })
