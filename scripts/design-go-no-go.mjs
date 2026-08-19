@@ -18,7 +18,12 @@ export async function evaluateGoNoGo({
     if (report.summary?.failed > 0) blockers.push("renderer_failed")
     if (report.summary?.unavailable > 0) blockers.push("renderer_unavailable")
     if (report.summary?.missing > 0) blockers.push("missing_artifacts")
-    if (report.diffs?.some((entry) => entry.status !== "passed"))
+    if (
+      report.diffs?.some(
+        (entry) =>
+          !["passed", "completed", "unavailable"].includes(entry.status)
+      )
+    )
       blockers.push("missing_or_failed_diffs")
     if (report.entries?.some((entry) => !entry.screenshot))
       blockers.push("missing_screenshots")

@@ -32,7 +32,7 @@ function decodePng(buffer) {
     if (type === "IHDR") {
       width = data.readUInt32BE(0)
       height = data.readUInt32BE(4)
-      if (data[8] !== 8 || data[9] !== 6 || data[12] !== 0)
+      if (data[8] !== 8 || ![2, 6].includes(data[9]) || data[12] !== 0)
         throw new Error("unsupported_png_format")
     }
     if (type === "IDAT") idat = Buffer.concat([idat, data])
@@ -40,39 +40,51 @@ function decodePng(buffer) {
   }
   if (!width || !height) throw new Error("png_dimensions_missing")
   const raw = zlib.inflateSync(idat)
+  const channels = dataColorType(buffer) === 6 ? 4 : 3
+  const sourceStride = width * channels
   const stride = width * 4
   const pixels = Buffer.alloc(height * stride)
+  let previousRow = Buffer.alloc(sourceStride)
   let sourceOffset = 0
   for (let row = 0; row < height; row += 1) {
     const filter = raw[sourceOffset++]
-    const current = raw.subarray(sourceOffset, sourceOffset + stride)
-    sourceOffset += stride
+    const current = raw.subarray(sourceOffset, sourceOffset + sourceStride)
+    sourceOffset += sourceStride
     const target = pixels.subarray(row * stride, (row + 1) * stride)
-    const previous = row
-      ? pixels.subarray((row - 1) * stride, row * stride)
-      : null
-    for (let index = 0; index < stride; index += 1) {
-      const left = index >= 4 ? target[index - 4] : 0
-      const up = previous?.[index] ?? 0
-      const upperLeft = index >= 4 ? (previous?.[index - 4] ?? 0) : 0
+    for (let index = 0; index < sourceStride; index += 1) {
+      const pixelOffset = Math.floor(index / channels) * 4 + (index % channels)
+      const left = index >= channels ? current[index - channels] : 0
+      const up = previousRow[index] ?? 0
+      const upperLeft =
+        index >= channels ? (previousRow[index - channels] ?? 0) : 0
       const value = current[index]
-      if (filter === 0) target[index] = value
-      else if (filter === 1) target[index] = (value + left) & 255
-      else if (filter === 2) target[index] = (value + up) & 255
+      let decoded
+      if (filter === 0) decoded = value
+      else if (filter === 1) decoded = (value + left) & 255
+      else if (filter === 2) decoded = (value + up) & 255
       else if (filter === 3)
-        target[index] = (value + Math.floor((left + up) / 2)) & 255
+        decoded = (value + Math.floor((left + up) / 2)) & 255
       else if (filter === 4) {
         const estimate = left + up - upperLeft
         const pa = Math.abs(estimate - left)
         const pb = Math.abs(estimate - up)
         const pc = Math.abs(estimate - upperLeft)
-        target[index] =
+        decoded =
           (value + (pa <= pb && pa <= pc ? left : pb <= pc ? up : upperLeft)) &
           255
       } else throw new Error("unsupported_png_filter")
+      current[index] = decoded
+      target[pixelOffset] = decoded
     }
+    if (channels === 3)
+      for (let pixel = 0; pixel < width; pixel += 1) target[pixel * 4 + 3] = 255
+    previousRow = Buffer.from(current)
   }
   return { width, height, pixels }
+}
+
+function dataColorType(buffer) {
+  return buffer[25]
 }
 
 function chunk(type, data) {

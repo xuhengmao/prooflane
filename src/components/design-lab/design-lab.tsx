@@ -48,6 +48,50 @@ const FIXTURES: Record<string, DesignDocument> = {
   },
 }
 
+function createBenchmarkFixture(nodeCount: number): DesignDocument {
+  const nodes: DesignDocument["nodes"] = [
+    { id: "page", type: "page", children: [] },
+  ]
+  const columns = 20
+  for (let index = 1; index < nodeCount; index += 1) {
+    const x = (index % columns) * 32
+    const y = Math.floor(index / columns) * 24
+    const isText = index % 11 === 0
+    const isImage = index % 17 === 0
+    const id = `node-${index}`
+    nodes.push({
+      id,
+      type: isText ? "text" : isImage ? "image" : "rectangle",
+      parentId: "page",
+      bounds: { x, y, width: 28, height: isText ? 18 : 20 },
+      ...(isText
+        ? {
+            text:
+              index % 33 === 0
+                ? "Prooflane 设计验证 · 你好 🌐 שלום"
+                : `节点 ${index}`,
+            style: { fontSize: 10, color: "#344054" },
+          }
+        : isImage
+          ? { assetRef: "fixtures/sample.png" }
+          : { style: { fill: index % 2 ? "#e7eef8" : "#d9f2e1" } }),
+    })
+  }
+  nodes[0].children = nodes.slice(1).map((node) => node.id)
+  return {
+    version: 1,
+    revision: `design-lab-${nodeCount}-r1`,
+    rootId: "page",
+    nodes,
+  }
+}
+
+const BENCHMARK_FIXTURES: Record<string, DesignDocument> = {
+  "nodes-100": createBenchmarkFixture(100),
+  "nodes-1000": createBenchmarkFixture(1_000),
+  "nodes-10000": createBenchmarkFixture(10_000),
+}
+
 function createRenderer(id: RendererId): RendererAdapter {
   if (id === "dom-svg") return new DomSvgRenderer()
   if (id === "canvaskit") return new CanvasKitRenderer()
@@ -67,7 +111,34 @@ export function DesignLab() {
     [rendererId]
   )
   const hostRef = useRef<HTMLDivElement>(null)
-  const document = useMemo(() => FIXTURES[fixtureId], [fixtureId])
+  const document = useMemo(
+    () =>
+      FIXTURES[fixtureId] ?? BENCHMARK_FIXTURES[fixtureId] ?? FIXTURES.starter,
+    [fixtureId]
+  )
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const requestedFixture = params.get("fixture")
+    const requestedRenderer = params.get("renderer")
+    const fixtureTimer =
+      requestedFixture &&
+      (FIXTURES[requestedFixture] || BENCHMARK_FIXTURES[requestedFixture])
+        ? window.setTimeout(() => setFixtureId(requestedFixture), 0)
+        : undefined
+    const rendererTimer =
+      requestedRenderer &&
+      ["dom-svg", "canvaskit", "webgl"].includes(requestedRenderer)
+        ? window.setTimeout(
+            () => setRendererId(requestedRenderer as RendererId),
+            0
+          )
+        : undefined
+    return () => {
+      if (fixtureTimer) window.clearTimeout(fixtureTimer)
+      if (rendererTimer) window.clearTimeout(rendererTimer)
+    }
+  }, [])
 
   // The effect owns the renderer DOM node and mirrors its measured result into the lab status panel.
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -124,6 +195,8 @@ export function DesignLab() {
 
   return (
     <main
+      data-fixture-id={fixtureId}
+      data-renderer-id={rendererId}
       style={{
         minHeight: "100vh",
         padding: 24,
@@ -181,6 +254,9 @@ export function DesignLab() {
               onChange={(event) => setFixtureId(event.target.value)}
             >
               <option value="starter">starter</option>
+              <option value="nodes-100">nodes-100</option>
+              <option value="nodes-1000">nodes-1000</option>
+              <option value="nodes-10000">nodes-10000</option>
             </select>
           </label>
           <label

@@ -58,10 +58,10 @@ async function pageState(page) {
       .querySelector('[role="status"]')
       ?.textContent?.trim()
     return {
-      status: body.includes("渲染完成")
-        ? "passed"
-        : diagnostic
-          ? "unavailable"
+      status: diagnostic
+        ? "unavailable"
+        : body.includes("渲染完成")
+          ? "passed"
           : "failed",
       diagnostic: diagnostic || undefined,
     }
@@ -136,11 +136,17 @@ export async function runBenchmark({
           url.searchParams.set("fixture", fixture.id)
           url.searchParams.set("renderer", renderer)
           await page.goto(url.toString(), {
-            waitUntil: "networkidle",
+            waitUntil: "domcontentloaded",
             timeout: timeoutMs,
           })
           await page
             .locator('[data-testid="design-lab-canvas"]')
+            .waitFor({ timeout: timeoutMs })
+          await page
+            .locator(`main[data-fixture-id="${fixture.id}"]`)
+            .waitFor({ timeout: timeoutMs })
+          await page
+            .locator(`main[data-renderer-id="${renderer}"]`)
             .waitFor({ timeout: timeoutMs })
           const state = await pageState(page)
           await page.screenshot({

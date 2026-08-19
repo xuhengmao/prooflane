@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { DesignLab } from "./design-lab"
 
@@ -24,5 +24,24 @@ describe("DesignLab", () => {
     expect(await screen.findByTestId("design-lab-ai-status")).toHaveTextContent(
       "等待用户确认"
     )
+  })
+
+  it("loads the requested benchmark fixture and renderer", async () => {
+    window.history.pushState(
+      {},
+      "",
+      "/__design-lab?fixture=nodes-1000&renderer=dom-svg"
+    )
+    render(<DesignLab />)
+    expect(await screen.findByTestId("design-lab-canvas")).toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        document.querySelector("main")?.getAttribute("data-fixture-id")
+      ).toBe("nodes-1000")
+      expect(
+        document.querySelector("main")?.getAttribute("data-renderer-id")
+      ).toBe("dom-svg")
+    })
+    window.history.pushState({}, "", "/")
   })
 })
