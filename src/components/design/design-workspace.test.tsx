@@ -198,7 +198,71 @@ describe("DesignWorkspace", () => {
     expect(await screen.findByText("Saved")).toBeTruthy()
   })
 
+  it("saves the edited local document instead of the loaded placeholder", async () => {
+    const user = userEvent.setup()
+    const designService = service()
+    renderWorkspace(designService)
+
+    await screen.findByDisplayValue("Checkout flow")
+    await user.click(screen.getByRole("button", { name: "Design" }))
+    await user.click(await screen.findByTestId("design-node-title-text"))
+    const text = screen.getByLabelText("Text content")
+    await user.clear(text)
+    await user.type(text, "Saved design")
+    fireEvent.blur(text)
+    await user.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() =>
+      expect(designService.saveRevision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          document: expect.objectContaining({
+            nodes: expect.arrayContaining([
+              expect.objectContaining({
+                id: "title-text",
+                text: "Saved design",
+              }),
+            ]),
+          }),
+        })
+      )
+    )
+  })
+
+  it("keeps edited nodes and the unsaved state when saving fails", async () => {
+    const user = userEvent.setup()
+    const designService = service({
+      saveRevision: vi.fn().mockRejectedValue(new Error("network unavailable")),
+    })
+    renderWorkspace(designService)
+
+    await screen.findByDisplayValue("Checkout flow")
+    await user.click(screen.getByRole("button", { name: "Design" }))
+    await user.click(await screen.findByTestId("design-node-title-text"))
+    const text = screen.getByLabelText("Text content")
+    await user.clear(text)
+    await user.type(text, "Retry me")
+    fireEvent.blur(text)
+    await user.click(screen.getByRole("button", { name: "Save" }))
+
+    expect(await screen.findByText("Could not save")).toBeTruthy()
+    expect(screen.getByTestId("design-node-title-text")).toHaveTextContent(
+      "Retry me"
+    )
+    await user.click(screen.getByRole("button", { name: "Save" }))
+    expect(designService.saveRevision).toHaveBeenCalledTimes(2)
+    expect(designService.saveRevision).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        document: expect.objectContaining({
+          nodes: expect.arrayContaining([
+            expect.objectContaining({ id: "title-text", text: "Retry me" }),
+          ]),
+        }),
+      })
+    )
+  })
+
   it("shows an update conflict without replacing the local revision", async () => {
+    const user = userEvent.setup()
     const designService = service({
       saveRevision: vi
         .fn()
@@ -206,6 +270,12 @@ describe("DesignWorkspace", () => {
     })
     renderWorkspace(designService)
     await screen.findByDisplayValue("Checkout flow")
+    await user.click(screen.getByRole("button", { name: "Design" }))
+    await user.click(await screen.findByTestId("design-node-title-text"))
+    const text = screen.getByLabelText("Text content")
+    await user.clear(text)
+    await user.type(text, "Local conflict edit")
+    fireEvent.blur(text)
 
     await act(async () => {
       window.dispatchEvent(
@@ -214,6 +284,9 @@ describe("DesignWorkspace", () => {
     })
 
     expect(await screen.findByText("An update is available")).toBeTruthy()
+    expect(screen.getByTestId("design-node-title-text")).toHaveTextContent(
+      "Local conflict edit"
+    )
     expect(screen.getByTestId("design-current-revision").textContent).toBe(
       "revision-1"
     )

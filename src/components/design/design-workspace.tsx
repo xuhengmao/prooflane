@@ -28,6 +28,7 @@ import type {
 } from "@/lib/design/artifact-service"
 import { desktopDesignArtifactService } from "@/lib/design/artifact-service"
 import type { DesignDocument } from "@/lib/design/ast"
+import { validateDesignDocument } from "@/lib/design/ast"
 import { applyCommand } from "@/lib/design/commands"
 import { normalizeDesignDocument } from "@/lib/design/document-normalizer"
 import { DesignCanvasHost } from "./design-canvas-host"
@@ -106,6 +107,11 @@ export function DesignWorkspace({
 
   const save = useCallback(async () => {
     if (!detail || !document || saveState === "saving") return
+    const validation = validateDesignDocument(document)
+    if (!validation.ok) {
+      setSaveState("error")
+      return
+    }
     setSaveState("saving")
     try {
       const next = await service.saveRevision({
