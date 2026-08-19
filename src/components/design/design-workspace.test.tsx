@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { NextIntlClientProvider } from "next-intl"
 import { describe, expect, it, vi } from "vitest"
@@ -111,6 +111,27 @@ describe("DesignWorkspace", () => {
     expect(
       screen.getByTestId("design-svg-canvas").getAttribute("viewBox")
     ).toBe("0 0 1024 768")
+  })
+
+  it("edits a selected node through the properties panel without auto-saving", async () => {
+    const user = userEvent.setup()
+    const designService = service()
+    renderWorkspace(designService)
+
+    await user.click(await screen.findByTestId("design-node-title-text"))
+    const text = screen.getByLabelText("Text content")
+    expect(text).toHaveValue("Hello，Prooflane")
+
+    await user.clear(text)
+    await user.type(text, "Updated from properties")
+    fireEvent.blur(text)
+
+    await waitFor(() =>
+      expect(screen.getByTestId("design-node-title-text")).toHaveTextContent(
+        "Updated from properties"
+      )
+    )
+    expect(designService.saveRevision).not.toHaveBeenCalled()
   })
 
   it("rejects a damaged design document instead of replacing it", async () => {

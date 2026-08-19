@@ -4412,6 +4412,29 @@
       "designMode": "设计模式",
       "readOnlyMode": "审查模式"
     },
+    "properties": {
+      "invalidNumber": "请输入有效数字",
+      "nonNegative": "{field}不能小于 0",
+      "opacityRange": "透明度必须在 0 到 100 之间",
+      "fields": {
+        "x": "X 位置",
+        "y": "Y 位置",
+        "width": "宽度",
+        "height": "高度",
+        "opacity": "透明度",
+        "text": "文字内容"
+      },
+      "nodeTypes": {
+        "document": "文档",
+        "page": "页面",
+        "group": "分组",
+        "frame": "画板",
+        "rectangle": "矩形",
+        "shape": "形状",
+        "text": "文字",
+        "image": "图片"
+      }
+    },
     "composer": {
       "title": "AI Composer",
       "subtitle": "描述设计变更，准备下一步操作。"

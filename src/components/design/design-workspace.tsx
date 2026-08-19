@@ -32,6 +32,7 @@ import { applyCommand } from "@/lib/design/commands"
 import { normalizeDesignDocument } from "@/lib/design/document-normalizer"
 import { DesignCanvasHost } from "./design-canvas-host"
 import { DesignComposerHost } from "./design-composer-host"
+import { DesignPropertiesPanel } from "./design-properties-panel"
 
 type WorkspaceView = "design" | "prototype" | "run"
 type SaveState = "idle" | "saving" | "saved" | "error" | "conflict"
@@ -132,6 +133,18 @@ export function DesignWorkspace({
         id,
         patch: { bounds: { ...node.bounds, x, y } },
       })
+      if (!result.ok) return
+      setDocument(result.document)
+      setDirty(true)
+      setSaveState("idle")
+    },
+    [document]
+  )
+
+  const updateNode = useCallback(
+    (command: Parameters<typeof applyCommand>[1]) => {
+      if (!document) return
+      const result = applyCommand(document, command)
       if (!result.ok) return
       setDocument(result.document)
       setDirty(true)
@@ -304,9 +317,13 @@ export function DesignWorkspace({
               <PanelRight className="size-3.5" aria-hidden="true" />
               {t("workspace.rightPanel")}
             </div>
-            <p className="mt-3 text-xs text-muted-foreground">
-              {t("workspace.selectElement")}
-            </p>
+            <DesignPropertiesPanel
+              node={
+                document.nodes.find((node) => node.id === selectedNodeId) ??
+                null
+              }
+              onUpdate={updateNode}
+            />
           </aside>
         ) : null}
       </div>
