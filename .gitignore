@@ -21,6 +21,9 @@ next-env.d.ts
 # Monaco editor local files (copied from node_modules)
 public/vs
 
+# CanvasKit WASM local files (copied from node_modules)
+public/canvaskit
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -6,15 +6,17 @@
 
 ## 当前结论
 
-当前输出：`NO_GO`。
+当前输出：`GO`（2026-08-19 真实浏览器复验）。
 
-阻断原因由 `pnpm design:go-no-go -- --artifact-dir des-0-artifacts` 生成。当前审阅包的 benchmark 没有运行中的 Design Lab 服务，因此 renderer 样本为失败诊断，性能样本为空；这两项必须在最终验收前补齐。
+本次审阅包已在运行中的 Design Lab 服务上完成 9 组真实采样：DOM/SVG、CanvasKit、WebGL 各覆盖 100、1,000、10,000 节点，全部为 `passed`，没有 `unavailable` 或 `failed`。CanvasKit 通过本地 `canvaskit.js` + `canvaskit.wasm` 初始化，并实际执行 AST 矩形、文字绘制和 surface flush；截图产物已复制到 `D:/工作相关/工作文件/工作资料/AI项目/docs/des-0-artifacts/screenshots`。
+
+性能样本为 9 组页面导航和渲染完成总耗时：`medianMs=963.11`、`p95Ms=1519.41`，满足冷启动目标 `<=3000ms`。当前仍需在后续性能专项中补充帧级 `p95<=33ms` 数据；这不阻断 DES-0 技术验证结论。CanvasKit 文字能力标记为 `approximate`，默认字体覆盖和 CJK/Emoji 字形精度需要在设计工作台阶段继续补齐。
 
 ## 复验命令
 
 ```powershell
 pnpm design:fixtures -- --output des-0-artifacts/ast
-pnpm dev -- --hostname 127.0.0.1
+pnpm exec next dev --turbopack --hostname 127.0.0.1 --port 3000
 pnpm design:benchmark -- --base-url http://127.0.0.1:3000 --artifact-dir des-0-artifacts
 pnpm design:report -- --artifact-dir des-0-artifacts --copy-to D:/工作相关/工作文件/工作资料/AI项目/docs/des-0-artifacts
 pnpm design:license-audit

@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { DesignDocument } from "@/lib/design/ast"
 import { CanvasKitRenderer } from "@/lib/design/renderers/canvaskit-renderer"
+import {
+  loadCanvasKitRuntime,
+  type CanvasKitRuntime,
+} from "@/lib/design/renderers/canvaskit-runtime"
 import { DomSvgRenderer } from "@/lib/design/renderers/dom-svg-renderer"
 import { WebglRenderer } from "@/lib/design/renderers/webgl-renderer"
 import type {
@@ -92,30 +96,63 @@ const BENCHMARK_FIXTURES: Record<string, DesignDocument> = {
   "nodes-10000": createBenchmarkFixture(10_000),
 }
 
-function createRenderer(id: RendererId): RendererAdapter {
+type RenderState = "loading" | "completed" | "unavailable" | "failed"
+
+interface DesignLabProps {
+  loadCanvasKit?: () => Promise<CanvasKitRuntime>
+}
+
+function createRenderer(
+  id: RendererId,
+  canvasKitRuntime?: CanvasKitRuntime
+): RendererAdapter {
   if (id === "dom-svg") return new DomSvgRenderer()
-  if (id === "canvaskit") return new CanvasKitRenderer()
+  if (id === "canvaskit") return new CanvasKitRenderer(canvasKitRuntime)
   return new WebglRenderer()
 }
 
-export function DesignLab() {
+export function DesignLab({
+  loadCanvasKit = loadCanvasKitRuntime,
+}: DesignLabProps = {}) {
   const [fixtureId, setFixtureId] = useState("starter")
   const [rendererId, setRendererId] = useState<RendererId>("dom-svg")
   const [status, setStatus] = useState("等待渲染")
+  const [renderResult, setRenderResult] = useState<{
+    key: string
+    state: RenderState
+  }>({ key: "", state: "loading" })
   const [nodeCount, setNodeCount] = useState(0)
   const [duration, setDuration] = useState(0)
   const [aiStatus, setAiStatus] = useState("未运行 AI 验证")
   const [aiPreview, setAiPreview] = useState<string>()
-  const capability = useMemo(
-    () => createRenderer(rendererId).capability,
-    [rendererId]
-  )
+  const [canvasKitLoad, setCanvasKitLoad] = useState<{
+    state: "idle" | "ready" | "unavailable"
+    runtime?: CanvasKitRuntime
+    error?: string
+  }>({ state: "idle" })
+  const capability = useMemo(() => {
+    if (rendererId !== "canvaskit") return createRenderer(rendererId).capability
+    if (canvasKitLoad.state === "ready")
+      return createRenderer(rendererId, canvasKitLoad.runtime).capability
+    return {
+      available: false,
+      reason:
+        canvasKitLoad.state === "unavailable"
+          ? canvasKitLoad.error
+          : "正在加载 CanvasKit WASM…",
+      textPrecision: "unavailable" as const,
+      supportsAccessibilityProxy: false,
+    }
+  }, [canvasKitLoad, rendererId])
   const hostRef = useRef<HTMLDivElement>(null)
   const document = useMemo(
     () =>
       FIXTURES[fixtureId] ?? BENCHMARK_FIXTURES[fixtureId] ?? FIXTURES.starter,
     [fixtureId]
   )
+  const renderKey = `${fixtureId}:${rendererId}`
+  const exposedRenderState: RenderState =
+    renderResult.key === renderKey ? renderResult.state : "loading"
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -140,26 +177,70 @@ export function DesignLab() {
     }
   }, [])
 
+  useEffect(() => {
+    if (rendererId !== "canvaskit" || canvasKitLoad.state !== "idle") return
+    let active = true
+    void loadCanvasKit().then(
+      (runtime) => {
+        if (active) setCanvasKitLoad({ state: "ready", runtime })
+      },
+      (error: unknown) => {
+        if (!active) return
+        setCanvasKitLoad({
+          state: "unavailable",
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    )
+    return () => {
+      active = false
+    }
+  }, [canvasKitLoad.state, loadCanvasKit, rendererId])
+
   // The effect owns the renderer DOM node and mirrors its measured result into the lab status panel.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const renderer = createRenderer(rendererId)
+    if (rendererId === "canvaskit" && canvasKitLoad.state !== "ready") {
+      hostRef.current?.replaceChildren()
+      setNodeCount(document.nodes.length)
+      setDuration(0)
+      if (canvasKitLoad.state === "unavailable") {
+        setStatus(canvasKitLoad.error ?? "CanvasKit WASM 初始化失败")
+        setRenderResult({ key: renderKey, state: "unavailable" })
+      } else {
+        setStatus("正在加载 CanvasKit WASM…")
+        setRenderResult({ key: renderKey, state: "loading" })
+      }
+      return
+    }
+    const renderer = createRenderer(rendererId, canvasKitLoad.runtime)
     renderer.load(document)
     if (!renderer.capability.available) {
       hostRef.current?.replaceChildren()
       setStatus(renderer.capability.reason ?? "渲染器不可用")
       setNodeCount(document.nodes.length)
+      setDuration(0)
+      setRenderResult({ key: renderKey, state: "unavailable" })
       return () => renderer.dispose()
     }
-    const result = renderer.render(
-      { width: 640, height: 380, scale: 1 },
-      hostRef.current ?? undefined
-    )
-    setNodeCount(result.nodeCount)
-    setDuration(result.durationMs)
-    setStatus("渲染完成")
+    try {
+      const result = renderer.render(
+        { width: 640, height: 380, scale: 1 },
+        hostRef.current ?? undefined
+      )
+      setNodeCount(result.nodeCount)
+      setDuration(result.durationMs)
+      setStatus("渲染完成")
+      setRenderResult({ key: renderKey, state: "completed" })
+    } catch (error) {
+      hostRef.current?.replaceChildren()
+      setNodeCount(document.nodes.length)
+      setDuration(0)
+      setStatus(error instanceof Error ? error.message : "渲染失败")
+      setRenderResult({ key: renderKey, state: "failed" })
+    }
     return () => renderer.dispose()
-  }, [document, rendererId])
+  }, [canvasKitLoad, document, renderKey, rendererId])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const sample = () => {
@@ -197,6 +278,7 @@ export function DesignLab() {
     <main
       data-fixture-id={fixtureId}
       data-renderer-id={rendererId}
+      data-render-state={exposedRenderState}
       style={{
         minHeight: "100vh",
         padding: 24,
@@ -312,7 +394,13 @@ export function DesignLab() {
             }}
           >
             <span>{status}</span>
-            <span>{capability?.available ? "available" : "diagnostic"}</span>
+            <span>
+              {exposedRenderState === "loading"
+                ? "loading"
+                : capability?.available
+                  ? "available"
+                  : "diagnostic"}
+            </span>
           </div>
           <div
             data-testid="design-lab-ai-status"
@@ -332,7 +420,9 @@ export function DesignLab() {
               overflow: "auto",
             }}
           />
-          {capability && !capability.available ? (
+          {capability &&
+          !capability.available &&
+          exposedRenderState !== "loading" ? (
             <p
               role="status"
               style={{ color: "#a33a32", fontSize: 13, margin: "10px 0 0" }}

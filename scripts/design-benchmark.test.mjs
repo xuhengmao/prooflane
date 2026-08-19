@@ -8,7 +8,30 @@ import {
   createFixture,
   hashOperationSequence,
 } from "./design-fixtures/generate-fixtures.mjs"
+import { waitForTerminalRender } from "./design-benchmark.mjs"
 import { generateReport } from "./design-report.mjs"
+
+test("基准截图等待当前渲染器进入终态", async () => {
+  let selected
+  let options
+  const page = {
+    locator(selector) {
+      selected = selector
+      return {
+        async waitFor(value) {
+          options = value
+        },
+      }
+    },
+  }
+
+  await waitForTerminalRender(page, 12_345)
+
+  assert.match(selected, /data-render-state="completed"/)
+  assert.match(selected, /data-render-state="unavailable"/)
+  assert.match(selected, /data-render-state="failed"/)
+  assert.deepEqual(options, { timeout: 12_345 })
+})
 
 test("生成固定规模且包含国际文本和图片引用的 AST", () => {
   for (const size of [100, 1_000, 10_000]) {

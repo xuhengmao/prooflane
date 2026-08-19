@@ -53,19 +53,30 @@ async function writeDiagnostic({ artifactDir, fixtures, diagnostic }) {
 
 async function pageState(page) {
   return page.evaluate(() => {
-    const body = document.body?.innerText ?? ""
+    const renderState = document
+      .querySelector("main")
+      ?.getAttribute("data-render-state")
     const diagnostic = document
       .querySelector('[role="status"]')
       ?.textContent?.trim()
     return {
-      status: diagnostic
-        ? "unavailable"
-        : body.includes("渲染完成")
+      status:
+        renderState === "completed"
           ? "passed"
-          : "failed",
+          : renderState === "unavailable"
+            ? "unavailable"
+            : "failed",
       diagnostic: diagnostic || undefined,
     }
   })
+}
+
+export async function waitForTerminalRender(page, timeoutMs) {
+  await page
+    .locator(
+      'main[data-render-state="completed"], main[data-render-state="unavailable"], main[data-render-state="failed"]'
+    )
+    .waitFor({ timeout: timeoutMs })
 }
 
 export async function runBenchmark({
@@ -148,6 +159,7 @@ export async function runBenchmark({
           await page
             .locator(`main[data-renderer-id="${renderer}"]`)
             .waitFor({ timeout: timeoutMs })
+          await waitForTerminalRender(page, timeoutMs)
           const state = await pageState(page)
           await page.screenshot({
             path: screenshotPath,
