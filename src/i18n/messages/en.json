@@ -3020,14 +3020,14 @@
       "liveTurnStats": {
         "thinking": "Thinking...",
         "streaming": "Streaming",
-      "elapsedHours": "{value}h",
-      "elapsedMinutes": "{value}m",
-      "elapsedSeconds": "{value}s",
-      "toolUseCount": "{count} tool {count, plural, one {use} other {uses}}",
-      "outputRatePending": "Output speed pending",
-      "outputRateEstimated": "Estimated output speed: {value} tokens per second",
-      "outputRateMeasured": "Measured output speed: {value} tokens per second"
-    },
+        "elapsedHours": "{value}h",
+        "elapsedMinutes": "{value}m",
+        "elapsedSeconds": "{value}s",
+        "toolUseCount": "{count} tool {count, plural, one {use} other {uses}}",
+        "outputRatePending": "Output speed pending",
+        "outputRateEstimated": "Estimated output speed: {value} tokens per second",
+        "outputRateMeasured": "Measured output speed: {value} tokens per second"
+      },
       "jsonTree": {
         "viewRaw": "Show raw JSON",
         "viewTree": "Show tree",
@@ -4324,6 +4324,7 @@
     "toggleDetails": "Toggle details"
   },
   "Design": {
+    "backToDesigns": "Back to designs",
     "title": "AI Design",
     "subtitle": "Create and manage structured designs locally.",
     "newDesign": "New design",
@@ -4359,8 +4360,57 @@
     "deleteTitle": "Delete design?",
     "deleteDescription": "This removes {name} from the design list. Its revision history remains recoverable during the retention window.",
     "deleteDesign": "Delete design",
-    "kinds": { "page": "Page", "component": "Component", "image": "Image", "icon": "Icon", "design_system": "Design system", "flow": "Flow" },
-    "statuses": { "draft": "Draft", "active": "Active", "archived": "Archived" }
+    "kinds": {
+      "page": "Page",
+      "component": "Component",
+      "image": "Image",
+      "icon": "Icon",
+      "design_system": "Design system",
+      "flow": "Flow"
+    },
+    "statuses": {
+      "draft": "Draft",
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "workspace": {
+      "loading": "Loading this design…",
+      "loadError": "Could not load this design",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "conflict": "An update is available",
+      "saveError": "Could not save",
+      "save": "Save",
+      "name": "Design name",
+      "project": "Project",
+      "views": "Workspace views",
+      "leftPanel": "Design structure",
+      "rightPanel": "Properties",
+      "selectElement": "Select an element to inspect its properties"
+    },
+    "views": { "design": "Design", "prototype": "Prototype", "run": "Run" },
+    "panels": {
+      "layers": "Layers",
+      "assets": "Assets",
+      "components": "Components",
+      "variables": "Variables"
+    },
+    "tools": {
+      "select": "Select",
+      "frame": "Frame (coming soon)",
+      "text": "Text (coming soon)",
+      "shape": "Shape (coming soon)"
+    },
+    "canvas": {
+      "title": "Empty canvas",
+      "subtitle": "Professional canvas editing will be added in a later phase.",
+      "designMode": "Design mode",
+      "readOnlyMode": "Review mode"
+    },
+    "composer": {
+      "title": "AI Composer",
+      "subtitle": "Describe a design change to prepare the next action."
+    }
   },
   "Automations": {
     "title": "Automations",

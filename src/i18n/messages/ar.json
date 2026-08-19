@@ -4324,8 +4324,89 @@
     "toggleDetails": "تبديل التفاصيل"
   },
   "Design": {
-    "title": "تصميم بالذكاء الاصطناعي", "subtitle": "أنشئ التصميمات المنظمة وأدرها محليًا.", "newDesign": "تصميم جديد", "createDescription": "ابدأ تصميمًا مستقلًا ويمكنك ربطه بمشروع لاحقًا.", "name": "الاسم", "type": "النوع", "status": "الحالة", "project": "المشروع", "search": "البحث في التصميمات", "brief": "صف التصميم", "startFromBrief": "البدء من الوصف", "createDesign": "إنشاء التصميم", "saveName": "حفظ الاسم", "cancel": "إلغاء", "loading": "جار تحميل التصميمات…", "loadError": "تعذر تحميل التصميمات", "retry": "إعادة المحاولة", "empty": "لا توجد تصميمات بعد", "noMatches": "لا توجد تصميمات مطابقة", "recent": "التصميمات الأخيرة", "allTypes": "كل الأنواع", "allStatuses": "كل الحالات", "allProjects": "كل المشاريع", "linkedProjects": "المشاريع المرتبطة", "unlinkedProjects": "مستقل", "openNamed": "فتح {name}", "moreActions": "إجراءات إضافية لـ {name}", "rename": "إعادة التسمية", "duplicate": "تكرار", "archive": "أرشفة", "restore": "استعادة", "delete": "حذف", "deleteTitle": "حذف التصميم؟", "deleteDescription": "ستتم إزالة {name} من القائمة.", "deleteDesign": "حذف التصميم",
-    "kinds": { "page": "صفحة", "component": "مكوّن", "image": "صورة", "icon": "أيقونة", "design_system": "نظام تصميم", "flow": "تدفق" }, "statuses": { "draft": "مسودة", "active": "نشط", "archived": "مؤرشف" }
+    "backToDesigns": "Back to designs",
+    "title": "تصميم بالذكاء الاصطناعي",
+    "subtitle": "أنشئ التصميمات المنظمة وأدرها محليًا.",
+    "newDesign": "تصميم جديد",
+    "createDescription": "ابدأ تصميمًا مستقلًا ويمكنك ربطه بمشروع لاحقًا.",
+    "name": "الاسم",
+    "type": "النوع",
+    "status": "الحالة",
+    "project": "المشروع",
+    "search": "البحث في التصميمات",
+    "brief": "صف التصميم",
+    "startFromBrief": "البدء من الوصف",
+    "createDesign": "إنشاء التصميم",
+    "saveName": "حفظ الاسم",
+    "cancel": "إلغاء",
+    "loading": "جار تحميل التصميمات…",
+    "loadError": "تعذر تحميل التصميمات",
+    "retry": "إعادة المحاولة",
+    "empty": "لا توجد تصميمات بعد",
+    "noMatches": "لا توجد تصميمات مطابقة",
+    "recent": "التصميمات الأخيرة",
+    "allTypes": "كل الأنواع",
+    "allStatuses": "كل الحالات",
+    "allProjects": "كل المشاريع",
+    "linkedProjects": "المشاريع المرتبطة",
+    "unlinkedProjects": "مستقل",
+    "openNamed": "فتح {name}",
+    "moreActions": "إجراءات إضافية لـ {name}",
+    "rename": "إعادة التسمية",
+    "duplicate": "تكرار",
+    "archive": "أرشفة",
+    "restore": "استعادة",
+    "delete": "حذف",
+    "deleteTitle": "حذف التصميم؟",
+    "deleteDescription": "ستتم إزالة {name} من القائمة.",
+    "deleteDesign": "حذف التصميم",
+    "kinds": {
+      "page": "صفحة",
+      "component": "مكوّن",
+      "image": "صورة",
+      "icon": "أيقونة",
+      "design_system": "نظام تصميم",
+      "flow": "تدفق"
+    },
+    "statuses": { "draft": "مسودة", "active": "نشط", "archived": "مؤرشف" },
+    "workspace": {
+      "loading": "Loading this design…",
+      "loadError": "Could not load this design",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "conflict": "An update is available",
+      "saveError": "Could not save",
+      "save": "Save",
+      "name": "Design name",
+      "project": "Project",
+      "views": "Workspace views",
+      "leftPanel": "Design structure",
+      "rightPanel": "Properties",
+      "selectElement": "Select an element to inspect its properties"
+    },
+    "views": { "design": "Design", "prototype": "Prototype", "run": "Run" },
+    "panels": {
+      "layers": "Layers",
+      "assets": "Assets",
+      "components": "Components",
+      "variables": "Variables"
+    },
+    "tools": {
+      "select": "Select",
+      "frame": "Frame (coming soon)",
+      "text": "Text (coming soon)",
+      "shape": "Shape (coming soon)"
+    },
+    "canvas": {
+      "title": "Canvas host",
+      "subtitle": "Professional canvas editing will be added in a later phase.",
+      "designMode": "Design mode",
+      "readOnlyMode": "Review mode"
+    },
+    "composer": {
+      "title": "AI Composer",
+      "subtitle": "Describe a design change to prepare the next action."
+    }
   },
   "Automations": {
     "title": "الأتمتة",

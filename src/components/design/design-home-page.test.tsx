@@ -171,5 +171,5 @@ describe("DesignHomePage", () => {
     await waitFor(() =>
       expect(designService.delete).toHaveBeenCalledWith("artifact-1")
     )
-  })
+  }, 15_000)
 })

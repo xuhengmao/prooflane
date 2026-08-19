@@ -4324,8 +4324,89 @@
     "toggleDetails": "切換詳情"
   },
   "Design": {
-    "title": "AI 設計", "subtitle": "在本機建立及管理結構化設計。", "newDesign": "新增設計", "createDescription": "建立獨立設計，之後可以再連結專案。", "name": "名稱", "type": "類型", "status": "狀態", "project": "專案", "search": "搜尋設計", "brief": "描述想設計的內容", "startFromBrief": "從描述開始", "createDesign": "建立設計", "saveName": "儲存名稱", "cancel": "取消", "loading": "正在載入設計…", "loadError": "無法載入設計", "retry": "重試", "empty": "還沒有設計", "noMatches": "沒有符合篩選條件的設計", "recent": "最近設計", "allTypes": "所有類型", "allStatuses": "所有狀態", "allProjects": "所有專案", "linkedProjects": "已連結專案", "unlinkedProjects": "獨立設計", "openNamed": "開啟 {name}", "moreActions": "{name} 的更多操作", "rename": "重新命名", "duplicate": "複製", "archive": "封存", "restore": "還原", "delete": "刪除", "deleteTitle": "刪除設計？", "deleteDescription": "這會從設計清單移除 {name}。", "deleteDesign": "刪除設計",
-    "kinds": { "page": "頁面", "component": "元件", "image": "圖片", "icon": "圖示", "design_system": "設計系統", "flow": "流程" }, "statuses": { "draft": "草稿", "active": "啟用", "archived": "已封存" }
+    "backToDesigns": "返回設計清單",
+    "title": "AI 設計",
+    "subtitle": "在本機建立及管理結構化設計。",
+    "newDesign": "新增設計",
+    "createDescription": "建立獨立設計，之後可以再連結專案。",
+    "name": "名稱",
+    "type": "類型",
+    "status": "狀態",
+    "project": "專案",
+    "search": "搜尋設計",
+    "brief": "描述想設計的內容",
+    "startFromBrief": "從描述開始",
+    "createDesign": "建立設計",
+    "saveName": "儲存名稱",
+    "cancel": "取消",
+    "loading": "正在載入設計…",
+    "loadError": "無法載入設計",
+    "retry": "重試",
+    "empty": "還沒有設計",
+    "noMatches": "沒有符合篩選條件的設計",
+    "recent": "最近設計",
+    "allTypes": "所有類型",
+    "allStatuses": "所有狀態",
+    "allProjects": "所有專案",
+    "linkedProjects": "已連結專案",
+    "unlinkedProjects": "獨立設計",
+    "openNamed": "開啟 {name}",
+    "moreActions": "{name} 的更多操作",
+    "rename": "重新命名",
+    "duplicate": "複製",
+    "archive": "封存",
+    "restore": "還原",
+    "delete": "刪除",
+    "deleteTitle": "刪除設計？",
+    "deleteDescription": "這會從設計清單移除 {name}。",
+    "deleteDesign": "刪除設計",
+    "kinds": {
+      "page": "頁面",
+      "component": "元件",
+      "image": "圖片",
+      "icon": "圖示",
+      "design_system": "設計系統",
+      "flow": "流程"
+    },
+    "statuses": { "draft": "草稿", "active": "啟用", "archived": "已封存" },
+    "workspace": {
+      "loading": "正在載入設計…",
+      "loadError": "無法載入此設計",
+      "saving": "正在儲存…",
+      "saved": "已儲存",
+      "conflict": "已有更新",
+      "saveError": "儲存失敗",
+      "save": "儲存",
+      "name": "設計名稱",
+      "project": "專案",
+      "views": "工作台檢視",
+      "leftPanel": "設計結構",
+      "rightPanel": "屬性",
+      "selectElement": "選取元素以查看屬性"
+    },
+    "views": { "design": "設計", "prototype": "原型", "run": "執行" },
+    "panels": {
+      "layers": "圖層",
+      "assets": "資產",
+      "components": "元件",
+      "variables": "變數"
+    },
+    "tools": {
+      "select": "選取",
+      "frame": "畫板（即將推出）",
+      "text": "文字（即將推出）",
+      "shape": "形狀（即將推出）"
+    },
+    "canvas": {
+      "title": "空白畫布",
+      "subtitle": "專業畫布編輯將在後續階段加入。",
+      "designMode": "設計模式",
+      "readOnlyMode": "審查模式"
+    },
+    "composer": {
+      "title": "AI Composer",
+      "subtitle": "描述設計變更，準備下一步操作。"
+    }
   },
   "Automations": {
     "title": "自動化",

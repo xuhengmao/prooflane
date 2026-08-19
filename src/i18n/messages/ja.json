@@ -4324,8 +4324,93 @@
     "toggleDetails": "詳細を切り替え"
   },
   "Design": {
-    "title": "AI デザイン", "subtitle": "構造化デザインをローカルで作成・管理します。", "newDesign": "新しいデザイン", "createDescription": "独立したデザインを作成し、後からプロジェクトに関連付けできます。", "name": "名前", "type": "種類", "status": "状態", "project": "プロジェクト", "search": "デザインを検索", "brief": "デザイン内容を説明", "startFromBrief": "説明から開始", "createDesign": "デザインを作成", "saveName": "名前を保存", "cancel": "キャンセル", "loading": "デザインを読み込み中…", "loadError": "デザインを読み込めません", "retry": "再試行", "empty": "デザインはまだありません", "noMatches": "一致するデザインはありません", "recent": "最近のデザイン", "allTypes": "すべての種類", "allStatuses": "すべての状態", "allProjects": "すべてのプロジェクト", "linkedProjects": "関連プロジェクト", "unlinkedProjects": "独立", "openNamed": "{name}を開く", "moreActions": "{name}のその他の操作", "rename": "名前を変更", "duplicate": "複製", "archive": "アーカイブ", "restore": "復元", "delete": "削除", "deleteTitle": "デザインを削除しますか？", "deleteDescription": "{name}を一覧から削除します。", "deleteDesign": "デザインを削除",
-    "kinds": { "page": "ページ", "component": "コンポーネント", "image": "画像", "icon": "アイコン", "design_system": "デザインシステム", "flow": "フロー" }, "statuses": { "draft": "下書き", "active": "有効", "archived": "アーカイブ済み" }
+    "backToDesigns": "Back to designs",
+    "title": "AI デザイン",
+    "subtitle": "構造化デザインをローカルで作成・管理します。",
+    "newDesign": "新しいデザイン",
+    "createDescription": "独立したデザインを作成し、後からプロジェクトに関連付けできます。",
+    "name": "名前",
+    "type": "種類",
+    "status": "状態",
+    "project": "プロジェクト",
+    "search": "デザインを検索",
+    "brief": "デザイン内容を説明",
+    "startFromBrief": "説明から開始",
+    "createDesign": "デザインを作成",
+    "saveName": "名前を保存",
+    "cancel": "キャンセル",
+    "loading": "デザインを読み込み中…",
+    "loadError": "デザインを読み込めません",
+    "retry": "再試行",
+    "empty": "デザインはまだありません",
+    "noMatches": "一致するデザインはありません",
+    "recent": "最近のデザイン",
+    "allTypes": "すべての種類",
+    "allStatuses": "すべての状態",
+    "allProjects": "すべてのプロジェクト",
+    "linkedProjects": "関連プロジェクト",
+    "unlinkedProjects": "独立",
+    "openNamed": "{name}を開く",
+    "moreActions": "{name}のその他の操作",
+    "rename": "名前を変更",
+    "duplicate": "複製",
+    "archive": "アーカイブ",
+    "restore": "復元",
+    "delete": "削除",
+    "deleteTitle": "デザインを削除しますか？",
+    "deleteDescription": "{name}を一覧から削除します。",
+    "deleteDesign": "デザインを削除",
+    "kinds": {
+      "page": "ページ",
+      "component": "コンポーネント",
+      "image": "画像",
+      "icon": "アイコン",
+      "design_system": "デザインシステム",
+      "flow": "フロー"
+    },
+    "statuses": {
+      "draft": "下書き",
+      "active": "有効",
+      "archived": "アーカイブ済み"
+    },
+    "workspace": {
+      "loading": "Loading this design…",
+      "loadError": "Could not load this design",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "conflict": "An update is available",
+      "saveError": "Could not save",
+      "save": "Save",
+      "name": "Design name",
+      "project": "Project",
+      "views": "Workspace views",
+      "leftPanel": "Design structure",
+      "rightPanel": "Properties",
+      "selectElement": "Select an element to inspect its properties"
+    },
+    "views": { "design": "Design", "prototype": "Prototype", "run": "Run" },
+    "panels": {
+      "layers": "Layers",
+      "assets": "Assets",
+      "components": "Components",
+      "variables": "Variables"
+    },
+    "tools": {
+      "select": "Select",
+      "frame": "Frame (coming soon)",
+      "text": "Text (coming soon)",
+      "shape": "Shape (coming soon)"
+    },
+    "canvas": {
+      "title": "Canvas host",
+      "subtitle": "Professional canvas editing will be added in a later phase.",
+      "designMode": "Design mode",
+      "readOnlyMode": "Review mode"
+    },
+    "composer": {
+      "title": "AI Composer",
+      "subtitle": "Describe a design change to prepare the next action."
+    }
   },
   "Automations": {
     "title": "オートメーション",

@@ -4,7 +4,9 @@ import { useTranslations } from "next-intl"
 
 import { WorkbenchPageTitle } from "@/components/workbench/workbench-page-title"
 import { useDesignWorkspace } from "@/contexts/design-workspace-context"
+import { desktopDesignArtifactService } from "@/lib/design/artifact-service"
 import { DesignHomePage } from "./design-home-page"
+import { DesignWorkspace } from "./design-workspace"
 
 export function DesignRoutePageTitle() {
   const t = useTranslations("Folder.sidebar")
@@ -12,11 +14,12 @@ export function DesignRoutePageTitle() {
 }
 
 export function DesignRoutePage() {
-  const { artifactId } = useDesignWorkspace()
+  const { artifactId, openHome } = useDesignWorkspace()
   return artifactId ? (
-    <main
-      className="h-full min-h-0 bg-background"
-      data-design-workspace="true"
+    <DesignWorkspace
+      artifactId={artifactId}
+      service={desktopDesignArtifactService}
+      onBack={openHome}
     />
   ) : (
     <DesignHomePage />

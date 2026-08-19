@@ -4324,8 +4324,93 @@
     "toggleDetails": "Afficher les détails"
   },
   "Design": {
-    "title": "Design IA", "subtitle": "Créez et gérez des designs structurés localement.", "newDesign": "Nouveau design", "createDescription": "Commencez un design indépendant et liez-le ensuite à un projet.", "name": "Nom", "type": "Type", "status": "Statut", "project": "Projet", "search": "Rechercher des designs", "brief": "Décrivez le design", "startFromBrief": "Commencer avec la description", "createDesign": "Créer le design", "saveName": "Enregistrer le nom", "cancel": "Annuler", "loading": "Chargement des designs…", "loadError": "Impossible de charger les designs", "retry": "Réessayer", "empty": "Aucun design", "noMatches": "Aucun design correspondant", "recent": "Designs récents", "allTypes": "Tous les types", "allStatuses": "Tous les statuts", "allProjects": "Tous les projets", "linkedProjects": "Projets liés", "unlinkedProjects": "Indépendant", "openNamed": "Ouvrir {name}", "moreActions": "Autres actions pour {name}", "rename": "Renommer", "duplicate": "Dupliquer", "archive": "Archiver", "restore": "Restaurer", "delete": "Supprimer", "deleteTitle": "Supprimer le design ?", "deleteDescription": "{name} sera retiré de la liste.", "deleteDesign": "Supprimer le design",
-    "kinds": { "page": "Page", "component": "Composant", "image": "Image", "icon": "Icône", "design_system": "Système de design", "flow": "Flux" }, "statuses": { "draft": "Brouillon", "active": "Actif", "archived": "Archivé" }
+    "backToDesigns": "Back to designs",
+    "title": "Design IA",
+    "subtitle": "Créez et gérez des designs structurés localement.",
+    "newDesign": "Nouveau design",
+    "createDescription": "Commencez un design indépendant et liez-le ensuite à un projet.",
+    "name": "Nom",
+    "type": "Type",
+    "status": "Statut",
+    "project": "Projet",
+    "search": "Rechercher des designs",
+    "brief": "Décrivez le design",
+    "startFromBrief": "Commencer avec la description",
+    "createDesign": "Créer le design",
+    "saveName": "Enregistrer le nom",
+    "cancel": "Annuler",
+    "loading": "Chargement des designs…",
+    "loadError": "Impossible de charger les designs",
+    "retry": "Réessayer",
+    "empty": "Aucun design",
+    "noMatches": "Aucun design correspondant",
+    "recent": "Designs récents",
+    "allTypes": "Tous les types",
+    "allStatuses": "Tous les statuts",
+    "allProjects": "Tous les projets",
+    "linkedProjects": "Projets liés",
+    "unlinkedProjects": "Indépendant",
+    "openNamed": "Ouvrir {name}",
+    "moreActions": "Autres actions pour {name}",
+    "rename": "Renommer",
+    "duplicate": "Dupliquer",
+    "archive": "Archiver",
+    "restore": "Restaurer",
+    "delete": "Supprimer",
+    "deleteTitle": "Supprimer le design ?",
+    "deleteDescription": "{name} sera retiré de la liste.",
+    "deleteDesign": "Supprimer le design",
+    "kinds": {
+      "page": "Page",
+      "component": "Composant",
+      "image": "Image",
+      "icon": "Icône",
+      "design_system": "Système de design",
+      "flow": "Flux"
+    },
+    "statuses": {
+      "draft": "Brouillon",
+      "active": "Actif",
+      "archived": "Archivé"
+    },
+    "workspace": {
+      "loading": "Loading this design…",
+      "loadError": "Could not load this design",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "conflict": "An update is available",
+      "saveError": "Could not save",
+      "save": "Save",
+      "name": "Design name",
+      "project": "Project",
+      "views": "Workspace views",
+      "leftPanel": "Design structure",
+      "rightPanel": "Properties",
+      "selectElement": "Select an element to inspect its properties"
+    },
+    "views": { "design": "Design", "prototype": "Prototype", "run": "Run" },
+    "panels": {
+      "layers": "Layers",
+      "assets": "Assets",
+      "components": "Components",
+      "variables": "Variables"
+    },
+    "tools": {
+      "select": "Select",
+      "frame": "Frame (coming soon)",
+      "text": "Text (coming soon)",
+      "shape": "Shape (coming soon)"
+    },
+    "canvas": {
+      "title": "Canvas host",
+      "subtitle": "Professional canvas editing will be added in a later phase.",
+      "designMode": "Design mode",
+      "readOnlyMode": "Review mode"
+    },
+    "composer": {
+      "title": "AI Composer",
+      "subtitle": "Describe a design change to prepare the next action."
+    }
   },
   "Automations": {
     "title": "Automatisations",
