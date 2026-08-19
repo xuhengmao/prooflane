@@ -1,6 +1,7 @@
 "use client"
 
-import type { KeyboardEvent, MouseEvent } from "react"
+import { useState } from "react"
+import type { KeyboardEvent, MouseEvent, PointerEvent } from "react"
 
 import type { DesignBounds, DesignDocument, DesignNode } from "@/lib/design/ast"
 
@@ -14,6 +15,17 @@ interface DesignSvgCanvasProps {
   readOnly?: boolean
 }
 
+interface DragState {
+  nodeId: string
+  pointerId: number
+  startX: number
+  startY: number
+  originX: number
+  originY: number
+  previewX: number
+  previewY: number
+}
+
 export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
   const {
     document,
@@ -21,12 +33,81 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     ariaLabel,
     selectedNodeId,
     onSelectNode,
+    onMoveNode,
     readOnly = false,
   } = props
   const viewport = documentViewport(document)
+  const [drag, setDrag] = useState<DragState | null>(null)
   const selectedNode = document.nodes.find(
     (node) => node.id === selectedNodeId && node.visible !== false
   )
+
+  const startDrag = (event: PointerEvent<SVGElement>, node: DesignNode) => {
+    if (readOnly || node.locked === true || !node.bounds || event.button !== 0)
+      return
+    const svg = event.currentTarget.ownerSVGElement
+    if (!svg) return
+    const point = clientPointToDocument(
+      svg,
+      viewport,
+      event.clientX,
+      event.clientY
+    )
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    onSelectNode(node.id)
+    setDrag({
+      nodeId: node.id,
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      originX: node.bounds.x,
+      originY: node.bounds.y,
+      previewX: node.bounds.x,
+      previewY: node.bounds.y,
+    })
+  }
+
+  const previewDrag = (event: PointerEvent<SVGElement>) => {
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const svg = event.currentTarget.ownerSVGElement
+    if (!svg) return
+    const point = clientPointToDocument(
+      svg,
+      viewport,
+      event.clientX,
+      event.clientY
+    )
+    setDrag((current) =>
+      current && current.pointerId === event.pointerId
+        ? {
+            ...current,
+            previewX: current.originX + point.x - current.startX,
+            previewY: current.originY + point.y - current.startY,
+          }
+        : current
+    )
+  }
+
+  const finishDrag = (event: PointerEvent<SVGElement>) => {
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const svg = event.currentTarget.ownerSVGElement
+    if (!svg) return
+    const point = clientPointToDocument(
+      svg,
+      viewport,
+      event.clientX,
+      event.clientY
+    )
+    const x = drag.originX + point.x - drag.startX
+    const y = drag.originY + point.y - drag.startY
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    setDrag(null)
+    if (x !== drag.originX || y !== drag.originY) {
+      onMoveNode(drag.nodeId, x, y)
+    }
+  }
 
   return (
     <svg
@@ -39,6 +120,9 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
       onClick={(event) => {
         if (event.target === event.currentTarget) onSelectNode(null)
       }}
+      onKeyDown={(event) => {
+        if (!readOnly && event.key === "Escape") onSelectNode(null)
+      }}
     >
       {document.nodes.map((node) => (
         <DesignSvgNode
@@ -46,11 +130,18 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
           node={node}
           selected={node.id === selectedNodeId}
           readOnly={readOnly}
+          previewBounds={previewBounds(node, drag)}
           onSelectNode={onSelectNode}
+          onPointerDown={(event) => startDrag(event, node)}
+          onPointerMove={previewDrag}
+          onPointerUp={finishDrag}
+          onPointerCancel={() => setDrag(null)}
         />
       ))}
       {selectedNode?.bounds ? (
-        <SelectionOutline bounds={selectedNode.bounds} />
+        <SelectionOutline
+          bounds={previewBounds(selectedNode, drag) ?? selectedNode.bounds}
+        />
       ) : null}
     </svg>
   )
@@ -60,12 +151,22 @@ function DesignSvgNode({
   node,
   selected,
   readOnly,
+  previewBounds,
   onSelectNode,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
 }: {
   node: DesignNode
   selected: boolean
   readOnly: boolean
+  previewBounds?: DesignBounds
   onSelectNode: (id: string | null) => void
+  onPointerDown: (event: PointerEvent<SVGElement>) => void
+  onPointerMove: (event: PointerEvent<SVGElement>) => void
+  onPointerUp: (event: PointerEvent<SVGElement>) => void
+  onPointerCancel: () => void
 }) {
   if (
     node.visible === false ||
@@ -74,7 +175,8 @@ function DesignSvgNode({
   )
     return null
 
-  const bounds = node.bounds ?? { x: 0, y: 0, width: 0, height: 0 }
+  const bounds = previewBounds ??
+    node.bounds ?? { x: 0, y: 0, width: 0, height: 0 }
   const selectable = !readOnly && node.locked !== true
   const interactiveProps = {
     "data-testid": `design-node-${node.id}`,
@@ -93,6 +195,10 @@ function DesignSvgNode({
       event.preventDefault()
       onSelectNode(node.id)
     },
+    onPointerDown: selectable ? onPointerDown : undefined,
+    onPointerMove: selectable ? onPointerMove : undefined,
+    onPointerUp: selectable ? onPointerUp : undefined,
+    onPointerCancel: selectable ? onPointerCancel : undefined,
   }
 
   if (node.type === "text") {
@@ -223,6 +329,34 @@ function documentViewport(document: DesignDocument): DesignBounds {
     y,
     width: Math.max(1, right - x),
     height: Math.max(1, bottom - y),
+  }
+}
+
+function clientPointToDocument(
+  svg: SVGSVGElement,
+  viewport: DesignBounds,
+  clientX: number,
+  clientY: number
+): { x: number; y: number } {
+  const rect = svg.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) {
+    return { x: viewport.x, y: viewport.y }
+  }
+  return {
+    x: viewport.x + ((clientX - rect.left) / rect.width) * viewport.width,
+    y: viewport.y + ((clientY - rect.top) / rect.height) * viewport.height,
+  }
+}
+
+function previewBounds(
+  node: DesignNode,
+  drag: DragState | null
+): DesignBounds | undefined {
+  if (!node.bounds || drag?.nodeId !== node.id) return node.bounds
+  return {
+    ...node.bounds,
+    x: drag.previewX,
+    y: drag.previewY,
   }
 }
 

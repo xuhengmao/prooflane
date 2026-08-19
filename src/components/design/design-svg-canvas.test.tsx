@@ -74,6 +74,16 @@ function renderCanvas(
   return { onSelectNode, onMoveNode }
 }
 
+function firePointer(
+  target: Element,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  props: { pointerId: number; clientX: number; clientY: number }
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.assign(event, { button: 0, ...props })
+  fireEvent(target, event)
+}
+
 describe("DesignSvgCanvas", () => {
   it("renders supported nodes and a missing-image placeholder safely", () => {
     renderCanvas()
@@ -116,5 +126,77 @@ describe("DesignSvgCanvas", () => {
     rectangle.focus()
     await user.keyboard("{Enter}")
     expect(onSelectNode).toHaveBeenCalledWith("rectangle")
+
+    await user.keyboard("{Escape}")
+    expect(onSelectNode).toHaveBeenLastCalledWith(null)
+  })
+
+  it.each([
+    { label: "100%", zoom: 1, scale: 1 },
+    { label: "200%", zoom: 2, scale: 2 },
+  ])(
+    "previews a drag and commits one document-coordinate move at $label zoom",
+    ({ zoom, scale }) => {
+      const { onMoveNode } = renderCanvas({ zoom })
+      const canvas = screen.getByTestId("design-svg-canvas")
+      vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 800 * scale,
+        bottom: 600 * scale,
+        width: 800 * scale,
+        height: 600 * scale,
+        toJSON: () => ({}),
+      })
+      const rectangle = screen.getByTestId("design-node-rectangle")
+
+      firePointer(rectangle, "pointerdown", {
+        pointerId: 1,
+        clientX: 24 * scale,
+        clientY: 24 * scale,
+      })
+      firePointer(rectangle, "pointermove", {
+        pointerId: 1,
+        clientX: 64 * scale,
+        clientY: 54 * scale,
+      })
+
+      expect(rectangle.getAttribute("x")).toBe("64")
+      expect(rectangle.getAttribute("y")).toBe("54")
+      expect(onMoveNode).not.toHaveBeenCalled()
+
+      firePointer(rectangle, "pointerup", {
+        pointerId: 1,
+        clientX: 64 * scale,
+        clientY: 54 * scale,
+      })
+      expect(onMoveNode).toHaveBeenCalledTimes(1)
+      expect(onMoveNode).toHaveBeenCalledWith("rectangle", 64, 54)
+    }
+  )
+
+  it("does not move a locked node", () => {
+    const { onMoveNode } = renderCanvas()
+    const locked = screen.getByTestId("design-node-locked")
+
+    firePointer(locked, "pointerdown", {
+      pointerId: 1,
+      clientX: 24,
+      clientY: 260,
+    })
+    firePointer(locked, "pointermove", {
+      pointerId: 1,
+      clientX: 48,
+      clientY: 280,
+    })
+    firePointer(locked, "pointerup", {
+      pointerId: 1,
+      clientX: 48,
+      clientY: 280,
+    })
+
+    expect(onMoveNode).not.toHaveBeenCalled()
   })
 })
