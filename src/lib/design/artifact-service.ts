@@ -31,6 +31,17 @@ export interface SaveDesignRevisionInput {
 
 export type DesignInvoke = typeof tauriInvoke
 
+export interface DesignArtifactService {
+  list(includeArchived?: boolean): Promise<DesignArtifact[]>
+  get(id: string): Promise<DesignArtifactDetail>
+  create(input: CreateDesignArtifactInput): Promise<DesignArtifact>
+  rename(id: string, name: string): Promise<DesignArtifact>
+  duplicate(id: string): Promise<DesignArtifact>
+  setArchived(id: string, archived: boolean): Promise<DesignArtifact>
+  delete(id: string): Promise<void>
+  saveRevision(input: SaveDesignRevisionInput): Promise<DesignArtifactDetail>
+}
+
 export function listDesignArtifacts(
   invoke: DesignInvoke = tauriInvoke,
   includeArchived = false
@@ -88,3 +99,22 @@ export function saveDesignRevision(
 ): Promise<DesignArtifactDetail> {
   return invoke("save_design_revision", { input })
 }
+
+export function createDesignArtifactService(
+  invoke: DesignInvoke = tauriInvoke
+): DesignArtifactService {
+  return {
+    list: (includeArchived = false) =>
+      listDesignArtifacts(invoke, includeArchived),
+    get: (id) => getDesignArtifact(invoke, id),
+    create: (input) => createDesignArtifact(invoke, input),
+    rename: (id, name) => renameDesignArtifact(invoke, id, name),
+    duplicate: (id) => duplicateDesignArtifact(invoke, id),
+    setArchived: (id, archived) =>
+      setDesignArtifactArchived(invoke, id, archived),
+    delete: (id) => deleteDesignArtifact(invoke, id),
+    saveRevision: (input) => saveDesignRevision(invoke, input),
+  }
+}
+
+export const desktopDesignArtifactService = createDesignArtifactService()

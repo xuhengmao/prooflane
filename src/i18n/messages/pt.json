@@ -4323,6 +4323,10 @@
     "targetsRemove": "Remover substituição",
     "toggleDetails": "Alternar detalhes"
   },
+  "Design": {
+    "title": "Design com IA", "subtitle": "Crie e gerencie designs estruturados localmente.", "newDesign": "Novo design", "createDescription": "Comece um design independente e vincule um projeto depois.", "name": "Nome", "type": "Tipo", "status": "Status", "project": "Projeto", "search": "Pesquisar designs", "brief": "Descreva o design", "startFromBrief": "Começar pela descrição", "createDesign": "Criar design", "saveName": "Salvar nome", "cancel": "Cancelar", "loading": "Carregando designs…", "loadError": "Não foi possível carregar os designs", "retry": "Tentar novamente", "empty": "Nenhum design ainda", "noMatches": "Nenhum design correspondente", "recent": "Designs recentes", "allTypes": "Todos os tipos", "allStatuses": "Todos os status", "allProjects": "Todos os projetos", "linkedProjects": "Projetos vinculados", "unlinkedProjects": "Independente", "openNamed": "Abrir {name}", "moreActions": "Mais ações para {name}", "rename": "Renomear", "duplicate": "Duplicar", "archive": "Arquivar", "restore": "Restaurar", "delete": "Excluir", "deleteTitle": "Excluir design?", "deleteDescription": "{name} será removido da lista.", "deleteDesign": "Excluir design",
+    "kinds": { "page": "Página", "component": "Componente", "image": "Imagem", "icon": "Ícone", "design_system": "Sistema de design", "flow": "Fluxo" }, "statuses": { "draft": "Rascunho", "active": "Ativo", "archived": "Arquivado" }
+  },
   "Automations": {
     "title": "Automações",
     "new": "Nova automação",

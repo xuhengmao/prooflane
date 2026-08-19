@@ -4323,6 +4323,10 @@
     "targetsRemove": "移除覆寫",
     "toggleDetails": "切換詳情"
   },
+  "Design": {
+    "title": "AI 設計", "subtitle": "在本機建立及管理結構化設計。", "newDesign": "新增設計", "createDescription": "建立獨立設計，之後可以再連結專案。", "name": "名稱", "type": "類型", "status": "狀態", "project": "專案", "search": "搜尋設計", "brief": "描述想設計的內容", "startFromBrief": "從描述開始", "createDesign": "建立設計", "saveName": "儲存名稱", "cancel": "取消", "loading": "正在載入設計…", "loadError": "無法載入設計", "retry": "重試", "empty": "還沒有設計", "noMatches": "沒有符合篩選條件的設計", "recent": "最近設計", "allTypes": "所有類型", "allStatuses": "所有狀態", "allProjects": "所有專案", "linkedProjects": "已連結專案", "unlinkedProjects": "獨立設計", "openNamed": "開啟 {name}", "moreActions": "{name} 的更多操作", "rename": "重新命名", "duplicate": "複製", "archive": "封存", "restore": "還原", "delete": "刪除", "deleteTitle": "刪除設計？", "deleteDescription": "這會從設計清單移除 {name}。", "deleteDesign": "刪除設計",
+    "kinds": { "page": "頁面", "component": "元件", "image": "圖片", "icon": "圖示", "design_system": "設計系統", "flow": "流程" }, "statuses": { "draft": "草稿", "active": "啟用", "archived": "已封存" }
+  },
   "Automations": {
     "title": "自動化",
     "new": "新增自動化",

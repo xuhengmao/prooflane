@@ -4323,6 +4323,10 @@
     "targetsRemove": "إزالة التجاوز",
     "toggleDetails": "تبديل التفاصيل"
   },
+  "Design": {
+    "title": "تصميم بالذكاء الاصطناعي", "subtitle": "أنشئ التصميمات المنظمة وأدرها محليًا.", "newDesign": "تصميم جديد", "createDescription": "ابدأ تصميمًا مستقلًا ويمكنك ربطه بمشروع لاحقًا.", "name": "الاسم", "type": "النوع", "status": "الحالة", "project": "المشروع", "search": "البحث في التصميمات", "brief": "صف التصميم", "startFromBrief": "البدء من الوصف", "createDesign": "إنشاء التصميم", "saveName": "حفظ الاسم", "cancel": "إلغاء", "loading": "جار تحميل التصميمات…", "loadError": "تعذر تحميل التصميمات", "retry": "إعادة المحاولة", "empty": "لا توجد تصميمات بعد", "noMatches": "لا توجد تصميمات مطابقة", "recent": "التصميمات الأخيرة", "allTypes": "كل الأنواع", "allStatuses": "كل الحالات", "allProjects": "كل المشاريع", "linkedProjects": "المشاريع المرتبطة", "unlinkedProjects": "مستقل", "openNamed": "فتح {name}", "moreActions": "إجراءات إضافية لـ {name}", "rename": "إعادة التسمية", "duplicate": "تكرار", "archive": "أرشفة", "restore": "استعادة", "delete": "حذف", "deleteTitle": "حذف التصميم؟", "deleteDescription": "ستتم إزالة {name} من القائمة.", "deleteDesign": "حذف التصميم",
+    "kinds": { "page": "صفحة", "component": "مكوّن", "image": "صورة", "icon": "أيقونة", "design_system": "نظام تصميم", "flow": "تدفق" }, "statuses": { "draft": "مسودة", "active": "نشط", "archived": "مؤرشف" }
+  },
   "Automations": {
     "title": "الأتمتة",
     "new": "أتمتة جديدة",

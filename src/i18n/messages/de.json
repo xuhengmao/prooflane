@@ -4323,6 +4323,10 @@
     "targetsRemove": "Überschreibung entfernen",
     "toggleDetails": "Details umschalten"
   },
+  "Design": {
+    "title": "KI-Design", "subtitle": "Strukturierte Designs lokal erstellen und verwalten.", "newDesign": "Neues Design", "createDescription": "Unabhängiges Design starten und später mit einem Projekt verknüpfen.", "name": "Name", "type": "Typ", "status": "Status", "project": "Projekt", "search": "Designs suchen", "brief": "Beschreibe dein Design", "startFromBrief": "Aus Beschreibung starten", "createDesign": "Design erstellen", "saveName": "Namen speichern", "cancel": "Abbrechen", "loading": "Designs werden geladen…", "loadError": "Designs konnten nicht geladen werden", "retry": "Erneut versuchen", "empty": "Noch keine Designs", "noMatches": "Keine passenden Designs", "recent": "Letzte Designs", "allTypes": "Alle Typen", "allStatuses": "Alle Status", "allProjects": "Alle Projekte", "linkedProjects": "Verknüpfte Projekte", "unlinkedProjects": "Unabhängig", "openNamed": "{name} öffnen", "moreActions": "Weitere Aktionen für {name}", "rename": "Umbenennen", "duplicate": "Duplizieren", "archive": "Archivieren", "restore": "Wiederherstellen", "delete": "Löschen", "deleteTitle": "Design löschen?", "deleteDescription": "{name} wird aus der Liste entfernt.", "deleteDesign": "Design löschen",
+    "kinds": { "page": "Seite", "component": "Komponente", "image": "Bild", "icon": "Symbol", "design_system": "Designsystem", "flow": "Ablauf" }, "statuses": { "draft": "Entwurf", "active": "Aktiv", "archived": "Archiviert" }
+  },
   "Automations": {
     "title": "Automatisierungen",
     "new": "Neue Automatisierung",

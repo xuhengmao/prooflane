@@ -4323,6 +4323,10 @@
     "targetsRemove": "Quitar anulación",
     "toggleDetails": "Mostrar detalles"
   },
+  "Design": {
+    "title": "Diseño con IA", "subtitle": "Crea y gestiona diseños estructurados localmente.", "newDesign": "Nuevo diseño", "createDescription": "Inicia un diseño independiente y vincúlalo a un proyecto después.", "name": "Nombre", "type": "Tipo", "status": "Estado", "project": "Proyecto", "search": "Buscar diseños", "brief": "Describe el diseño", "startFromBrief": "Empezar con descripción", "createDesign": "Crear diseño", "saveName": "Guardar nombre", "cancel": "Cancelar", "loading": "Cargando diseños…", "loadError": "No se pudieron cargar los diseños", "retry": "Reintentar", "empty": "Aún no hay diseños", "noMatches": "No hay diseños coincidentes", "recent": "Diseños recientes", "allTypes": "Todos los tipos", "allStatuses": "Todos los estados", "allProjects": "Todos los proyectos", "linkedProjects": "Proyectos vinculados", "unlinkedProjects": "Independiente", "openNamed": "Abrir {name}", "moreActions": "Más acciones para {name}", "rename": "Cambiar nombre", "duplicate": "Duplicar", "archive": "Archivar", "restore": "Restaurar", "delete": "Eliminar", "deleteTitle": "¿Eliminar diseño?", "deleteDescription": "{name} se quitará de la lista.", "deleteDesign": "Eliminar diseño",
+    "kinds": { "page": "Página", "component": "Componente", "image": "Imagen", "icon": "Icono", "design_system": "Sistema de diseño", "flow": "Flujo" }, "statuses": { "draft": "Borrador", "active": "Activo", "archived": "Archivado" }
+  },
   "Automations": {
     "title": "Automatizaciones",
     "new": "Nueva automatización",

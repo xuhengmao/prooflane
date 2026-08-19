@@ -4323,6 +4323,15 @@
     "targetsRemove": "移除覆盖",
     "toggleDetails": "切换详情"
   },
+  "Design": {
+    "title": "AI 设计",
+    "subtitle": "在本地创建和管理结构化设计。",
+    "newDesign": "新建设计",
+    "createDescription": "创建独立设计，之后可以再关联项目。",
+    "name": "名称", "type": "类型", "status": "状态", "project": "项目", "search": "搜索设计", "brief": "描述你想设计的内容", "startFromBrief": "从描述开始", "createDesign": "创建设计", "saveName": "保存名称", "cancel": "取消", "loading": "正在加载设计…", "loadError": "无法加载设计", "retry": "重试", "empty": "还没有设计", "noMatches": "没有符合筛选条件的设计", "recent": "最近设计", "allTypes": "所有类型", "allStatuses": "所有状态", "allProjects": "所有项目", "linkedProjects": "已关联项目", "unlinkedProjects": "独立设计", "openNamed": "打开 {name}", "moreActions": "打开 {name} 的更多操作", "rename": "重命名", "duplicate": "复制", "archive": "归档", "restore": "恢复", "delete": "删除", "deleteTitle": "删除设计？", "deleteDescription": "这会从设计列表中移除 {name}，修订历史会在保留窗口内可恢复。", "deleteDesign": "删除设计",
+    "kinds": { "page": "页面", "component": "组件", "image": "图片", "icon": "图标", "design_system": "设计系统", "flow": "流程" },
+    "statuses": { "draft": "草稿", "active": "生效", "archived": "已归档" }
+  },
   "Automations": {
     "title": "自动化",
     "new": "新建自动化",
