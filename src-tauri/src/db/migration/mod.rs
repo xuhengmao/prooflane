@@ -41,6 +41,7 @@ mod m20260814_000001_conversation_notification_receipt;
 mod m20260815_000001_conversation_relay;
 mod m20260815_000002_relay_target_model;
 mod m20260816_000001_relay_uncertain_anchor;
+mod m20260819_000001_design_artifact;
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -88,6 +89,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260815_000001_conversation_relay::Migration),
             Box::new(m20260815_000002_relay_target_model::Migration),
             Box::new(m20260816_000001_relay_uncertain_anchor::Migration),
+            Box::new(m20260819_000001_design_artifact::Migration),
         ]
     }
 }

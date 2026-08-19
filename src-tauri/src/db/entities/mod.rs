@@ -10,6 +10,8 @@ pub mod conversation;
 pub mod conversation_capability_setting;
 pub mod conversation_notification_receipt;
 pub mod custom_agent;
+pub mod design_artifact;
+pub mod design_revision;
 pub mod folder;
 pub mod folder_command;
 pub mod folder_link;

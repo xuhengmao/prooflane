@@ -3,6 +3,7 @@ pub mod automation;
 pub mod background;
 pub mod chat_channel;
 pub mod conversation_relay;
+pub mod design;
 pub mod conversation;
 pub mod folder;
 pub mod message;
@@ -31,6 +32,10 @@ pub use conversation_relay::{
     RelayContextPackView, RelayError, RelayErrorCode, RelayFileReference, RelayProvenanceView,
     RelayRound, RelayScopeSelection, RelayScopeType, RelaySnapshot, RelaySnapshotSource,
     RelayStats, RelaySummary, RelayToolFact,
+};
+pub use design::{
+    CreateDesignArtifact, DesignArtifactDetail, DesignArtifactInfo, DesignRevisionInfo,
+    SaveDesignRevision,
 };
 pub use folder::{
     FolderCommandInfo, FolderDetail, FolderHistoryEntry, OpenedTab, OpenedTabsSnapshot,
