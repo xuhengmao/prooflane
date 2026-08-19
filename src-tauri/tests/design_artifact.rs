@@ -1,3 +1,4 @@
+use codeg_lib::commands::design::{validate_create_input, validate_design_name};
 use codeg_lib::db::error::DbError;
 use codeg_lib::db::service::design_artifact_service;
 use codeg_lib::db::test_helpers::fresh_in_memory_db;
@@ -14,6 +15,32 @@ fn create_input(name: &str) -> CreateDesignArtifact {
             "pages": [{ "id": "page-1", "type": "page" }]
         }),
     }
+}
+
+#[test]
+fn command_validation_rejects_invalid_names_kinds_and_documents() {
+    assert!(matches!(
+        validate_design_name("   "),
+        Err(DbError::Validation(_))
+    ));
+    assert!(matches!(
+        validate_design_name(&"a".repeat(121)),
+        Err(DbError::Validation(_))
+    ));
+
+    let mut unknown_kind = create_input("首页");
+    unknown_kind.kind = "poster".to_owned();
+    assert!(matches!(
+        validate_create_input(&unknown_kind),
+        Err(DbError::Validation(_))
+    ));
+
+    let mut mismatched_schema = create_input("首页");
+    mismatched_schema.document["schemaVersion"] = serde_json::json!(2);
+    assert!(matches!(
+        validate_create_input(&mismatched_schema),
+        Err(DbError::Validation(_))
+    ));
 }
 
 #[tokio::test]
