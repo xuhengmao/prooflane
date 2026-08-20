@@ -140,8 +140,28 @@ describe("DesignSvgCanvas", () => {
   })
 
   it.each([
-    { label: "100%", viewport: { centerX: 400, centerY: 300, width: 800, height: 600, zoom: 1 }, scale: 1 },
-    { label: "200%", viewport: { centerX: 200, centerY: 150, width: 400, height: 300, zoom: 2 }, scale: 0.5 },
+    {
+      label: "100%",
+      viewport: {
+        centerX: 400,
+        centerY: 300,
+        width: 800,
+        height: 600,
+        zoom: 1,
+      },
+      scale: 1,
+    },
+    {
+      label: "200%",
+      viewport: {
+        centerX: 200,
+        centerY: 150,
+        width: 400,
+        height: 300,
+        zoom: 2,
+      },
+      scale: 0.5,
+    },
   ])(
     "previews a drag and commits one document-coordinate move at $label zoom",
     ({ viewport, scale }) => {
@@ -212,7 +232,13 @@ describe("DesignSvgCanvas", () => {
 
   it("renders a translated and zoomed viewBox without CSS scaling", () => {
     renderCanvas({
-      viewport: { centerX: 500, centerY: 350, width: 400, height: 300, zoom: 2 },
+      viewport: {
+        centerX: 500,
+        centerY: 350,
+        width: 400,
+        height: 300,
+        zoom: 2,
+      },
     })
     const canvas = screen.getByTestId("design-svg-canvas")
     expect(canvas.getAttribute("viewBox")).toBe("300 200 400 300")

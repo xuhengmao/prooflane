@@ -317,7 +317,7 @@ export function DesignCanvasHost({
       </div>
       <div
         ref={hostRef}
-        className="grid min-h-0 flex-1 place-items-center overflow-hidden p-6"
+        className="grid min-h-0 flex-1 place-items-center overflow-hidden"
         data-testid="design-canvas-host"
         tabIndex={0}
         onWheel={onWheel}
