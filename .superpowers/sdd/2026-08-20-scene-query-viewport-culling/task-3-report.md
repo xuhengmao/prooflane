@@ -2,7 +2,7 @@
 
 ## 范围
 
-本任务为 `SceneIndex` 建立不依赖浏览器、随机数或网络的固定网格场景基准，覆盖 `queryViewport`、`hitTestPoint` 和 `hitTestRect` 三类查询，并使用独立的线性参考实现验证返回结果。
+本任务为 `SceneIndex` 建立不依赖浏览器、随机数或网络的固定网格场景基准，覆盖 `queryViewport`、`hitTestPoint` 和 `hitTestRect` 三类查询，并使用独立的线性参考实现验证返回结果。测试文件显式使用 Vitest Node 环境，不加载项目默认的 jsdom 环境。
 
 ## TDD 证据
 
