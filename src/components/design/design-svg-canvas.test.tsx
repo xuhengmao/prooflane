@@ -63,7 +63,15 @@ function renderCanvas(
   render(
     <DesignSvgCanvas
       document={document}
-      zoom={1}
+      viewport={
+        overrides.viewport ?? {
+          centerX: 400,
+          centerY: 300,
+          width: 800,
+          height: 600,
+          zoom: 1,
+        }
+      }
       ariaLabel="Design canvas"
       selectedNodeId={null}
       onSelectNode={onSelectNode}
@@ -132,22 +140,24 @@ describe("DesignSvgCanvas", () => {
   })
 
   it.each([
-    { label: "100%", zoom: 1, scale: 1 },
-    { label: "200%", zoom: 2, scale: 2 },
+    { label: "100%", viewport: { centerX: 400, centerY: 300, width: 800, height: 600, zoom: 1 }, scale: 1 },
+    { label: "200%", viewport: { centerX: 200, centerY: 150, width: 400, height: 300, zoom: 2 }, scale: 0.5 },
   ])(
     "previews a drag and commits one document-coordinate move at $label zoom",
-    ({ zoom, scale }) => {
-      const { onMoveNode } = renderCanvas({ zoom })
+    ({ viewport, scale }) => {
+      const { onMoveNode } = renderCanvas({ viewport })
       const canvas = screen.getByTestId("design-svg-canvas")
+      const viewWidth = viewport.width
+      const viewHeight = viewport.height
       vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
         x: 0,
         y: 0,
         left: 0,
         top: 0,
-        right: 800 * scale,
-        bottom: 600 * scale,
-        width: 800 * scale,
-        height: 600 * scale,
+        right: viewWidth * scale,
+        bottom: viewHeight * scale,
+        width: viewWidth * scale,
+        height: viewHeight * scale,
         toJSON: () => ({}),
       })
       const rectangle = screen.getByTestId("design-node-rectangle")
@@ -198,5 +208,14 @@ describe("DesignSvgCanvas", () => {
     })
 
     expect(onMoveNode).not.toHaveBeenCalled()
+  })
+
+  it("renders a translated and zoomed viewBox without CSS scaling", () => {
+    renderCanvas({
+      viewport: { centerX: 500, centerY: 350, width: 400, height: 300, zoom: 2 },
+    })
+    const canvas = screen.getByTestId("design-svg-canvas")
+    expect(canvas.getAttribute("viewBox")).toBe("300 200 400 300")
+    expect(canvas.getAttribute("style")).toBeNull()
   })
 })

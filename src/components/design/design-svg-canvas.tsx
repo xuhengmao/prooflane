@@ -4,10 +4,14 @@ import { useState } from "react"
 import type { KeyboardEvent, MouseEvent, PointerEvent } from "react"
 
 import type { DesignBounds, DesignDocument, DesignNode } from "@/lib/design/ast"
+import {
+  clientPointToDocument,
+  type CanvasViewport,
+} from "@/lib/design/canvas-viewport"
 
 interface DesignSvgCanvasProps {
   document: DesignDocument
-  zoom: number
+  viewport: CanvasViewport
   ariaLabel: string
   selectedNodeId: string | null
   onSelectNode: (id: string | null) => void
@@ -29,14 +33,13 @@ interface DragState {
 export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
   const {
     document,
-    zoom,
+    viewport,
     ariaLabel,
     selectedNodeId,
     onSelectNode,
     onMoveNode,
     readOnly = false,
   } = props
-  const viewport = documentViewport(document)
   const [drag, setDrag] = useState<DragState | null>(null)
   const selectedNode = document.nodes.find(
     (node) => node.id === selectedNodeId && node.visible !== false
@@ -48,10 +51,9 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     const svg = event.currentTarget.ownerSVGElement
     if (!svg) return
     const point = clientPointToDocument(
-      svg,
-      viewport,
-      event.clientX,
-      event.clientY
+      { x: event.clientX, y: event.clientY },
+      svg.getBoundingClientRect(),
+      viewport
     )
     event.preventDefault()
     event.stopPropagation()
@@ -74,10 +76,9 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     const svg = event.currentTarget.ownerSVGElement
     if (!svg) return
     const point = clientPointToDocument(
-      svg,
-      viewport,
-      event.clientX,
-      event.clientY
+      { x: event.clientX, y: event.clientY },
+      svg.getBoundingClientRect(),
+      viewport
     )
     setDrag((current) =>
       current && current.pointerId === event.pointerId
@@ -95,10 +96,9 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     const svg = event.currentTarget.ownerSVGElement
     if (!svg) return
     const point = clientPointToDocument(
-      svg,
-      viewport,
-      event.clientX,
-      event.clientY
+      { x: event.clientX, y: event.clientY },
+      svg.getBoundingClientRect(),
+      viewport
     )
     const x = drag.originX + point.x - drag.startX
     const y = drag.originY + point.y - drag.startY
@@ -113,8 +113,7 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     <svg
       className="block h-auto max-h-full w-auto max-w-full bg-white shadow-sm"
       data-testid="design-svg-canvas"
-      viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`}
-      style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}
+      viewBox={`${viewport.centerX - viewport.width / 2} ${viewport.centerY - viewport.height / 2} ${viewport.width} ${viewport.height}`}
       role="listbox"
       aria-label={ariaLabel}
       onClick={(event) => {
@@ -309,43 +308,6 @@ function SelectionOutline({ bounds }: { bounds: DesignBounds }) {
       ))}
     </g>
   )
-}
-
-function documentViewport(document: DesignDocument): DesignBounds {
-  const root = document.nodes.find(
-    (node) => node.id === document.rootId && node.bounds
-  )
-  if (root?.bounds) return root.bounds
-  const bounded = document.nodes.flatMap((node) =>
-    node.bounds && node.visible !== false ? [node.bounds] : []
-  )
-  if (bounded.length === 0) return { x: 0, y: 0, width: 1, height: 1 }
-  const x = Math.min(...bounded.map((bounds) => bounds.x))
-  const y = Math.min(...bounded.map((bounds) => bounds.y))
-  const right = Math.max(...bounded.map((bounds) => bounds.x + bounds.width))
-  const bottom = Math.max(...bounded.map((bounds) => bounds.y + bounds.height))
-  return {
-    x,
-    y,
-    width: Math.max(1, right - x),
-    height: Math.max(1, bottom - y),
-  }
-}
-
-function clientPointToDocument(
-  svg: SVGSVGElement,
-  viewport: DesignBounds,
-  clientX: number,
-  clientY: number
-): { x: number; y: number } {
-  const rect = svg.getBoundingClientRect()
-  if (rect.width <= 0 || rect.height <= 0) {
-    return { x: viewport.x, y: viewport.y }
-  }
-  return {
-    x: viewport.x + ((clientX - rect.left) / rect.width) * viewport.width,
-    y: viewport.y + ((clientY - rect.top) / rect.height) * viewport.height,
-  }
 }
 
 function previewBounds(
