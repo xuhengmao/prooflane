@@ -4408,6 +4408,8 @@
       "zoom": "Canvas zoom",
       "zoomOut": "Zoom out",
       "zoomIn": "Zoom in",
+      "fit": "Fit canvas",
+      "reset": "Reset view",
       "subtitle": "Professional canvas editing will be added in a later phase.",
       "designMode": "Design mode",
       "readOnlyMode": "Review mode"

@@ -58,6 +58,9 @@ export function DesignWorkspace({
     setView,
     zoom,
     setZoom,
+    panX,
+    panY,
+    setPan,
     leftCollapsed,
     rightCollapsed,
     setLeftCollapsed,
@@ -309,9 +312,13 @@ export function DesignWorkspace({
           </aside>
         ) : null}
         <DesignCanvasHost
+          artifactId={artifactId}
           view={activeView}
           zoom={zoom}
+          panX={panX}
+          panY={panY}
           onZoomChange={setZoom}
+          onPanChange={setPan}
           document={document}
           selectedNodeId={selectedNodeId}
           onSelectNode={setSelectedNodeId}

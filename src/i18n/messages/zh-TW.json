@@ -4408,6 +4408,8 @@
       "zoom": "畫布縮放",
       "zoomOut": "縮小",
       "zoomIn": "放大",
+      "fit": "適配畫布",
+      "reset": "重設視圖",
       "subtitle": "專業畫布編輯將在後續階段加入。",
       "designMode": "設計模式",
       "readOnlyMode": "審查模式"
