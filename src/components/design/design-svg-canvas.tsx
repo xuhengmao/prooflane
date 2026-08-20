@@ -111,7 +111,7 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
 
   return (
     <svg
-      className="block h-auto max-h-full w-auto max-w-full bg-white shadow-sm"
+      className="block size-full bg-white shadow-sm"
       data-testid="design-svg-canvas"
       viewBox={`${viewport.centerX - viewport.width / 2} ${viewport.centerY - viewport.height / 2} ${viewport.width} ${viewport.height}`}
       role="listbox"

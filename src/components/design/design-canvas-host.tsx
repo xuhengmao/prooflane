@@ -79,27 +79,28 @@ export function DesignCanvasHost({
     return {
       centerX: bounds.x + bounds.width / 2,
       centerY: bounds.y + bounds.height / 2,
-      width: bounds.width,
-      height: bounds.height,
+      width: Math.max(1, hostSize.width),
+      height: Math.max(1, hostSize.height),
       zoom,
     }
   })
   const [panState, setPanState] = useState<PanState | null>(null)
   const spacePressed = useRef(false)
   const fitKey = useRef<string | null>(null)
-  const lastEmitted = useRef<{
-    zoom: number
-    panX: number
-    panY: number
-  } | null>(null)
   const bounds = useMemo(() => documentBounds(document), [document])
+  const effectiveHostSize = useMemo(
+    () =>
+      hostSize.width > 1 && hostSize.height > 1
+        ? hostSize
+        : { width: bounds.width, height: bounds.height },
+    [bounds.height, bounds.width, hostSize]
+  )
 
   const emitViewport = useCallback(
     (next: CanvasViewport) => {
       setViewport(next)
       const nextPanX = next.centerX - (bounds.x + bounds.width / 2)
       const nextPanY = next.centerY - (bounds.y + bounds.height / 2)
-      lastEmitted.current = { zoom: next.zoom, panX: nextPanX, panY: nextPanY }
       onZoomChange(next.zoom)
       onPanChange(nextPanX, nextPanY)
     },
@@ -107,19 +108,19 @@ export function DesignCanvasHost({
   )
 
   const fit = useCallback(() => {
-    const next = fitViewport(bounds, hostSize, 48)
+    const next = fitViewport(bounds, effectiveHostSize, 48)
     emitViewport(next)
-  }, [bounds, emitViewport, hostSize])
+  }, [bounds, effectiveHostSize, emitViewport])
 
   const reset = useCallback(() => {
     emitViewport({
       centerX: bounds.x + bounds.width / 2,
       centerY: bounds.y + bounds.height / 2,
-      width: bounds.width,
-      height: bounds.height,
+      width: effectiveHostSize.width,
+      height: effectiveHostSize.height,
       zoom: 1,
     })
-  }, [bounds, emitViewport])
+  }, [bounds, effectiveHostSize, emitViewport])
 
   useEffect(() => {
     const host = hostRef.current
@@ -138,25 +139,17 @@ export function DesignCanvasHost({
   }, [])
 
   useEffect(() => {
-    const emitted = lastEmitted.current
-    if (
-      emitted &&
-      emitted.zoom === zoom &&
-      emitted.panX === panX &&
-      emitted.panY === panY
-    ) {
-      lastEmitted.current = null
-      return
-    }
     // The viewport mirrors persisted UI state; this is intentionally a synchronous bridge.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setViewport((current) => ({
       ...current,
       centerX: bounds.x + bounds.width / 2 + panX,
       centerY: bounds.y + bounds.height / 2 + panY,
+      width: effectiveHostSize.width / zoom,
+      height: effectiveHostSize.height / zoom,
       zoom,
     }))
-  }, [bounds, panX, panY, zoom])
+  }, [bounds, effectiveHostSize, panX, panY, zoom])
 
   useEffect(() => {
     if (hostSize.width <= 1 || hostSize.height <= 1) return

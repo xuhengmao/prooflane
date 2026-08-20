@@ -99,7 +99,9 @@ export function fitViewport(
   const inset = Math.max(0, finite(padding, 0))
   const availableWidth = Math.max(1, hostWidth - inset * 2)
   const availableHeight = Math.max(1, hostHeight - inset * 2)
-  const zoom = clampZoom(Math.min(availableWidth / width, availableHeight / height))
+  const zoom = clampZoom(
+    Math.min(availableWidth / width, availableHeight / height)
+  )
 
   return {
     centerX: bounds.x + width / 2,
@@ -122,8 +124,12 @@ export function clientPointToDocument(
   const left = viewport.centerX - viewWidth / 2
   const top = viewport.centerY - viewHeight / 2
   return {
-    x: left + ((finite(client.x, hostRect.left) - hostRect.left) / width) * viewWidth,
-    y: top + ((finite(client.y, hostRect.top) - hostRect.top) / height) * viewHeight,
+    x:
+      left +
+      ((finite(client.x, hostRect.left) - hostRect.left) / width) * viewWidth,
+    y:
+      top +
+      ((finite(client.y, hostRect.top) - hostRect.top) / height) * viewHeight,
   }
 }
 
