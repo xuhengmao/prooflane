@@ -118,7 +118,7 @@ export function DesignWorkspace({
         artifactId: detail.artifact.id,
         expectedRevisionId: detail.revision.id,
         schemaVersion: detail.revision.schemaVersion,
-        document,
+        document: document as unknown as Record<string, unknown>,
       })
       setDetail(next)
       setDirty(false)

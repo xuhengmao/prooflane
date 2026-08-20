@@ -4376,6 +4376,7 @@
       "saved": "Saved",
       "conflict": "An update is available",
       "saveError": "Could not save",
+      "unsaved": "Unsaved changes",
       "save": "Save",
       "name": "Design name",
       "project": "Project",
@@ -4403,12 +4404,36 @@
     },
     "canvas": {
       "title": "Empty canvas",
+      "label": "Design canvas",
       "zoom": "Canvas zoom",
       "zoomOut": "Zoom out",
       "zoomIn": "Zoom in",
       "subtitle": "Professional canvas editing will be added in a later phase.",
       "designMode": "Design mode",
       "readOnlyMode": "Review mode"
+    },
+    "properties": {
+      "invalidNumber": "Enter a valid number",
+      "nonNegative": "{field} must be zero or greater",
+      "opacityRange": "Opacity must be between 0 and 100",
+      "fields": {
+        "x": "X position",
+        "y": "Y position",
+        "width": "Width",
+        "height": "Height",
+        "opacity": "Opacity",
+        "text": "Text content"
+      },
+      "nodeTypes": {
+        "document": "Document",
+        "page": "Page",
+        "group": "Group",
+        "frame": "Frame",
+        "rectangle": "Rectangle",
+        "shape": "Shape",
+        "text": "Text",
+        "image": "Image"
+      }
     },
     "composer": {
       "title": "AI Composer",

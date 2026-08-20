@@ -4376,6 +4376,7 @@
       "saved": "已儲存",
       "conflict": "已有更新",
       "saveError": "儲存失敗",
+      "unsaved": "尚未儲存的變更",
       "save": "儲存",
       "name": "設計名稱",
       "project": "專案",
@@ -4403,12 +4404,36 @@
     },
     "canvas": {
       "title": "空白畫布",
+      "label": "設計畫布",
       "zoom": "畫布縮放",
       "zoomOut": "縮小",
       "zoomIn": "放大",
       "subtitle": "專業畫布編輯將在後續階段加入。",
       "designMode": "設計模式",
       "readOnlyMode": "審查模式"
+    },
+    "properties": {
+      "invalidNumber": "請輸入有效數字",
+      "nonNegative": "{field}不能小於 0",
+      "opacityRange": "透明度必須在 0 到 100 之間",
+      "fields": {
+        "x": "X 位置",
+        "y": "Y 位置",
+        "width": "寬度",
+        "height": "高度",
+        "opacity": "透明度",
+        "text": "文字內容"
+      },
+      "nodeTypes": {
+        "document": "文件",
+        "page": "頁面",
+        "group": "群組",
+        "frame": "畫板",
+        "rectangle": "矩形",
+        "shape": "形狀",
+        "text": "文字",
+        "image": "圖片"
+      }
     },
     "composer": {
       "title": "AI Composer",
