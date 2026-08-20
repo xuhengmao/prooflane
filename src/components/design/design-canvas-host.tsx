@@ -52,6 +52,8 @@ export function DesignCanvasHost({
   onZoomChange,
   onPanChange,
   document,
+  selectedNodeIds,
+  onSelectionChange,
   selectedNodeId,
   onSelectNode,
   onMoveNode,
@@ -64,8 +66,10 @@ export function DesignCanvasHost({
   onZoomChange: (zoom: number) => void
   onPanChange: (panX: number, panY: number) => void
   document: DesignDocument
+  selectedNodeIds?: string[]
+  onSelectionChange?: (ids: string[]) => void
   selectedNodeId: string | null
-  onSelectNode: (id: string | null) => void
+  onSelectNode?: (id: string | null) => void
   onMoveNode: (id: string, x: number, y: number) => void
 }) {
   const t = useTranslations("Design")
@@ -331,6 +335,8 @@ export function DesignCanvasHost({
           document={document}
           viewport={viewport}
           ariaLabel={t("canvas.label")}
+          selectedNodeIds={selectedNodeIds}
+          onSelectionChange={onSelectionChange}
           selectedNodeId={selectedNodeId}
           onSelectNode={onSelectNode}
           onMoveNode={onMoveNode}

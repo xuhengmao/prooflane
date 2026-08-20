@@ -4439,7 +4439,9 @@
         "shape": "Shape",
         "text": "Text",
         "image": "Image"
-      }
+      },
+      "selectionSummary": "{count} Elemente ausgewählt",
+      "selectionRange": "Bereich: ({minX}, {minY}) - ({maxX}, {maxY})"
     },
     "composer": {
       "title": "AI Composer",

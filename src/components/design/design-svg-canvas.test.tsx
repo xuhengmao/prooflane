@@ -244,4 +244,108 @@ describe("DesignSvgCanvas", () => {
     expect(canvas.getAttribute("viewBox")).toBe("300 200 400 300")
     expect(canvas.getAttribute("style")).toBeNull()
   })
+
+  it("adds and removes nodes with modifier-click selection", async () => {
+    const user = userEvent.setup()
+    const onSelectionChange = vi.fn()
+    const view = render(
+      <DesignSvgCanvas
+        document={document}
+        viewport={{
+          centerX: 400,
+          centerY: 300,
+          width: 800,
+          height: 600,
+          zoom: 1,
+        }}
+        ariaLabel="Design canvas"
+        selectedNodeIds={[]}
+        onSelectionChange={onSelectionChange}
+        onMoveNode={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByTestId("design-node-rectangle"))
+    expect(onSelectionChange).toHaveBeenLastCalledWith(["rectangle"])
+    view.rerender(
+      <DesignSvgCanvas
+        document={document}
+        viewport={{
+          centerX: 400,
+          centerY: 300,
+          width: 800,
+          height: 600,
+          zoom: 1,
+        }}
+        ariaLabel="Design canvas"
+        selectedNodeIds={["rectangle"]}
+        onSelectionChange={onSelectionChange}
+        onMoveNode={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByTestId("design-node-title"), { shiftKey: true })
+    expect(onSelectionChange).toHaveBeenLastCalledWith(["rectangle", "title"])
+    view.rerender(
+      <DesignSvgCanvas
+        document={document}
+        viewport={{
+          centerX: 400,
+          centerY: 300,
+          width: 800,
+          height: 600,
+          zoom: 1,
+        }}
+        ariaLabel="Design canvas"
+        selectedNodeIds={["rectangle", "title"]}
+        onSelectionChange={onSelectionChange}
+        onMoveNode={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByTestId("design-node-rectangle"), {
+      shiftKey: true,
+    })
+    expect(onSelectionChange).toHaveBeenLastCalledWith(["title"])
+  })
+
+  it("selects nodes intersecting a document-coordinate marquee", () => {
+    const onSelectionChange = vi.fn()
+    renderCanvas({ selectedNodeIds: [], onSelectionChange })
+    const canvas = screen.getByTestId("design-svg-canvas")
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      toJSON: () => ({}),
+    })
+
+    firePointer(canvas, "pointerdown", {
+      pointerId: 9,
+      clientX: 20,
+      clientY: 20,
+    })
+    firePointer(canvas, "pointermove", {
+      pointerId: 9,
+      clientX: 250,
+      clientY: 220,
+    })
+    expect(screen.getByTestId("design-selection-marquee")).toBeTruthy()
+    firePointer(canvas, "pointerup", {
+      pointerId: 9,
+      clientX: 250,
+      clientY: 220,
+    })
+
+    expect(onSelectionChange).toHaveBeenLastCalledWith([
+      "frame",
+      "rectangle",
+      "title",
+    ])
+  })
 })

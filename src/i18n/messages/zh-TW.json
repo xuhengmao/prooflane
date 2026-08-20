@@ -4435,7 +4435,9 @@
         "shape": "形狀",
         "text": "文字",
         "image": "圖片"
-      }
+      },
+      "selectionSummary": "已選擇 {count} 個元素",
+      "selectionRange": "範圍：({minX}, {minY}) - ({maxX}, {maxY})"
     },
     "composer": {
       "title": "AI Composer",

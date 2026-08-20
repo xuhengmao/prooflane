@@ -4435,7 +4435,9 @@
         "shape": "Shape",
         "text": "Text",
         "image": "Image"
-      }
+      },
+      "selectionSummary": "تم تحديد {count} عناصر",
+      "selectionRange": "النطاق: ({minX}, {minY}) - ({maxX}, {maxY})"
     },
     "composer": {
       "title": "AI Composer",

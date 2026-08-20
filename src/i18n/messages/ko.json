@@ -4435,7 +4435,9 @@
         "shape": "Shape",
         "text": "Text",
         "image": "Image"
-      }
+      },
+      "selectionSummary": "요소 {count}개 선택됨",
+      "selectionRange": "범위: ({minX}, {minY}) - ({maxX}, {maxY})"
     },
     "composer": {
       "title": "AI Composer",

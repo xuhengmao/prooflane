@@ -14,14 +14,17 @@ type Drafts = Record<BoundsField | "opacity" | "text", string>
 
 export function DesignPropertiesPanel({
   node,
+  nodes,
   onUpdate,
 }: {
-  node: DesignNode | null
+  node?: DesignNode | null
+  nodes?: DesignNode[]
   onUpdate: (command: Command) => void
 }) {
   const t = useTranslations("Design")
+  const selectedNodes = nodes ?? (node ? [node] : [])
 
-  if (!node) {
+  if (selectedNodes.length === 0) {
     return (
       <p className="mt-3 text-xs text-muted-foreground">
         {t("workspace.selectElement")}
@@ -29,10 +32,41 @@ export function DesignPropertiesPanel({
     )
   }
 
+  if (selectedNodes.length > 1) {
+    return (
+      <div className="mt-3 grid gap-2" data-testid="design-properties-multi">
+        <p className="text-sm font-medium">
+          {t("properties.selectionSummary", { count: selectedNodes.length })}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {t("properties.selectionRange", {
+            count: selectedNodes.length,
+            minX: Math.min(
+              ...selectedNodes.map((entry) => entry.bounds?.x ?? 0)
+            ),
+            minY: Math.min(
+              ...selectedNodes.map((entry) => entry.bounds?.y ?? 0)
+            ),
+            maxX: Math.max(
+              ...selectedNodes.map(
+                (entry) => (entry.bounds?.x ?? 0) + (entry.bounds?.width ?? 0)
+              )
+            ),
+            maxY: Math.max(
+              ...selectedNodes.map(
+                (entry) => (entry.bounds?.y ?? 0) + (entry.bounds?.height ?? 0)
+              )
+            ),
+          })}
+        </p>
+      </div>
+    )
+  }
+
   return (
     <DesignPropertiesEditor
-      key={draftKey(node)}
-      node={node}
+      key={draftKey(selectedNodes[0])}
+      node={selectedNodes[0]}
       onUpdate={onUpdate}
     />
   )

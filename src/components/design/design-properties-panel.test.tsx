@@ -89,4 +89,28 @@ describe("DesignPropertiesPanel", () => {
     expect(screen.getByText("Opacity must be between 0 and 100")).toBeTruthy()
     expect(onUpdate).not.toHaveBeenCalled()
   })
+
+  it("shows a summary instead of single-node editors for multiple selections", () => {
+    const onUpdate = vi.fn()
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <DesignPropertiesPanel
+          nodes={[
+            textNode,
+            {
+              ...textNode,
+              id: "second-text",
+              bounds: { x: 240, y: 30, width: 120, height: 30 },
+            },
+          ]}
+          onUpdate={onUpdate}
+        />
+      </NextIntlClientProvider>
+    )
+
+    expect(screen.getByTestId("design-properties-multi")).toBeTruthy()
+    expect(screen.getByText("Selected 2 elements")).toBeTruthy()
+    expect(screen.queryByLabelText("X position")).toBeNull()
+    expect(onUpdate).not.toHaveBeenCalled()
+  })
 })

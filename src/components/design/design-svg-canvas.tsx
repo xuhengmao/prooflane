@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import type { KeyboardEvent, MouseEvent, PointerEvent } from "react"
 
 import type { DesignBounds, DesignDocument, DesignNode } from "@/lib/design/ast"
@@ -8,13 +8,16 @@ import {
   clientPointToDocument,
   type CanvasViewport,
 } from "@/lib/design/canvas-viewport"
+import { hitTestSelectionRect } from "@/lib/design/selection"
 
 interface DesignSvgCanvasProps {
   document: DesignDocument
   viewport: CanvasViewport
   ariaLabel: string
-  selectedNodeId: string | null
-  onSelectNode: (id: string | null) => void
+  selectedNodeIds?: string[]
+  onSelectionChange?: (ids: string[]) => void
+  selectedNodeId?: string | null
+  onSelectNode?: (id: string | null) => void
   onMoveNode: (id: string, x: number, y: number) => void
   readOnly?: boolean
 }
@@ -30,23 +33,74 @@ interface DragState {
   previewY: number
 }
 
+interface MarqueeState {
+  pointerId: number
+  startX: number
+  startY: number
+  currentX: number
+  currentY: number
+  shiftKey: boolean
+  metaKey: boolean
+  ctrlKey: boolean
+  active: boolean
+}
+
 export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
   const {
     document,
     viewport,
     ariaLabel,
+    selectedNodeIds: selectedNodeIdsProp,
+    onSelectionChange,
     selectedNodeId,
     onSelectNode,
     onMoveNode,
     readOnly = false,
   } = props
+  const selectedNodeIds =
+    selectedNodeIdsProp ?? (selectedNodeId ? [selectedNodeId] : [])
   const [drag, setDrag] = useState<DragState | null>(null)
-  const selectedNode = document.nodes.find(
-    (node) => node.id === selectedNodeId && node.visible !== false
+  const [marquee, setMarquee] = useState<MarqueeState | null>(null)
+  const suppressClick = useRef(false)
+  const selectedNodes = document.nodes.filter(
+    (node) =>
+      selectedNodeIds.includes(node.id) && node.visible !== false && node.bounds
   )
 
+  const notifySelection = (ids: string[]) => {
+    const next = Array.from(new Set(ids))
+    if (onSelectionChange) {
+      onSelectionChange(next)
+    } else {
+      onSelectNode?.(next.length === 1 ? next[0] : null)
+    }
+  }
+
+  const applyModifierSelection = (
+    id: string,
+    event: Pick<MouseEvent<SVGElement>, "shiftKey" | "metaKey" | "ctrlKey">
+  ) => {
+    if (!(event.shiftKey || event.metaKey || event.ctrlKey)) {
+      notifySelection([id])
+      return
+    }
+    if (selectedNodeIds.includes(id)) {
+      notifySelection(selectedNodeIds.filter((entry) => entry !== id))
+    } else {
+      notifySelection([...selectedNodeIds, id])
+    }
+  }
+
   const startDrag = (event: PointerEvent<SVGElement>, node: DesignNode) => {
-    if (readOnly || node.locked === true || !node.bounds || event.button !== 0)
+    if (
+      readOnly ||
+      node.locked === true ||
+      !node.bounds ||
+      event.button !== 0 ||
+      event.shiftKey ||
+      event.metaKey ||
+      event.ctrlKey
+    )
       return
     const svg = event.currentTarget.ownerSVGElement
     if (!svg) return
@@ -58,7 +112,7 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     event.preventDefault()
     event.stopPropagation()
     event.currentTarget.setPointerCapture?.(event.pointerId)
-    onSelectNode(node.id)
+    notifySelection([node.id])
     setDrag({
       nodeId: node.id,
       pointerId: event.pointerId,
@@ -109,6 +163,79 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     }
   }
 
+  const startMarquee = (event: PointerEvent<SVGSVGElement>) => {
+    if (readOnly || event.button !== 0 || event.target !== event.currentTarget)
+      return
+    const point = clientPointToDocument(
+      { x: event.clientX, y: event.clientY },
+      event.currentTarget.getBoundingClientRect(),
+      viewport
+    )
+    event.preventDefault()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    setMarquee({
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      currentX: point.x,
+      currentY: point.y,
+      shiftKey: event.shiftKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      active: false,
+    })
+  }
+
+  const moveMarquee = (event: PointerEvent<SVGSVGElement>) => {
+    if (!marquee || marquee.pointerId !== event.pointerId || drag) return
+    const point = clientPointToDocument(
+      { x: event.clientX, y: event.clientY },
+      event.currentTarget.getBoundingClientRect(),
+      viewport
+    )
+    const active =
+      Math.abs(point.x - marquee.startX) > 3 ||
+      Math.abs(point.y - marquee.startY) > 3
+    setMarquee((current) =>
+      current && current.pointerId === event.pointerId
+        ? { ...current, currentX: point.x, currentY: point.y, active }
+        : current
+    )
+  }
+
+  const finishMarquee = (event: PointerEvent<SVGSVGElement>) => {
+    if (!marquee || marquee.pointerId !== event.pointerId || drag) return
+    const current = marquee
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    setMarquee(null)
+    if (current.active) {
+      const ids = hitTestSelectionRect(document, {
+        x: current.startX,
+        y: current.startY,
+        width: current.currentX - current.startX,
+        height: current.currentY - current.startY,
+      })
+      const modified = current.shiftKey || current.metaKey || current.ctrlKey
+      if (!modified) notifySelection(ids)
+      else if (current.shiftKey) notifySelection([...selectedNodeIds, ...ids])
+      else notifySelection(selectedNodeIds.filter((id) => !ids.includes(id)))
+      suppressClick.current = true
+    } else if (!(current.shiftKey || current.metaKey || current.ctrlKey)) {
+      notifySelection([])
+    }
+  }
+
+  const onCanvasClick = (event: MouseEvent<SVGSVGElement>) => {
+    if (suppressClick.current) {
+      suppressClick.current = false
+      return
+    }
+    if (event.target === event.currentTarget) {
+      if (!(event.shiftKey || event.metaKey || event.ctrlKey))
+        notifySelection([])
+    }
+  }
+
   return (
     <svg
       className="block size-full bg-white shadow-sm"
@@ -116,30 +243,52 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
       viewBox={`${viewport.centerX - viewport.width / 2} ${viewport.centerY - viewport.height / 2} ${viewport.width} ${viewport.height}`}
       role="listbox"
       aria-label={ariaLabel}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onSelectNode(null)
-      }}
+      onClick={onCanvasClick}
+      onPointerDown={startMarquee}
+      onPointerMove={moveMarquee}
+      onPointerUp={finishMarquee}
+      onPointerCancel={() => setMarquee(null)}
       onKeyDown={(event) => {
-        if (!readOnly && event.key === "Escape") onSelectNode(null)
+        if (!readOnly && event.key === "Escape") notifySelection([])
       }}
     >
       {document.nodes.map((node) => (
         <DesignSvgNode
           key={node.id}
           node={node}
-          selected={node.id === selectedNodeId}
+          selected={selectedNodeIds.includes(node.id)}
           readOnly={readOnly}
           previewBounds={previewBounds(node, drag)}
-          onSelectNode={onSelectNode}
+          onClick={(event) => applyModifierSelection(node.id, event)}
           onPointerDown={(event) => startDrag(event, node)}
           onPointerMove={previewDrag}
           onPointerUp={finishDrag}
           onPointerCancel={() => setDrag(null)}
         />
       ))}
-      {selectedNode?.bounds ? (
+      {selectedNodes.length > 0 ? (
         <SelectionOutline
-          bounds={previewBounds(selectedNode, drag) ?? selectedNode.bounds}
+          bounds={unionBounds(
+            selectedNodes.map(
+              (node) => previewBounds(node, drag) ?? node.bounds!
+            )
+          )}
+          multiple={selectedNodes.length > 1}
+        />
+      ) : null}
+      {marquee?.active ? (
+        <rect
+          data-testid="design-selection-marquee"
+          x={Math.min(marquee.startX, marquee.currentX)}
+          y={Math.min(marquee.startY, marquee.currentY)}
+          width={Math.abs(marquee.currentX - marquee.startX)}
+          height={Math.abs(marquee.currentY - marquee.startY)}
+          fill="#38bf63"
+          fillOpacity="0.14"
+          stroke="#38bf63"
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
         />
       ) : null}
     </svg>
@@ -151,7 +300,7 @@ function DesignSvgNode({
   selected,
   readOnly,
   previewBounds,
-  onSelectNode,
+  onClick,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -161,7 +310,7 @@ function DesignSvgNode({
   selected: boolean
   readOnly: boolean
   previewBounds?: DesignBounds
-  onSelectNode: (id: string | null) => void
+  onClick: (event: MouseEvent<SVGElement>) => void
   onPointerDown: (event: PointerEvent<SVGElement>) => void
   onPointerMove: (event: PointerEvent<SVGElement>) => void
   onPointerUp: (event: PointerEvent<SVGElement>) => void
@@ -177,6 +326,9 @@ function DesignSvgNode({
   const bounds = previewBounds ??
     node.bounds ?? { x: 0, y: 0, width: 0, height: 0 }
   const selectable = !readOnly && node.locked !== true
+  const handleClick = selectable
+    ? onClick
+    : (event: MouseEvent<SVGElement>) => event.stopPropagation()
   const interactiveProps = {
     "data-testid": `design-node-${node.id}`,
     "data-design-node-id": node.id,
@@ -185,14 +337,11 @@ function DesignSvgNode({
     "aria-label": nodeLabel(node),
     "aria-selected": selectable ? selected : undefined,
     "aria-disabled": node.locked === true ? true : undefined,
-    onClick: (event: MouseEvent<SVGElement>) => {
-      event.stopPropagation()
-      if (selectable) onSelectNode(node.id)
-    },
+    onClick: handleClick,
     onKeyDown: (event: KeyboardEvent<SVGElement>) => {
       if (!selectable || (event.key !== "Enter" && event.key !== " ")) return
       event.preventDefault()
-      onSelectNode(node.id)
+      onClick(event as unknown as MouseEvent<SVGElement>)
     },
     onPointerDown: selectable ? onPointerDown : undefined,
     onPointerMove: selectable ? onPointerMove : undefined,
@@ -275,7 +424,13 @@ function DesignSvgNode({
   )
 }
 
-function SelectionOutline({ bounds }: { bounds: DesignBounds }) {
+function SelectionOutline({
+  bounds,
+  multiple,
+}: {
+  bounds: DesignBounds
+  multiple: boolean
+}) {
   const handles = [
     [bounds.x, bounds.y],
     [bounds.x + bounds.width, bounds.y],
@@ -292,22 +447,33 @@ function SelectionOutline({ bounds }: { bounds: DesignBounds }) {
         fill="none"
         stroke="#38bf63"
         strokeWidth="2"
+        strokeDasharray={multiple ? "6 4" : undefined}
         vectorEffect="non-scaling-stroke"
       />
-      {handles.map(([cx, cy]) => (
-        <circle
-          key={`${cx}-${cy}`}
-          cx={cx}
-          cy={cy}
-          r="5"
-          fill="#ffffff"
-          stroke="#38bf63"
-          strokeWidth="2"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
+      {!multiple
+        ? handles.map(([cx, cy]) => (
+            <circle
+              key={`${cx}-${cy}`}
+              cx={cx}
+              cy={cy}
+              r="5"
+              fill="#ffffff"
+              stroke="#38bf63"
+              strokeWidth="2"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))
+        : null}
     </g>
   )
+}
+
+function unionBounds(bounds: DesignBounds[]): DesignBounds {
+  const left = Math.min(...bounds.map((entry) => entry.x))
+  const top = Math.min(...bounds.map((entry) => entry.y))
+  const right = Math.max(...bounds.map((entry) => entry.x + entry.width))
+  const bottom = Math.max(...bounds.map((entry) => entry.y + entry.height))
+  return { x: left, y: top, width: right - left, height: bottom - top }
 }
 
 function previewBounds(
@@ -315,11 +481,7 @@ function previewBounds(
   drag: DragState | null
 ): DesignBounds | undefined {
   if (!node.bounds || drag?.nodeId !== node.id) return node.bounds
-  return {
-    ...node.bounds,
-    x: drag.previewX,
-    y: drag.previewY,
-  }
+  return { ...node.bounds, x: drag.previewX, y: drag.previewY }
 }
 
 function nodeLabel(node: DesignNode): string {

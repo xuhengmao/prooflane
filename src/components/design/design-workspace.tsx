@@ -68,7 +68,7 @@ export function DesignWorkspace({
   } = useDesignWorkspace()
   const [detail, setDetail] = useState<DesignArtifactDetail | null>(null)
   const [document, setDocument] = useState<DesignDocument | null>(null)
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -91,7 +91,7 @@ export function DesignWorkspace({
         }
         setDetail(next)
         setDocument(normalized.document)
-        setSelectedNodeId(null)
+        setSelectedNodeIds([])
         setDirty(normalized.createdFromTemplate)
         setLoading(false)
         setError(false)
@@ -320,8 +320,11 @@ export function DesignWorkspace({
           onZoomChange={setZoom}
           onPanChange={setPan}
           document={document}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={setSelectedNodeId}
+          selectedNodeIds={selectedNodeIds}
+          onSelectionChange={setSelectedNodeIds}
+          selectedNodeId={
+            selectedNodeIds.length === 1 ? selectedNodeIds[0] : null
+          }
           onMoveNode={moveNode}
         />
         {!rightCollapsed ? (
@@ -331,10 +334,9 @@ export function DesignWorkspace({
               {t("workspace.rightPanel")}
             </div>
             <DesignPropertiesPanel
-              node={
-                document.nodes.find((node) => node.id === selectedNodeId) ??
-                null
-              }
+              nodes={document.nodes.filter((node) =>
+                selectedNodeIds.includes(node.id)
+              )}
               onUpdate={updateNode}
             />
           </aside>
