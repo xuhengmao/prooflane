@@ -93,6 +93,93 @@ function firePointer(
 }
 
 describe("DesignSvgCanvas", () => {
+  it("culls ordinary nodes outside the viewport", () => {
+    renderCanvas({
+      viewport: {
+        centerX: 100,
+        centerY: 100,
+        width: 200,
+        height: 200,
+        zoom: 1,
+      },
+    })
+
+    expect(screen.getByTestId("design-node-rectangle")).toBeTruthy()
+    expect(screen.queryByTestId("design-node-image")).toBeNull()
+    expect(screen.queryByTestId("design-node-locked")).toBeNull()
+  })
+
+  it("keeps selected outside-viewport nodes rendered but never renders hidden selections", () => {
+    renderCanvas({
+      selectedNodeIds: ["image", "hidden"],
+      viewport: {
+        centerX: 100,
+        centerY: 100,
+        width: 200,
+        height: 200,
+        zoom: 1,
+      },
+    })
+
+    expect(screen.getByTestId("design-node-image")).toBeTruthy()
+    expect(screen.queryByTestId("design-node-hidden")).toBeNull()
+  })
+
+  it("uses topmost point hit for overlapping node clicks", () => {
+    const overlapping: DesignDocument = {
+      version: 1,
+      revision: "overlap",
+      nodes: [
+        {
+          id: "back",
+          type: "rectangle",
+          bounds: { x: 20, y: 20, width: 100, height: 100 },
+        },
+        {
+          id: "front",
+          type: "rectangle",
+          bounds: { x: 40, y: 40, width: 100, height: 100 },
+        },
+      ],
+    }
+    const onSelectNode = vi.fn()
+    render(
+      <DesignSvgCanvas
+        document={overlapping}
+        viewport={{
+          centerX: 100,
+          centerY: 100,
+          width: 200,
+          height: 200,
+          zoom: 1,
+        }}
+        ariaLabel="Design canvas"
+        selectedNodeId={null}
+        onSelectNode={onSelectNode}
+        onMoveNode={vi.fn()}
+      />
+    )
+    const canvas = screen.getByTestId("design-svg-canvas")
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 200,
+      bottom: 200,
+      width: 200,
+      height: 200,
+      toJSON: () => ({}),
+    })
+
+    fireEvent.click(screen.getByTestId("design-node-back"), {
+      clientX: 60,
+      clientY: 60,
+    })
+
+    expect(onSelectNode).toHaveBeenLastCalledWith("front")
+  })
+
   it("renders supported nodes and a missing-image placeholder safely", () => {
     renderCanvas()
 

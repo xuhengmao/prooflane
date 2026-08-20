@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { KeyboardEvent, MouseEvent, PointerEvent } from "react"
 
 import type { DesignBounds, DesignDocument, DesignNode } from "@/lib/design/ast"
@@ -8,7 +8,7 @@ import {
   clientPointToDocument,
   type CanvasViewport,
 } from "@/lib/design/canvas-viewport"
-import { hitTestSelectionRect } from "@/lib/design/selection"
+import { createSceneIndex } from "@/lib/design/scene-index"
 
 interface DesignSvgCanvasProps {
   document: DesignDocument
@@ -62,6 +62,27 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [marquee, setMarquee] = useState<MarqueeState | null>(null)
   const suppressClick = useRef(false)
+  // document.revision is included intentionally to match the SceneIndex lifecycle.
+  const index = useMemo(
+    () => createSceneIndex(document),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [document, document.revision]
+  )
+  useEffect(() => () => index.dispose(), [index])
+  const viewportBounds: DesignBounds = {
+    x: viewport.centerX - viewport.width / 2,
+    y: viewport.centerY - viewport.height / 2,
+    width: viewport.width,
+    height: viewport.height,
+  }
+  const viewportNodeIds = new Set(index.queryViewport(viewportBounds))
+  const renderedNodeIds = new Set([
+    ...viewportNodeIds,
+    ...selectedNodeIds.filter(
+      (id) => document.nodes.find((node) => node.id === id)?.visible !== false
+    ),
+    ...(drag ? [drag.nodeId] : []),
+  ])
   const selectedNodes = document.nodes.filter(
     (node) =>
       selectedNodeIds.includes(node.id) && node.visible !== false && node.bounds
@@ -89,6 +110,26 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     } else {
       notifySelection([...selectedNodeIds, id])
     }
+  }
+
+  const selectAtPoint = (
+    event: MouseEvent<SVGElement>,
+    svg: SVGSVGElement,
+    fallbackId?: string
+  ) => {
+    if (readOnly) return
+    const rect = svg.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) {
+      if (fallbackId) applyModifierSelection(fallbackId, event)
+      return
+    }
+    const point = clientPointToDocument(
+      { x: event.clientX, y: event.clientY },
+      rect,
+      viewport
+    )
+    const [id] = index.hitTestPoint(point)
+    if (id) applyModifierSelection(id, event)
   }
 
   const startDrag = (event: PointerEvent<SVGElement>, node: DesignNode) => {
@@ -209,7 +250,7 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     event.currentTarget.releasePointerCapture?.(event.pointerId)
     setMarquee(null)
     if (current.active) {
-      const ids = hitTestSelectionRect(document, {
+      const ids = index.hitTestRect({
         x: current.startX,
         y: current.startY,
         width: current.currentX - current.startX,
@@ -233,6 +274,14 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
     if (event.target === event.currentTarget) {
       if (!(event.shiftKey || event.metaKey || event.ctrlKey))
         notifySelection([])
+    } else {
+      const target = event.target as Element
+      const targetId = target.getAttribute("data-design-node-id")
+      const fallbackId = document.nodes.find((node) => node.id === targetId)
+        ?.locked
+        ? undefined
+        : (targetId ?? undefined)
+      selectAtPoint(event, event.currentTarget, fallbackId)
     }
   }
 
@@ -252,20 +301,26 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
         if (!readOnly && event.key === "Escape") notifySelection([])
       }}
     >
-      {document.nodes.map((node) => (
-        <DesignSvgNode
-          key={node.id}
-          node={node}
-          selected={selectedNodeIds.includes(node.id)}
-          readOnly={readOnly}
-          previewBounds={previewBounds(node, drag)}
-          onClick={(event) => applyModifierSelection(node.id, event)}
-          onPointerDown={(event) => startDrag(event, node)}
-          onPointerMove={previewDrag}
-          onPointerUp={finishDrag}
-          onPointerCancel={() => setDrag(null)}
-        />
-      ))}
+      {document.nodes
+        .filter((node) => renderedNodeIds.has(node.id))
+        .map((node) => (
+          <DesignSvgNode
+            key={node.id}
+            node={node}
+            selected={selectedNodeIds.includes(node.id)}
+            readOnly={readOnly}
+            previewBounds={previewBounds(node, drag)}
+            onClick={(event) => {
+              const svg = event.currentTarget.ownerSVGElement
+              if (svg) selectAtPoint(event, svg, node.id)
+              event.stopPropagation()
+            }}
+            onPointerDown={(event) => startDrag(event, node)}
+            onPointerMove={previewDrag}
+            onPointerUp={finishDrag}
+            onPointerCancel={() => setDrag(null)}
+          />
+        ))}
       {selectedNodes.length > 0 ? (
         <SelectionOutline
           bounds={unionBounds(
@@ -326,9 +381,6 @@ function DesignSvgNode({
   const bounds = previewBounds ??
     node.bounds ?? { x: 0, y: 0, width: 0, height: 0 }
   const selectable = !readOnly && node.locked !== true
-  const handleClick = selectable
-    ? onClick
-    : (event: MouseEvent<SVGElement>) => event.stopPropagation()
   const interactiveProps = {
     "data-testid": `design-node-${node.id}`,
     "data-design-node-id": node.id,
@@ -337,7 +389,7 @@ function DesignSvgNode({
     "aria-label": nodeLabel(node),
     "aria-selected": selectable ? selected : undefined,
     "aria-disabled": node.locked === true ? true : undefined,
-    onClick: handleClick,
+    onClick: selectable ? onClick : undefined,
     onKeyDown: (event: KeyboardEvent<SVGElement>) => {
       if (!selectable || (event.key !== "Enter" && event.key !== " ")) return
       event.preventDefault()
