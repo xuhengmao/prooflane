@@ -331,4 +331,21 @@ describe("DesignWorkspace", () => {
     expect(screen.queryByText("Design structure")).toBeNull()
     expect(screen.getByTestId("design-canvas-host")).toBeTruthy()
   })
+
+  it("keeps viewport state out of saved design revisions", async () => {
+    const user = userEvent.setup()
+    const designService = service()
+    renderWorkspace(designService)
+    await screen.findByDisplayValue("Checkout flow")
+
+    await user.click(screen.getByRole("button", { name: "Zoom in" }))
+    await user.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => expect(designService.saveRevision).toHaveBeenCalled())
+    const payload = designService.saveRevision.mock.calls[0]?.[0]
+    expect(payload).not.toHaveProperty("zoom")
+    expect(payload).not.toHaveProperty("panX")
+    expect(payload).not.toHaveProperty("panY")
+    expect(payload).toHaveProperty("document")
+  })
 })
