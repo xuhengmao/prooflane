@@ -315,6 +315,7 @@ export function DesignSvgCanvas(props: DesignSvgCanvasProps) {
               if (svg) selectAtPoint(event, svg, node.id)
               event.stopPropagation()
             }}
+            onKeyboardSelect={(event) => applyModifierSelection(node.id, event)}
             onPointerDown={(event) => startDrag(event, node)}
             onPointerMove={previewDrag}
             onPointerUp={finishDrag}
@@ -356,6 +357,7 @@ function DesignSvgNode({
   readOnly,
   previewBounds,
   onClick,
+  onKeyboardSelect,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -366,6 +368,9 @@ function DesignSvgNode({
   readOnly: boolean
   previewBounds?: DesignBounds
   onClick: (event: MouseEvent<SVGElement>) => void
+  onKeyboardSelect: (
+    event: Pick<MouseEvent<SVGElement>, "shiftKey" | "metaKey" | "ctrlKey">
+  ) => void
   onPointerDown: (event: PointerEvent<SVGElement>) => void
   onPointerMove: (event: PointerEvent<SVGElement>) => void
   onPointerUp: (event: PointerEvent<SVGElement>) => void
@@ -393,7 +398,7 @@ function DesignSvgNode({
     onKeyDown: (event: KeyboardEvent<SVGElement>) => {
       if (!selectable || (event.key !== "Enter" && event.key !== " ")) return
       event.preventDefault()
-      onClick(event as unknown as MouseEvent<SVGElement>)
+      onKeyboardSelect(event)
     },
     onPointerDown: selectable ? onPointerDown : undefined,
     onPointerMove: selectable ? onPointerMove : undefined,

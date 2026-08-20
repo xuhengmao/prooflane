@@ -44,3 +44,18 @@ pnpm eslint src/components/design/design-svg-canvas.tsx src/components/design/de
 - 点命中使用 SVG 边界框转换到文档坐标；无布局的 jsdom 环境仅为既有单元测试提供可编辑事件目标兜底，生产环境始终走 SceneIndex 几何命中。
 - 未修改 `DesignCanvasHost`，现有 viewport 传递已满足接入条件。
 - 无遗留问题。
+
+## 审查修复：Important I-1
+
+RED：新增非零 SVG `getBoundingClientRect` 下聚焦节点 Enter/Space 测试后，键盘事件复用了点命中并错误选择视口左上角的 `frame`。
+
+修复：`DesignSvgNode` 的键盘 Enter/Space 现在直接通过当前节点 ID 调用 `applyModifierSelection`，保留 Shift/Meta/Ctrl 修饰键语义，不再依赖 `clientX/clientY` 点命中。
+
+验证命令：
+
+```powershell
+pnpm vitest run src/components/design/design-svg-canvas.test.tsx src/components/design/design-canvas-host.test.tsx src/components/design/design-workspace.test.tsx src/lib/design/scene-index.test.ts --reporter=dot
+pnpm eslint src/components/design/design-svg-canvas.tsx src/components/design/design-svg-canvas.test.tsx src/components/design/design-canvas-host.tsx
+```
+
+结果：4 个测试文件、32 个测试全部通过；目标 ESLint 通过。

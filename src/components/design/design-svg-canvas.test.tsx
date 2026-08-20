@@ -226,6 +226,31 @@ describe("DesignSvgCanvas", () => {
     expect(onSelectNode).toHaveBeenLastCalledWith(null)
   })
 
+  it("selects the focused node from keyboard input with a non-zero SVG layout", async () => {
+    const user = userEvent.setup()
+    const onSelectNode = vi.fn()
+    renderCanvas({ onSelectNode })
+    const canvas = screen.getByTestId("design-svg-canvas")
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      toJSON: () => ({}),
+    })
+    const rectangle = screen.getByTestId("design-node-rectangle")
+    rectangle.focus()
+    await user.keyboard("{Enter}")
+
+    expect(onSelectNode).toHaveBeenLastCalledWith("rectangle")
+    await user.keyboard(" ")
+    expect(onSelectNode).toHaveBeenLastCalledWith("rectangle")
+  })
+
   it.each([
     {
       label: "100%",
