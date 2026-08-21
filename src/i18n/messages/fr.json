@@ -1623,6 +1623,7 @@
       "newChatAction": "Nouvelle discussion",
       "automations": "Automatisations",
       "tasks": "Tâches à faire",
+      "design": "Design IA",
       "loadingSubsessions": "Chargement des sous-conversations…"
     },
     "conversation": {
@@ -4321,6 +4322,131 @@
     "targetsAdd": "Ajouter",
     "targetsRemove": "Supprimer le remplacement",
     "toggleDetails": "Afficher les détails"
+  },
+  "Design": {
+    "backToDesigns": "Back to designs",
+    "title": "Design IA",
+    "subtitle": "Créez et gérez des designs structurés localement.",
+    "newDesign": "Nouveau design",
+    "createDescription": "Commencez un design indépendant et liez-le ensuite à un projet.",
+    "name": "Nom",
+    "type": "Type",
+    "status": "Statut",
+    "project": "Projet",
+    "search": "Rechercher des designs",
+    "brief": "Décrivez le design",
+    "startFromBrief": "Commencer avec la description",
+    "createDesign": "Créer le design",
+    "saveName": "Enregistrer le nom",
+    "cancel": "Annuler",
+    "loading": "Chargement des designs…",
+    "loadError": "Impossible de charger les designs",
+    "retry": "Réessayer",
+    "empty": "Aucun design",
+    "noMatches": "Aucun design correspondant",
+    "recent": "Designs récents",
+    "allTypes": "Tous les types",
+    "allStatuses": "Tous les statuts",
+    "allProjects": "Tous les projets",
+    "linkedProjects": "Projets liés",
+    "unlinkedProjects": "Indépendant",
+    "openNamed": "Ouvrir {name}",
+    "moreActions": "Autres actions pour {name}",
+    "rename": "Renommer",
+    "duplicate": "Dupliquer",
+    "archive": "Archiver",
+    "restore": "Restaurer",
+    "delete": "Supprimer",
+    "deleteTitle": "Supprimer le design ?",
+    "deleteDescription": "{name} sera retiré de la liste.",
+    "deleteDesign": "Supprimer le design",
+    "kinds": {
+      "page": "Page",
+      "component": "Composant",
+      "image": "Image",
+      "icon": "Icône",
+      "design_system": "Système de design",
+      "flow": "Flux"
+    },
+    "statuses": {
+      "draft": "Brouillon",
+      "active": "Actif",
+      "archived": "Archivé"
+    },
+    "workspace": {
+      "loading": "Loading this design…",
+      "loadError": "Could not load this design",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "conflict": "An update is available",
+      "saveError": "Could not save",
+      "unsaved": "Unsaved changes",
+      "save": "Save",
+      "name": "Design name",
+      "project": "Project",
+      "views": "Workspace views",
+      "leftPanel": "Design structure",
+      "rightPanel": "Properties",
+      "selectElement": "Select an element to inspect its properties",
+      "hideLeftPanel": "Hide layers panel",
+      "showLeftPanel": "Show layers panel",
+      "hideRightPanel": "Hide properties panel",
+      "showRightPanel": "Show properties panel"
+    },
+    "views": { "design": "Design", "prototype": "Prototype", "run": "Run" },
+    "panels": {
+      "layers": "Layers",
+      "assets": "Assets",
+      "components": "Components",
+      "variables": "Variables"
+    },
+    "tools": {
+      "select": "Select",
+      "frame": "Frame (coming soon)",
+      "text": "Text (coming soon)",
+      "shape": "Shape (coming soon)"
+    },
+    "canvas": {
+      "title": "Empty canvas",
+      "label": "Design canvas",
+      "zoom": "Canvas zoom",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "fit": "Fit canvas",
+      "reset": "Reset view",
+      "subtitle": "Professional canvas editing will be added in a later phase.",
+      "designMode": "Design mode",
+      "readOnlyMode": "Review mode"
+    },
+    "properties": {
+      "invalidNumber": "Enter a valid number",
+      "nonNegative": "{field} must be zero or greater",
+      "opacityRange": "Opacity must be between 0 and 100",
+      "fields": {
+        "x": "X position",
+        "y": "Y position",
+        "width": "Width",
+        "height": "Height",
+        "opacity": "Opacity",
+        "text": "Text content"
+      },
+      "nodeTypes": {
+        "document": "Document",
+        "page": "Page",
+        "group": "Group",
+        "frame": "Frame",
+        "rectangle": "Rectangle",
+        "shape": "Shape",
+        "text": "Text",
+        "image": "Image"
+      },
+      "selectionSummary": "{count} éléments sélectionnés",
+      "selectionRange": "Limites : ({minX}, {minY}) - ({maxX}, {maxY})"
+    },
+    "composer": {
+      "title": "AI Composer",
+      "subtitle": "Describe a design change to prepare the next action."
+    }
   },
   "Automations": {
     "title": "Automatisations",

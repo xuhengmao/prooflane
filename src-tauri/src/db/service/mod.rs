@@ -7,6 +7,7 @@ pub mod conversation_capability_service;
 pub mod conversation_notification_service;
 pub mod conversation_service;
 pub mod custom_agent_service;
+pub mod design_artifact_service;
 pub mod folder_command_service;
 pub mod folder_link_service;
 pub mod folder_service;

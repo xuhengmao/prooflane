@@ -14,6 +14,7 @@ function Probe() {
       <span data-testid="route">{routeId}</span>
       <span data-testid="isConv">{String(isConversations)}</span>
       <button onClick={() => setRoute("automations")}>go</button>
+      <button onClick={() => setRoute("design")}>design</button>
       <button onClick={openConversations}>back</button>
     </div>
   )
@@ -36,6 +37,18 @@ describe("WorkbenchRouteProvider", () => {
     fireEvent.click(getByText("back"))
     expect(getByTestId("route").textContent).toBe("conversations")
     expect(getByTestId("isConv").textContent).toBe("true")
+  })
+
+  it("switches to the AI design workspace route", () => {
+    const { getByTestId, getByText } = render(
+      <WorkbenchRouteProvider>
+        <Probe />
+      </WorkbenchRouteProvider>
+    )
+
+    fireEvent.click(getByText("design"))
+    expect(getByTestId("route").textContent).toBe("design")
+    expect(getByTestId("isConv").textContent).toBe("false")
   })
 
   it("throws when used outside the provider", () => {

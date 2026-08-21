@@ -1,0 +1,23 @@
+[
+  {
+    "id": "nodes-100",
+    "nodeCount": 100,
+    "viewport": { "width": 1280, "height": 800, "scale": 1 },
+    "deviceScaleFactor": 1,
+    "fonts": ["system-ui", "Noto Sans CJK SC", "Segoe UI Emoji"]
+  },
+  {
+    "id": "nodes-1000",
+    "nodeCount": 1000,
+    "viewport": { "width": 1280, "height": 800, "scale": 1 },
+    "deviceScaleFactor": 1,
+    "fonts": ["system-ui", "Noto Sans CJK SC", "Segoe UI Emoji"]
+  },
+  {
+    "id": "nodes-10000",
+    "nodeCount": 10000,
+    "viewport": { "width": 1280, "height": 800, "scale": 1 },
+    "deviceScaleFactor": 1,
+    "fonts": ["system-ui", "Noto Sans CJK SC", "Segoe UI Emoji"]
+  }
+]

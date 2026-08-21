@@ -1623,6 +1623,7 @@
       "newChatAction": "Neuer Chat",
       "automations": "Automatisierungen",
       "tasks": "To-dos",
+      "design": "KI-Design",
       "loadingSubsessions": "Unterkonversationen werden geladen…"
     },
     "conversation": {
@@ -4321,6 +4322,131 @@
     "targetsAdd": "Hinzufügen",
     "targetsRemove": "Überschreibung entfernen",
     "toggleDetails": "Details umschalten"
+  },
+  "Design": {
+    "backToDesigns": "Back to designs",
+    "title": "KI-Design",
+    "subtitle": "Strukturierte Designs lokal erstellen und verwalten.",
+    "newDesign": "Neues Design",
+    "createDescription": "Unabhängiges Design starten und später mit einem Projekt verknüpfen.",
+    "name": "Name",
+    "type": "Typ",
+    "status": "Status",
+    "project": "Projekt",
+    "search": "Designs suchen",
+    "brief": "Beschreibe dein Design",
+    "startFromBrief": "Aus Beschreibung starten",
+    "createDesign": "Design erstellen",
+    "saveName": "Namen speichern",
+    "cancel": "Abbrechen",
+    "loading": "Designs werden geladen…",
+    "loadError": "Designs konnten nicht geladen werden",
+    "retry": "Erneut versuchen",
+    "empty": "Noch keine Designs",
+    "noMatches": "Keine passenden Designs",
+    "recent": "Letzte Designs",
+    "allTypes": "Alle Typen",
+    "allStatuses": "Alle Status",
+    "allProjects": "Alle Projekte",
+    "linkedProjects": "Verknüpfte Projekte",
+    "unlinkedProjects": "Unabhängig",
+    "openNamed": "{name} öffnen",
+    "moreActions": "Weitere Aktionen für {name}",
+    "rename": "Umbenennen",
+    "duplicate": "Duplizieren",
+    "archive": "Archivieren",
+    "restore": "Wiederherstellen",
+    "delete": "Löschen",
+    "deleteTitle": "Design löschen?",
+    "deleteDescription": "{name} wird aus der Liste entfernt.",
+    "deleteDesign": "Design löschen",
+    "kinds": {
+      "page": "Seite",
+      "component": "Komponente",
+      "image": "Bild",
+      "icon": "Symbol",
+      "design_system": "Designsystem",
+      "flow": "Ablauf"
+    },
+    "statuses": {
+      "draft": "Entwurf",
+      "active": "Aktiv",
+      "archived": "Archiviert"
+    },
+    "workspace": {
+      "loading": "Loading this design…",
+      "loadError": "Could not load this design",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "conflict": "An update is available",
+      "saveError": "Could not save",
+      "unsaved": "Unsaved changes",
+      "save": "Save",
+      "name": "Design name",
+      "project": "Project",
+      "views": "Workspace views",
+      "leftPanel": "Design structure",
+      "rightPanel": "Properties",
+      "selectElement": "Select an element to inspect its properties",
+      "hideLeftPanel": "Hide layers panel",
+      "showLeftPanel": "Show layers panel",
+      "hideRightPanel": "Hide properties panel",
+      "showRightPanel": "Show properties panel"
+    },
+    "views": { "design": "Design", "prototype": "Prototype", "run": "Run" },
+    "panels": {
+      "layers": "Layers",
+      "assets": "Assets",
+      "components": "Components",
+      "variables": "Variables"
+    },
+    "tools": {
+      "select": "Select",
+      "frame": "Frame (coming soon)",
+      "text": "Text (coming soon)",
+      "shape": "Shape (coming soon)"
+    },
+    "canvas": {
+      "title": "Empty canvas",
+      "label": "Design canvas",
+      "zoom": "Canvas zoom",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "fit": "Fit canvas",
+      "reset": "Reset view",
+      "subtitle": "Professional canvas editing will be added in a later phase.",
+      "designMode": "Design mode",
+      "readOnlyMode": "Review mode"
+    },
+    "properties": {
+      "invalidNumber": "Enter a valid number",
+      "nonNegative": "{field} must be zero or greater",
+      "opacityRange": "Opacity must be between 0 and 100",
+      "fields": {
+        "x": "X position",
+        "y": "Y position",
+        "width": "Width",
+        "height": "Height",
+        "opacity": "Opacity",
+        "text": "Text content"
+      },
+      "nodeTypes": {
+        "document": "Document",
+        "page": "Page",
+        "group": "Group",
+        "frame": "Frame",
+        "rectangle": "Rectangle",
+        "shape": "Shape",
+        "text": "Text",
+        "image": "Image"
+      },
+      "selectionSummary": "{count} Elemente ausgewählt",
+      "selectionRange": "Bereich: ({minX}, {minY}) - ({maxX}, {maxY})"
+    },
+    "composer": {
+      "title": "AI Composer",
+      "subtitle": "Describe a design change to prepare the next action."
+    }
   },
   "Automations": {
     "title": "Automatisierungen",

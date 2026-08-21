@@ -12,6 +12,8 @@ pub use super::conversation::Entity as Conversation;
 pub use super::conversation_capability_setting::Entity as ConversationCapabilitySetting;
 pub use super::conversation_notification_receipt::Entity as ConversationNotificationReceipt;
 pub use super::custom_agent::Entity as CustomAgent;
+pub use super::design_artifact::Entity as DesignArtifact;
+pub use super::design_revision::Entity as DesignRevision;
 pub use super::folder::Entity as Folder;
 pub use super::folder_command::Entity as FolderCommand;
 pub use super::folder_link::Entity as FolderLink;

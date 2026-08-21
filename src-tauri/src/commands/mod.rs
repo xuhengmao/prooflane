@@ -9,6 +9,7 @@ pub mod chat_channel;
 pub mod conversation_notification;
 pub mod conversation_relay;
 pub mod conversations;
+pub mod design;
 pub mod custom_agents;
 pub mod custom_skills;
 pub mod delegation;

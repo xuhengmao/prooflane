@@ -17,6 +17,7 @@ const eslintConfig = defineConfig([
     "src-tauri/target/**",
     "src-tauri/experts/**",
     "public/vs/**",
+    "public/canvaskit/**",
   ]),
   eslintConfigPrettier,
   eslintPluginPrettierRecommended,

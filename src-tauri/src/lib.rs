@@ -21,6 +21,7 @@ pub mod chat_channel;
 pub mod commands;
 pub mod conversation_relay;
 pub mod db;
+pub mod design;
 pub mod folder_links;
 pub mod git_credential;
 pub mod git_repo;
@@ -67,7 +68,7 @@ mod tauri_app {
         automation as automation_commands, background as background_commands, backup,
         chat_authoring as chat_authoring_commands, chat_channel as chat_channel_commands,
         conversation_notification as conversation_notification_commands, conversations,
-        conversation_relay as conversation_relay_commands,
+        conversation_relay as conversation_relay_commands, design as design_commands,
         custom_skills as custom_skills_commands, delegation as delegation_commands,
         experts as experts_commands, feedback as feedback_commands, file_io, folder_commands,
         folder_links, office_tools as office_tools_commands,
@@ -1320,6 +1321,14 @@ mod tauri_app {
                 quick_messages_commands::quick_messages_update,
                 quick_messages_commands::quick_messages_delete,
                 quick_messages_commands::quick_messages_reorder,
+                design_commands::list_design_artifacts,
+                design_commands::get_design_artifact,
+                design_commands::create_design_artifact,
+                design_commands::rename_design_artifact,
+                design_commands::duplicate_design_artifact,
+                design_commands::set_design_artifact_archived,
+                design_commands::delete_design_artifact,
+                design_commands::save_design_revision,
                 automation_commands::automation_list,
                 automation_commands::automation_get,
                 automation_commands::automation_runs,

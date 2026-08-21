@@ -31,6 +31,7 @@ import { SidebarProvider, useSidebarContext } from "@/contexts/sidebar-context"
 import { SearchDialogProvider } from "@/contexts/search-dialog-context"
 import { AutomationsViewProvider } from "@/contexts/automations-view-context"
 import { TasksViewProvider } from "@/contexts/tasks-view-context"
+import { DesignWorkspaceProvider } from "@/contexts/design-workspace-context"
 import {
   WorkbenchRouteProvider,
   useWorkbenchRoute,
@@ -1254,15 +1255,17 @@ function WorkspaceLayoutInner({ children }: { children: React.ReactNode }) {
                               <AutomationsViewProvider>
                                 <TasksViewProvider>
                                   <WorkbenchRouteProvider>
-                                    <WorkbenchRouteConversationSync />
-                                    <ConversationNotificationActivationBridge />
-                                    {/* Inside WorkbenchRouteProvider: the
+                                    <DesignWorkspaceProvider>
+                                      <WorkbenchRouteConversationSync />
+                                      <ConversationNotificationActivationBridge />
+                                      {/* Inside WorkbenchRouteProvider: the
                                           listener calls openConversations() to
                                           surface a launcher-opened folder. */}
-                                    <WorkspaceOpenFolderListener />
-                                    <FolderLayoutShell>
-                                      {children}
-                                    </FolderLayoutShell>
+                                      <WorkspaceOpenFolderListener />
+                                      <FolderLayoutShell>
+                                        {children}
+                                      </FolderLayoutShell>
+                                    </DesignWorkspaceProvider>
                                   </WorkbenchRouteProvider>
                                 </TasksViewProvider>
                               </AutomationsViewProvider>
